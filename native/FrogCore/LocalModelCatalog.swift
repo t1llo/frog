@@ -30,7 +30,7 @@ public struct LocalModelDescriptor: Codable, Identifiable, Equatable, Sendable {
     }
     public var sourceURL: URL { URL(string: "https://huggingface.co/\(repository)")! }
     public var filesURL: URL { sourceURL.appendingPathComponent("tree/main").appendingPathComponent(backend == .whisperKit ? variant ?? "" : "") }
-    public var runtimeName: String { switch backend { case .whisperKit: "WhisperKit / Core ML"; case .parakeet: "FluidAudio / Core ML"; case .mlx: "MLX" } }
+    public var runtimeName: String { switch backend { case .whisperKit: "WhisperKit on Core ML"; case .parakeet: "FluidAudio on Core ML"; case .mlx: "MLX" } }
     public var englishOnly: Bool { (backend == .parakeet && variant == "v2") || (backend == .whisperKit && variant?.contains(".en") == true) }
     public var supportsLanguageSelection: Bool { backend == .whisperKit && !englishOnly }
     public var languages: String {
@@ -116,7 +116,7 @@ public struct LocalModelDescriptor: Codable, Identifiable, Equatable, Sendable {
         case Self.recommendedSpeechModelID: "Fast, accurate dictation · 25 European languages"
         case "whisper-large-v3-turbo-626mb": "Broad multilingual coverage · 99+ languages"
         case Self.recommendedTextModelID: "Fast corrections and short rewrites · 201 languages"
-        case "qwen3.5-0.8b": "Smallest and fastest · spelling and punctuation"
+        case "qwen3.5-0.8b": "Smallest and fastest, for spelling and punctuation"
         default: nil
         }
     }

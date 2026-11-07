@@ -9,10 +9,15 @@ struct CleanerConfirmationSheet: View {
     @ObservedObject var cleaner: CleanerModel
     let roots: CleanerRoots
 
-    /// The app first, then the rest by path.
+    /// In the review's order: the app, then sure, likely and possible matches, shared and suggested items, each group
+    /// in the order the review lists it.
     private var removals: [PlannedRemoval] {
-        let removals = pending.plan.removals
-        return removals.filter { $0.item.kind == .application } + removals.filter { $0.item.kind != .application }
+        let order = CleanerGroupKind.allCases
+        func rank(_ removal: PlannedRemoval) -> Int {
+            CleanerGroupKind.of(removal.item, showPossible: true).flatMap { order.firstIndex(of: $0) } ?? order.count
+        }
+        return pending.plan.removals.enumerated()
+            .sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map(\.element)
     }
 
     private var removing: (done: Int, total: Int)? {
@@ -22,14 +27,15 @@ struct CleanerConfirmationSheet: View {
 
     var body: some View {
         let plan = pending.plan, prompt = pending.prompt
-        VStack(alignment: .leading, spacing: 12) {
-            Text(prompt.title).font(FrogType.section).fixedSize(horizontal: false, vertical: true)
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(removals, id: \.item.id) { removal in itemRow(removal.item) }
-                }.padding(6)
+        VStack(alignment: .leading, spacing: FrogStyle.space16) {
+            Text(prompt.title).font(FrogType.title).tracking(-0.4).fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            // As tall as the list up to the limit, then it scrolls and fades out instead of cutting a row.
+            FrogSheetScroll(maxHeight: 260) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(removals, id: \.item.id) { removal in itemRow(removal) }
+                }.padding(FrogStyle.listInset)
             }
-            .frame(maxHeight: 260).fixedSize(horizontal: false, vertical: true)
             .frogTableSurface()
             if let denied = prompt.finderDenied {
                 VStack(alignment: .leading, spacing: 8) {
@@ -39,17 +45,17 @@ struct CleanerConfirmationSheet: View {
                     }
                 }
             }
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(prompt.notes, id: \.self) { note in
-                    Text(note).font(FrogType.small).fixedSize(horizontal: false, vertical: true)
-                }
+            // One paragraph rather than a stack of loose lines; the rows above mark what Finder moves.
+            if !prompt.notes.isEmpty {
+                Text(prompt.notes.joined(separator: " ")).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    .lineSpacing(2).fixedSize(horizontal: false, vertical: true)
             }
             if !plan.refused.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     SectionCaption(text: "Left out")
                     ForEach(plan.refused, id: \.item.id) { refusal in
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(roots.displayPath(refusal.item.url)).font(FrogType.small)
+                            Text(roots.shownPath(refusal.item.url)).font(FrogType.small)
                                 .lineLimit(1).truncationMode(.middle)
                             Text(refusal.reason).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                         }
@@ -63,9 +69,9 @@ struct CleanerConfirmationSheet: View {
                         .font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted)
                 }
             } else {
-                HStack(spacing: 8) {
-                    Spacer()
-                    Button(prompt.cancel) { cleaner.cancelRemoval() }.keyboardShortcut(.cancelAction)
+                // The confirming action removes, so it is destructive rather than the primary.
+                FrogSheetButtons(padded: false) {
+                    FrogCancelButton(prompt.cancel) { cleaner.cancelRemoval() }
                     Button(prompt.confirm, role: .destructive) { Task { await cleaner.confirmRemoval() } }
                         .buttonStyle(.frog(.destructive))
                 }
@@ -86,15 +92,30 @@ struct CleanerConfirmationSheet: View {
         }
     }
 
-    private func itemRow(_ item: CleanerItem) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: item.kind.symbol).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
-                .frame(width: 16).accessibilityHidden(true)
-            Text(roots.displayPath(item.url)).font(FrogType.body).lineLimit(1).truncationMode(.middle)
-            if item.owner == .administrator { FrogBadge(text: "Needs password") }
+    private func itemRow(_ removal: PlannedRemoval) -> some View {
+        let item = removal.item
+        let parts = roots.shownParts(item.url)
+        return HStack(spacing: FrogStyle.space8) {
+            icon(for: item).frame(width: 20, height: 20).accessibilityHidden(true)
+            // The name leads and the folder follows in muted type, so a long path is cut in the folder, not the name.
+            HStack(spacing: FrogStyle.space6) {
+                Text(parts.name).font(FrogType.body).lineLimit(1).layoutPriority(1)
+                Text(parts.folder).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
+            }.help(roots.shownPath(item.url))
+            if item.owner == .administrator { FrogStatusLabel("Needs password", tone: .warning) }
+            else if removal.route == .finder { FrogStatusLabel("Moved by Finder", tone: .off).help("Finder moves this item to the Trash, so it can ask for permission") }
             Spacer(minLength: 8)
-            Text(size(of: item)).font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted)
-        }.padding(.horizontal, 8).padding(.vertical, 5)
+            Text(size(of: item)).font(FrogType.body.monospacedDigit()).foregroundStyle(FrogStyle.muted)
+        }.padding(.horizontal, FrogStyle.rowPadding).frame(minHeight: 30)
+    }
+
+    /// The app's own icon, or the system's generic app icon for a bundle without one; never a placeholder glyph.
+    @ViewBuilder private func icon(for item: CleanerItem) -> some View {
+        if item.kind == .application {
+            ApplicationIcon(path: item.url.path, size: 20)
+        } else {
+            Image(systemName: item.kind.symbol).font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
+        }
     }
 
     private func size(of item: CleanerItem) -> String {

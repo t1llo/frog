@@ -6,10 +6,16 @@ enum WindowSwitcherLayout {
     static let rowHeight: CGFloat = 44
     static let queryLineHeight: CGFloat = 44
     static let visibleRows = 10
-    /// The panel fits up to ten rows, at least one for the empty message, and the search line while there is a query.
+    /// The footer that says typing searches and what Return does, as every Frog panel has.
+    static let footerHeight: CGFloat = 32
+    /// The panel fits up to ten rows, at least one for the empty message, the search line while there is a query,
+    /// and the footer.
     static func size(windowCount: Int, queryVisible: Bool = false) -> CGSize {
-        CGSize(width: width, height: 2 * FrogStyle.panelInset + CGFloat(max(1, min(visibleRows, windowCount))) * rowHeight + (queryVisible ? queryLineHeight : 0))
+        CGSize(width: width, height: 2 * FrogStyle.panelInset + CGFloat(max(1, min(visibleRows, windowCount))) * rowHeight
+               + (queryVisible ? queryLineHeight : 0) + footerHeight)
     }
+    /// The icon a window shows while its app's own is not read yet: macOS's generic application icon, never a blank square.
+    @MainActor static let genericIcon = NSWorkspace.shared.icon(for: .applicationBundle)
 }
 
 @MainActor
@@ -54,21 +60,17 @@ struct WindowSwitcherOverlay: View {
                             ForEach(model.windows) { window in
                                 Button { choose(window.id) } label: {
                                     HStack(spacing: 12) {
-                                        if let icon = model.icons[window.pid] {
-                                            Image(nsImage: icon).resizable().frame(width: 28, height: 28)
-                                        } else { Image(systemName: "app").frame(width: 28, height: 28) }
+                                        Image(nsImage: model.icons[window.pid] ?? WindowSwitcherLayout.genericIcon).resizable()
+                                            .frame(width: 28, height: 28)
                                         VStack(alignment: .leading, spacing: 1) {
                                             Text(window.title).font(FrogType.row).lineLimit(1)
                                             Text(window.appName).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
                                         }.frame(maxWidth: .infinity, alignment: .leading)
                                         if window.minimized || window.hidden {
-                                            Image(systemName: window.minimized ? "minus.rectangle" : "eye.slash")
-                                                .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                                                .help(window.minimized ? "Minimized" : "Hidden")
+                                            StateBadge(title: window.minimized ? "Minimized" : "Hidden",
+                                                       symbol: window.minimized ? "arrow.down.right.and.arrow.up.left" : "eye.slash")
                                         }
-                                        if let shortcut = model.shortcuts[window.pid] { Text(shortcut).font(FrogType.small).foregroundStyle(FrogStyle.muted) }
-                                        Image(systemName: "return").font(.system(size: 11, weight: .medium)).foregroundStyle(FrogStyle.muted)
-                                            .opacity(model.selected == window.id ? 1 : 0)
+                                        if let shortcut = model.shortcuts[window.pid] { KeyCaps(shortcut) }
                                     }.padding(.horizontal, 10).frame(height: WindowSwitcherLayout.rowHeight)
                                         // The pointer moves the selection here, so the selection is the only highlight.
                                         .frogRowHighlight(hovering: false, selected: model.selected == window.id)
@@ -84,11 +86,27 @@ struct WindowSwitcherOverlay: View {
                     .onAppear { if let id = model.selected { proxy.scrollTo(id) } }
                 }
             }
+            PanelFooter(symbol: WindowSwitcherPlugin.info.symbol, name: WindowSwitcherPlugin.info.name,
+                        // The search line appears only once typing starts, so until then the footer says it is there.
+                        detail: model.query.isEmpty ? L10n.text("Type to search") : model.windows.count == 1 ? L10n.text("1 window")
+                            : String(format: L10n.text("%d windows"), model.windows.count),
+                        primaryTitle: model.windows.isEmpty ? nil : "Switch", showsActions: false, closeTitle: "Close")
         }.frame(width: WindowSwitcherLayout.width)
             .environment(\.locale, L10n.locale)
             .frogPanel()
             .foregroundStyle(FrogStyle.ink)
             .environment(\.frogKeyboardSurface, true)
+    }
+
+    /// A window's state in words, so minimized and hidden need no legend.
+    private struct StateBadge: View {
+        let title: String
+        let symbol: String
+        var body: some View {
+            Label(L10n.text(title), systemImage: symbol).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                .labelStyle(.titleAndIcon).padding(.horizontal, FrogStyle.space6).frame(height: 18)
+                .background(FrogStyle.control, in: Capsule())
+        }
     }
 
     /// What has been typed to narrow the list; Backspace takes it back a character at a time.

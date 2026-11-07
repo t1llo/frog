@@ -140,11 +140,19 @@ struct AppearanceSettingsView: View {
         _model = ObservedObject(wrappedValue: model)
         _draft = StateObject(wrappedValue: AppearanceDraft(model: model))
     }
-    /// As Rex lays out its appearance settings: a card of tile pickers for the colour scheme and the interface
-    /// style, a card of theme cards, and the glass settings only while the interface is glass. One draft.
+    /// As Rex lays out its appearance settings: one card with the tile pickers for the colour scheme and the
+    /// interface style, the theme cards under them and the accent settings that go with the theme, then the glass
+    /// settings only while the interface is glass. One card rather than two, so the themes are in view on a
+    /// default-size window. One draft.
     var body: some View {
-        FrogSection("Appearance") { schemeAndStyle }
-        FrogSection("Theme") { themes }
+        FrogSection("Appearance") {
+            schemeAndStyle
+            themes
+            accent
+            FrogRow("Custom palette", caption: "palette.light.* and palette.dark.* in the configuration file") {
+                Button("Open config") { model.openConfiguration() }
+            }
+        }
         if style == .glass { FrogSection("Glass") { glass } }
     }
 
@@ -163,11 +171,11 @@ struct AppearanceSettingsView: View {
                     } choose: { var value = appearance; value.mode = mode; draft.set(value) }
                 }
             }
-            Rectangle().fill(FrogStyle.hairline).frame(width: 1).padding(.vertical, FrogStyle.space4).accessibilityHidden(true)
+            Spacer().frame(width: FrogStyle.space16)
             TileGroup(title: "Interface style") {
                 ForEach(InterfaceStyle.allCases, id: \.self) { kind in
                     AppearanceTile(title: kind == .classic ? "Classic" : "Glass", selected: style == kind) {
-                        WindowSketch(scheme: appearance.mode ?? .system, glass: kind == .glass)
+                        WindowSketch(scheme: appearance.mode ?? .system, glass: kind == .glass, shapesBehind: true)
                     } choose: {
                         guard style != kind else { return }
                         var value = appearance
@@ -177,9 +185,13 @@ struct AppearanceSettingsView: View {
                 }
             }
             Spacer(minLength: 0)
-        }.padding(.vertical, FrogStyle.space10)
+        }.padding(.top, FrogStyle.space10)
             .onDisappear { draft.commit() }
-        FrogRow("Tint with theme", caption: "Use the theme's own accent color.") {
+    }
+
+    /// Whether the accent follows the theme, and the colour when it does not.
+    @ViewBuilder private var accent: some View {
+        FrogRow("Tint with theme", caption: "The theme's own accent color") {
             Toggle("Tint with theme", isOn: Binding(get: { appearance.useThemeAccent ?? (appearance.accentHex == "A3D8AF") }, set: { on in
                 var value = appearance; value.useThemeAccent = on
                 if on { value.lightPalette?["accent"] = nil; value.darkPalette?["accent"] = nil }
@@ -191,7 +203,7 @@ struct AppearanceSettingsView: View {
                 HStack(spacing: 8) {
                     HStack(spacing: 2) {
                         Text("#").foregroundStyle(FrogStyle.muted)
-                        TextField("RGB", text: $accentInput).textFieldStyle(.plain).frame(width: 64)
+                        FrogTextField(placeholder: "RGB", text: $accentInput).textFieldStyle(.plain).frame(width: 64)
                             .onSubmit { saveAccent() }.accessibilityLabel("Accent hex color")
                     }.font(FrogType.body).padding(.horizontal, 10).frogControlSurface(capsule: true)
                         .onAppear { accentInput = appearance.accentHex }
@@ -205,15 +217,17 @@ struct AppearanceSettingsView: View {
         }
     }
 
-    @ViewBuilder private var themes: some View {
-        ThemeCards(selected: appearance.effectiveTheme) { theme in
-            var value = appearance; value.theme = theme
-            value.lightPalette = nil; value.darkPalette = nil
-            draft.set(value)
-        }.padding(.vertical, FrogStyle.space10)
-        FrogRow("Custom palette", caption: "palette.light.* and palette.dark.* in the configuration file.") {
-            Button("Open config") { model.openConfiguration() }
+    private var themes: some View {
+        VStack(alignment: .leading, spacing: FrogStyle.space8) {
+            Text(L10n.text("Theme")).font(FrogType.body).foregroundStyle(FrogStyle.muted)
+            ThemeCards(selected: appearance.effectiveTheme) { theme in
+                var value = appearance; value.theme = theme
+                value.lightPalette = nil; value.darkPalette = nil
+                draft.set(value)
+            }
         }
+        .accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Theme"))
+        .padding(.vertical, FrogStyle.space10)
     }
 
     private static func title(_ mode: AppearancePreferences.Mode) -> String {
@@ -226,7 +240,7 @@ struct AppearanceSettingsView: View {
 
     /// One setting: how much of the desktop shows through. It applies to the window and every popup alike.
     @ViewBuilder private var glass: some View {
-        amountRow("Transparency", detail: "The window, menus and panels.", value: appearance.transparency) { value, amount in
+        amountRow("Transparency", detail: "The window, menus and panels", value: appearance.transparency) { value, amount in
             Self.setGlass(max(0.05, amount), in: &value)
         }
         if reduceTransparency || contrast == .increased {
@@ -247,7 +261,7 @@ struct AppearanceSettingsView: View {
                 Slider(value: Binding(get: { amount }, set: { amount in var value = appearance; set(&value, amount); draft.change(value) }),
                        in: 0...1, onEditingChanged: { if !$0 { draft.commit() } }).frame(width: 145).controlSize(.small)
                     .accessibilityLabel(title)
-                Text("\(Int((amount * 100).rounded()))%").font(FrogType.small).monospacedDigit().frame(width: 32, alignment: .trailing)
+                Text("\(Int((amount * 100).rounded()))%").font(FrogType.small).monospacedDigit().lineLimit(1).frame(width: 38, alignment: .trailing)
             }
         }
     }
@@ -290,25 +304,34 @@ private struct AppearanceTile<Picture: View>: View {
                 picture
                     .frame(width: 76, height: 56)
                     .clipShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
+                    // A hairline holds the picture's edge, so the light desktop does not melt into a light page.
+                    .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
                     .padding(3)
                     .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius + 3, style: .continuous)
-                        .strokeBorder(selected ? FrogStyle.accent : hovering ? FrogStyle.hairline : .clear, lineWidth: 2.5))
+                        .strokeBorder(selected ? FrogStyle.accent : hovering ? FrogStyle.hairline : .clear, lineWidth: 2))
                 Text(L10n.text(title)).font(selected ? FrogType.rowMedium : FrogType.body)
-                    .foregroundStyle(selected ? FrogStyle.ink : FrogStyle.muted).lineLimit(1).fixedSize()
+                    .foregroundStyle(FrogStyle.ink).lineLimit(1).fixedSize()
             }.fixedSize().contentShape(Rectangle())
         }.buttonStyle(.plain).onHover { hovering = $0 }
             .accessibilityLabel(L10n.text(title)).accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
-/// A tiny Frog window on a backdrop of the accent: light, dark, or split for Auto; frosted for Glass.
+/// A tiny Frog window: light, dark, or split for Auto, each on a desktop of its own mode so Light and Dark read apart;
+/// the style tiles add a few shapes behind the window on the same neutral desktop, so Glass has something to frost.
 private struct WindowSketch: View {
     let scheme: AppearancePreferences.Mode
     let glass: Bool
+    var shapesBehind = false
     var body: some View {
         ZStack {
-            LinearGradient(colors: [FrogStyle.accent.opacity(0.95), FrogStyle.accent.opacity(0.45)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            switch scheme {
+            case .light: desktop(dark: false)
+            case .dark: desktop(dark: true)
+            case .system: ZStack { desktop(dark: false); desktop(dark: true).mask(DiagonalHalf()) }
+            }
+            if shapesBehind { shapes }
             switch scheme {
             case .light: window(dark: false)
             case .dark: window(dark: true)
@@ -319,6 +342,21 @@ private struct WindowSketch: View {
                 }
             }
         }
+    }
+
+    /// A light desktop that is nearly white, so the Light tile reads as light rather than grey, and a dark one.
+    private func desktop(dark: Bool) -> some View {
+        LinearGradient(colors: dark ? [Color(white: 0.3), Color(white: 0.12)] : [Color(white: 0.95), Color(white: 0.82)],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    /// A soft band across the desktop, corner to corner behind the window, which a Glass window lets show through
+    /// and a Classic one hides; it runs off the tile's edges so it never reads as a mark on the window.
+    private var shapes: some View {
+        Capsule(style: .continuous)
+            .fill(LinearGradient(colors: [Color(white: 0.55), Color(white: 0.4)], startPoint: .leading, endPoint: .trailing))
+            .frame(width: 120, height: 20)
+            .rotationEffect(.degrees(-28))
     }
 
     private func window(dark: Bool) -> some View {
@@ -353,23 +391,18 @@ private struct DiagonalHalf: Shape {
     }
 }
 
-/// Every theme as a small card in its own colours, scrolling sideways, as Rex's theme picker: a sample of text, a
+/// Every theme as a small card in its own colours, in a grid that shows them all at once: a sample of text, a
 /// prompt in the accent and a row of the theme's colours. The chosen theme has the accent ring.
 private struct ThemeCards: View {
     let selected: AppearancePreferences.Theme
     let choose: (AppearancePreferences.Theme) -> Void
     @Environment(\.colorScheme) private var scheme
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: FrogStyle.space10) {
-                    ForEach(AppearancePreferences.Theme.allCases, id: \.self) { theme in
-                        ThemeCard(theme: theme, swatch: FrogStyle.swatch(theme, dark: scheme == .dark), selected: theme == selected) { choose(theme) }
-                            .id(theme)
-                    }
-                }.padding(.vertical, 2).padding(.horizontal, 1)
-            }.scrollIndicators(.visible)
-                .onAppear { proxy.scrollTo(selected, anchor: .center) }
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 112), spacing: FrogStyle.space10, alignment: .top)],
+                  alignment: .leading, spacing: FrogStyle.space12) {
+            ForEach(AppearancePreferences.Theme.allCases, id: \.self) { theme in
+                ThemeCard(theme: theme, swatch: FrogStyle.swatch(theme, dark: scheme == .dark), selected: theme == selected) { choose(theme) }
+            }
         }
     }
 }
@@ -400,14 +433,14 @@ private struct ThemeCard: View {
                     }
                 }
                 .padding(.horizontal, 10).padding(.vertical, 9)
-                .frame(width: 104, height: 62)
+                .frame(maxWidth: .infinity).frame(height: 62)
                 .background(swatch.canvas, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous).strokeBorder(swatch.ink.opacity(0.12)))
                 .padding(3)
                 .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius + 3, style: .continuous)
-                    .strokeBorder(selected ? FrogStyle.accent : hovering ? FrogStyle.hairline : .clear, lineWidth: 2.5))
+                    .strokeBorder(selected ? FrogStyle.accent : hovering ? FrogStyle.hairline : .clear, lineWidth: 2))
                 Text(L10n.text(theme.title)).font(selected ? FrogType.rowMedium : FrogType.body)
-                    .foregroundStyle(selected ? FrogStyle.ink : FrogStyle.muted).lineLimit(1)
+                    .foregroundStyle(FrogStyle.ink).lineLimit(1)
             }.contentShape(Rectangle())
         }.buttonStyle(.plain).onHover { hovering = $0 }
             .accessibilityLabel(L10n.text(theme.title)).accessibilityAddTraits(selected ? .isSelected : [])

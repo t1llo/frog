@@ -3,6 +3,13 @@ import AppKit
 import FrogCore
 
 struct MainView: View {
+    /// The size the window opens at the first time: wide enough for the sidebar and a full page column
+    /// (`FrogStyle.pageWidth`), and tall enough that the sidebar rows of the features Frog starts with and setup
+    /// recommends fit without scrolling. The screenshot harness draws pages at this size too.
+    static let defaultSize = CGSize(width: 1_000, height: 760)
+    /// The size older versions opened at, which a window still saved at exactly that size grows from once.
+    static let previousDefaultSize = CGSize(width: 800, height: 580)
+    static let minimumSize = CGSize(width: 800, height: 520)
     @EnvironmentObject private var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var section: ToolkitRoute { model.toolkit.route }
@@ -11,10 +18,23 @@ struct MainView: View {
     @State private var sidebarQuery = ""
     /// The title the open page's header hands up, shown in the toolbar.
     @State private var pageTitle: String?
+    /// The one-line subtitle the open page's header hands up, shown under the title.
+    @State private var pageSubtitle: String?
+    /// How wide the open page's column grows, so the toolbar's actions end where its cards do.
+    @State private var pageWidth = FrogStyle.pageWidth
     /// Pages visited before and after the open one, for back and forward.
     @State private var history = PageHistory()
     /// A step back inside the open page, which Back takes first.
     @State private var pageBack: FrogPageBack?
+    /// Where the sidebar list's rows sit, so its scroll rests on row edges.
+    @State private var sidebarGrid = SidebarRowGrid()
+    /// Space under the sidebar list's last row that lets it scroll to its end on a row edge.
+    @State private var sidebarEndSpace: CGFloat = 0
+    /// Heights the sidebar's layout depends on: the list's rows, the pinned rows, and the space below the search.
+    @State private var sidebarHeights = SidebarHeights()
+    /// Draws this in place of the open route's page, for pictures of a step or tab inside a page (a History entry,
+    /// a Models tab) in the whole window. The sidebar still shows the route.
+    var pageOverride: AnyView? = nil
 
     fileprivate struct NavigationItem: Identifiable {
         let id: ToolkitRoute
@@ -25,7 +45,7 @@ struct MainView: View {
     }
     private var workspaceNavigation: [NavigationItem] {
         [NavigationItem(id: .models, title: "Models", symbol: "cpu", tint: PluginTint.indigo.color),
-         NavigationItem(id: .features, title: "Plugins", symbol: "puzzlepiece.extension", tint: PluginTint.green.color),
+         NavigationItem(id: .features, title: "Features", symbol: "square.grid.2x2", tint: PluginTint.green.color),
          NavigationItem(id: .settings, title: "Settings", symbol: "gearshape.fill", tint: PluginTint.gray.color, key: ",")]
     }
     /// The page of a built-in plugin; History keeps its own route until navigation moves to plugin IDs.
@@ -37,16 +57,22 @@ struct MainView: View {
         if let page = model.pluginHost.page(for: id) { page }
         else if let descriptor = model.pluginHost.descriptor(id) {
             FrogEmptyState(symbol: descriptor.info.symbol, title: "\(descriptor.info.name) is off",
-                           message: "Turn it on in Plugins.")
+                           message: "Turn it on in Features.", tint: descriptor.info.tint)
         }
     }
     @ViewBuilder private var selectedPage: some View {
+        if let pageOverride { pageOverride } else { routePage }
+    }
+    @ViewBuilder private var routePage: some View {
         switch section {
         case .history: pluginPage("history")
         case .models: ProvidersView()
-        case .features: PluginsCatalogView()
+        case .features: PluginsCatalogView(search: sidebarQuery)
         case .settings: PreferencesView(permissionsRequest: $permissionsRequest)
-        case .statistics: StatisticsView(statistics: model.statistics, onBack: { model.toolkit.select(.settings) })
+        // Statistics is a step inside Settings: the toolbar's breadcrumb leads back, so the page draws no link.
+        case .statistics:
+            StatisticsView(statistics: model.statistics)
+                .frogPageBack("statistics", parent: "Settings") { model.toolkit.select(.settings) }
         case .plugin(let id): PluginPageView(id: id)
         case .feature(let feature): pluginPage(BuiltinPlugins.pluginID(for: feature))
         }
@@ -57,11 +83,13 @@ struct MainView: View {
             sidebar.frame(width: 208)
                 .padding([.top, .leading, .bottom], FrogStyle.sidebarInset)
             VStack(spacing: 0) {
-                // Drawn above the page, whose content scrolls up beneath it.
-                toolbar.zIndex(1)
+                // Room for the toolbar, which is drawn over the page so its content scrolls up beneath it.
+                Color.clear.frame(height: FrogStyle.toolbarHeight)
                 selectedPage.id(section).frame(maxWidth: .infinity, maxHeight: .infinity)
                     .environment(\.frogToolbarTitle, true)
                     .onPreferenceChange(FrogPageTitleKey.self) { pageTitle = $0 }
+                    .onPreferenceChange(FrogPageSubtitleKey.self) { pageSubtitle = $0 }
+                    .onPreferenceChange(FrogPageWidthKey.self) { pageWidth = $0 ?? FrogStyle.pageWidth }
                     .onPreferenceChange(FrogPageBackKey.self) { pageBack = $0 }
                 // Errors are occasional: the banner rises into place (fades with Reduce Motion) and leaves a little faster.
                 // The page beside it does not animate.
@@ -80,7 +108,10 @@ struct MainView: View {
                             .transition(.asymmetric(insertion: reduceMotion ? .opacity : .offset(y: 8).combined(with: .opacity), removal: .opacity))
                     }
                 }.animation(model.errorMessage == nil ? FrogMotion.exit : FrogMotion.reveal, value: model.errorMessage)
-            }.clipped()
+            }
+            // The page's header actions are views, so they come up as a preference read here rather than state.
+            .overlayPreferenceValue(FrogPageActionsKey.self, alignment: .top) { toolbar(actions: $0?.view) }
+            .clipped()
                 .sheet(item: Binding(get: { model.pluginReview }, set: { if $0 == nil { model.pluginRuntime?.dismissReview() } })) { review in
                     PluginReviewSheet(review: review, plugins: model.plugins) { model.report($0) }
                 }
@@ -91,7 +122,7 @@ struct MainView: View {
         .frogSurface(.window)
         .ignoresSafeArea(.container, edges: .top)
         .tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
-        .frame(minWidth: 800, minHeight: 520)
+        .frame(minWidth: Self.minimumSize.width, minHeight: Self.minimumSize.height)
         .onAppear { model.refreshSystemStatus() }
         .onChange(of: section) { previous, _ in
             history.visited(from: previous)
@@ -103,39 +134,102 @@ struct MainView: View {
         }
     }
 
+    /// Scrolls the sidebar by the least amount that shows the open page's row whole, and then on to the next row
+    /// edge, so the top row is whole too; a row already in view stays put. Statistics shows Settings, the row it
+    /// belongs to.
+    ///
+    /// It waits for the next turn of the run loop: asked while the list is still being laid out (the window opening
+    /// on a page), `scrollTo` did nothing, and the open row stayed below the fold with only the top of its
+    /// highlight peeking out above the pinned rows, a selection pill with no row.
     private func reveal(_ route: ToolkitRoute, in proxy: ScrollViewProxy) {
-        switch route {
-        case .feature, .plugin: proxy.scrollTo(route)
-        default: break
+        let target = AnyHashable(route == .statistics ? ToolkitRoute.settings : route)
+        DispatchQueue.main.async {
+            if let top = sidebarGrid.revealTarget(target) { proxy.scrollTo(top, anchor: .top) }
         }
     }
 
+    /// Works out the space after the list's last row that ends its scroll on a row edge, so scrolled to the end
+    /// the top row is whole too. Models, Features and Settings are pinned under the list at every window height,
+    /// so only the list scrolls.
+    private func layOutSidebar() {
+        let heights = sidebarHeights
+        guard heights.viewport > 0 else { return }
+        let scrollable = max(0, heights.content + sidebarBottomFade - heights.viewport)
+        let end = sidebarGrid.endSpace(scrollable: scrollable)
+        if abs(end - sidebarEndSpace) > 0.5 { sidebarEndSpace = end }
+    }
+
+    /// The fade at the list's bottom edge, one group gap: above the pinned rows it covers only empty space, and once
+    /// the list scrolls a row that would reach into it is hidden (`sidebarGridRow`), so at rest it covers nothing
+    /// and rows only pass through it while the list moves.
+    private var sidebarBottomFade: CGFloat { FrogStyle.sidebarGroupGap }
+
     // MARK: Toolbar
 
-    /// Back and forward, then the open page's title, in one bar the window can be dragged by.
-    private var toolbar: some View {
-        HStack(spacing: FrogStyle.space12) {
-            // Rex's outlined capsule, a thin line between its two halves.
-            HStack(spacing: 0) {
-                HistoryButton(title: "Back", symbol: "chevron.left", enabled: pageBack != nil || history.canGoBack) {
-                    if let pageBack { pageBack.action() } else { travel(history.back(from: section)) }
+    /// The open page's header, as a Mac window shows its title: the title, with the one-line subtitle under it,
+    /// on the page's content edge, and the page's actions on the trailing side, ending where the page's column
+    /// does. Title and subtitle together sit level with the window's buttons. A step inside a page shows where it
+    /// came from first, as a breadcrumb ("Settings › Statistics") whose first part goes back. Back and forward sit
+    /// in the sidebar, beside the window's buttons. The bar drags the window.
+    private func toolbar(actions: AnyView?) -> some View {
+        HStack(alignment: .top, spacing: FrogStyle.space16) {
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: FrogStyle.space6) {
+                    if let parent = breadcrumbParent {
+                        FrogBreadcrumbLink(title: parent.title, action: parent.action)
+                        Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(FrogStyle.muted).accessibilityHidden(true)
+                    }
+                    Text(pageTitle ?? fallbackTitle).font(FrogType.pageTitle).tracking(-0.3).foregroundStyle(FrogStyle.ink)
+                        .lineLimit(1).accessibilityAddTraits(.isHeader)
                 }
-                    .keyboardShortcut("[", modifiers: .command)
-                Rectangle().fill(FrogStyle.hairline).frame(width: 1, height: 18).accessibilityHidden(true)
-                HistoryButton(title: "Forward", symbol: "chevron.right", enabled: history.canGoForward) { travel(history.forward(from: section)) }
-                    .keyboardShortcut("]", modifiers: .command)
-            }.padding(.horizontal, 2).frame(height: 36)
-                .background(FrogStyle.card, in: Capsule(style: .continuous))
-                .overlay(Capsule(style: .continuous).strokeBorder(FrogStyle.hairline))
-            Text(pageTitle ?? fallbackTitle).font(FrogType.toolbarTitle).foregroundStyle(FrogStyle.ink)
-                .lineLimit(1).accessibilityAddTraits(.isHeader)
+                if let pageSubtitle {
+                    Text(pageSubtitle).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                        .lineLimit(1).truncationMode(.tail).help(pageSubtitle)
+                }
+            }
             Spacer(minLength: 0)
+            // The actions keep their size; a long subtitle is the one to shorten.
+            // Centred on the title's line, so they are level with the window's buttons as well.
+            if let actions {
+                HStack(spacing: FrogStyle.space8) { actions }.fixedSize()
+                    .frame(height: Self.titleLineHeight)
+            }
         }
-        // Level with the window's buttons, which the 52-point title bar centres 26 points down.
-        .padding(.leading, FrogStyle.space8).padding(.trailing, FrogStyle.space16)
+        .frame(maxWidth: pageWidth, alignment: .leading)
+        // The title's line is centred on the window's buttons, which the 52-point title bar centres 26 points down,
+        // as a Mac window sets its title; the subtitle hangs under it.
+        .padding(.top, Self.windowButtonsMidline - Self.titleLineHeight / 2)
+        .padding(.horizontal, FrogStyle.pagePadding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .frame(height: FrogStyle.toolbarHeight)
         .background { WindowDragRegion().accessibilityHidden(true) }
         .background(alignment: .top) { toolbarScrim }
+    }
+
+    /// How far down the window macOS centres its buttons under a 52-point unified title bar.
+    static let windowButtonsMidline: CGFloat = 26
+    /// The height of one line of `pageTitle`.
+    static let titleLineHeight: CGFloat = 24
+
+    /// Where the open page was entered from, when it is a step inside another: the page's own step back (a
+    /// History entry, or Statistics inside Settings).
+    private var breadcrumbParent: (title: String, action: () -> Void)? {
+        if let pageBack, let parent = pageBack.parent { return (L10n.text(parent), pageBack.action) }
+        return nil
+    }
+
+    /// Back and forward, two plain chevrons at the top of the sidebar beside the window's buttons (⌘[ and ⌘]).
+    /// Back takes a step inside the open page first.
+    private var historyButtons: some View {
+        HStack(spacing: 0) {
+            HistoryButton(title: "Back", symbol: "chevron.left", enabled: pageBack != nil || history.canGoBack) {
+                if let pageBack { pageBack.action() } else { travel(history.back(from: section)) }
+            }
+                .keyboardShortcut("[", modifiers: .command)
+            HistoryButton(title: "Forward", symbol: "chevron.right", enabled: history.canGoForward) { travel(history.forward(from: section)) }
+                .keyboardShortcut("]", modifiers: .command)
+        }
     }
 
     /// Rex's veil behind the toolbar: the window's own colour, solid behind the title and buttons and fading out
@@ -162,7 +256,7 @@ struct MainView: View {
     private var fallbackTitle: String {
         switch section {
         case .models: return L10n.text("Models")
-        case .features: return L10n.text("Plugins")
+        case .features: return L10n.text("Features")
         case .settings: return L10n.text("Settings")
         case .statistics: return L10n.text("Statistics")
         case .plugin(let id): return model.pluginPages.first { $0.id == id }?.name ?? "Frog"
@@ -175,63 +269,147 @@ struct MainView: View {
     // MARK: Sidebar
 
     /// A panel floating inside the window: search, Frog's own row for Settings, then the plugins in their
-    /// groups, Community pages, and Models and Plugins. Groups are set apart by space alone.
+    /// groups and Community pages, which scroll, and Models, Features and Settings pinned at the bottom. Groups are
+    /// set apart by space alone, one `sidebarGroupGap` everywhere: under the search field, under Frog's row,
+    /// between groups and above the pinned rows.
+    ///
+    /// At the window's default size (`MainView.defaultSize`) the features Frog starts with and the ones setup
+    /// recommends fit, so nothing scrolls. When they do not, only the list scrolls: Models, Features and Settings stay
+    /// pinned under it at every window height. The list rests only on row edges, and a row that would be cut above
+    /// the pinned rows stays hidden until all of it fits, so no row is ever cut at either edge.
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // The window's buttons sit in this strip.
-            Color.clear.frame(height: 48).frame(maxWidth: .infinity)
-                .overlay { WindowDragRegion().accessibilityHidden(true) }
-            SearchBox(placeholder: "Search", text: $sidebarQuery)
-                .padding(.horizontal, FrogStyle.sidebarRowInset).padding(.bottom, FrogStyle.space16)
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
-                        settingsRow.padding(.bottom, FrogStyle.space8)
-                        let groups = model.pluginHost.sidebar
-                        let numbered = groups.flatMap(\.plugins).prefix(9).map(\.id)
-                        ForEach(groups, id: \.category) { group in
-                            let plugins = group.plugins.filter { matches($0.name) }
-                            if !plugins.isEmpty {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    ForEach(plugins) { plugin in
-                                        let route = Self.route(for: plugin.id)
-                                        let index = numbered.firstIndex(of: plugin.id)
-                                        navigationButton(NavigationItem(id: route, title: plugin.name, symbol: plugin.symbol, tint: plugin.tint.color,
-                                                                        key: index.map { KeyEquivalent(Character(String($0 + 1))) }))
-                                            .id(route)
-                                    }
-                                }.padding(.bottom, FrogStyle.space12)
-                                    .accessibilityElement(children: .contain).accessibilityLabel(L10n.text(group.category.title))
-                            }
-                        }
-                        let pages = model.pluginPages.filter { matches($0.name) }
-                        if !pages.isEmpty {
-                            VStack(alignment: .leading, spacing: 2) {
-                                ForEach(pages) { item in
-                                    navigationButton(NavigationItem(id: .plugin(item.id), title: item.name, symbol: PluginSymbol.name(item.symbol), tint: PluginTint.purple.color))
-                                        .id(ToolkitRoute.plugin(item.id))
-                                }
-                            }.padding(.bottom, FrogStyle.space12)
-                                .accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Community"))
-                        }
-                        ForEach(workspaceNavigation.filter { matches($0.title) }) { navigationButton($0) }
-                        if !sidebarQuery.isEmpty && !anyMatch {
-                            Text(L10n.text("No matches")).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                                .padding(.horizontal, FrogStyle.space8).padding(.top, FrogStyle.space4)
-                        }
-                    }.padding(.horizontal, FrogStyle.sidebarRowInset).padding(.bottom, FrogStyle.space10).minimalScrollbars()
-                }.bottomScrollFade()
-                // Reveals a feature opened from elsewhere, such as the command bar, by the least scrolling;
-                // a row already in view stays where it is. A window that opens on a page shows its row too.
-                .onAppear { reveal(section, in: proxy) }
-                .onChange(of: section) { _, route in reveal(route, in: proxy) }
+        let gap = FrogStyle.sidebarGroupGap
+        return VStack(alignment: .leading, spacing: 0) {
+            // The window's buttons sit in this strip, centred 26 points down the window like back and forward
+            // on its trailing side.
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                historyButtons
             }
+            .padding(.trailing, FrogStyle.sidebarRowInset)
+            .frame(height: 36).frame(maxWidth: .infinity)
+            .background { WindowDragRegion().accessibilityHidden(true) }
+            // The field follows the strip directly: the window's buttons end 24 points down the panel, so it starts
+            // 12 under them.
+            SearchBox(placeholder: "Search", text: $sidebarQuery)
+                .padding(.horizontal, FrogStyle.sidebarRowInset)
+
+            // The list starts one group gap under the field. Its scroll rests only on a row's top edge, so a row
+            // never shows cut in half under the field; while it moves, rows pass under a crisp edge, as in a Mac
+            // sidebar.
+            let workspace = workspaceNavigation.filter { matches($0.title) || ($0.id == .features && offFeatureMatches) }
+            VStack(spacing: 0) {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        sidebarList
+                        .padding(.horizontal, FrogStyle.sidebarRowInset)
+                        .coordinateSpace(name: SidebarRowGrid.content)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(SidebarRowGrid.viewport)) } action: { frame in
+                            sidebarGrid.offset = -frame.minY
+                            if abs(frame.height - sidebarHeights.content) > 0.5 { sidebarHeights.content = frame.height; layOutSidebar() }
+                        }
+                        .padding(.bottom, sidebarEndSpace)
+                        .environment(\.sidebarVisibleBottom, sidebarHeights.viewport - sidebarBottomFade)
+                        .minimalScrollbars()
+                    }
+                    .coordinateSpace(name: SidebarRowGrid.viewport)
+                    .scrollTargetBehavior(SidebarRowSnap(grid: sidebarGrid))
+                    .bottomScrollFade(height: sidebarBottomFade)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                        sidebarGrid.viewportHeight = height
+                        sidebarHeights.viewport = height
+                        layOutSidebar()
+                    }
+                    // Reveals a feature opened from elsewhere, such as the command bar, by the least scrolling;
+                    // a row already in view stays where it is. A window that opens on a page shows its row too.
+                    .onAppear { reveal(section, in: proxy) }
+                    .onChange(of: section) { _, route in reveal(route, in: proxy) }
+                }
+                .padding(.top, gap)
+                // Models, Features and Settings are pinned under the list at every window height, so the main
+                // destinations never scroll away or hide; only the list above them scrolls.
+                if !workspace.isEmpty {
+                    workspaceGroup(workspace).padding(.horizontal, FrogStyle.sidebarRowInset)
+                }
+            }
+            .onAppear { sidebarGrid.bottomFade = sidebarBottomFade }
         }
         .background(FrogStyle.sidebar, in: RoundedRectangle(cornerRadius: FrogStyle.sidebarRadius, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: FrogStyle.sidebarRadius, style: .continuous))
         // Rex outlines its panes with a faint light edge.
         .overlay { RoundedRectangle(cornerRadius: FrogStyle.sidebarRadius, style: .continuous).strokeBorder(FrogStyle.hairline) }
+    }
+
+    /// Frog's row, then each plugin group under its header, the part of the sidebar that always scrolls. Community
+    /// plugins and the pages of installed plugins share one group, Plugins, so a plugin never sits alone.
+    private var sidebarList: some View {
+        VStack(alignment: .leading, spacing: FrogStyle.sidebarGroupGap) {
+            settingsRow.sidebarGridRow(AnyHashable("frog"), in: sidebarGrid)
+            let groups = model.pluginHost.sidebar
+            let numbered = groups.flatMap(\.plugins).prefix(9).map(\.id)
+            let pages = model.pluginPages.filter { matches($0.name) }
+            ForEach(groups, id: \.category) { group in
+                let plugins = group.plugins.filter { matches($0.name) }
+                let joinsPages = group.category == .community
+                if !plugins.isEmpty || (joinsPages && !pages.isEmpty) {
+                    sidebarGroup(Self.sidebarTitle(group.category), id: group.category.rawValue) {
+                        ForEach(plugins) { plugin in
+                            let route = Self.route(for: plugin.id)
+                            let index = numbered.firstIndex(of: plugin.id)
+                            navigationButton(NavigationItem(id: route, title: plugin.name, symbol: plugin.symbol, tint: plugin.tint.color,
+                                                            key: index.map { KeyEquivalent(Character(String($0 + 1))) }))
+                                .id(route).sidebarGridRow(AnyHashable(route), in: sidebarGrid, group: AnyHashable("group-\(group.category.rawValue)"))
+                        }
+                        if joinsPages { pluginPageRows(pages) }
+                    }
+                }
+            }
+            // Installed plugins' pages without the Community plugins row (its feature off) still get their group.
+            if !pages.isEmpty && !groups.contains(where: { $0.category == .community }) {
+                sidebarGroup(Self.sidebarTitle(.community), id: PluginCategory.community.rawValue) { pluginPageRows(pages) }
+            }
+            if !sidebarQuery.isEmpty && !anyMatch {
+                Text(L10n.text("No matches")).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    .padding(.horizontal, FrogStyle.space6)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The sidebar's name for a group: Community holds every plugin, built or installed, so it reads as Plugins.
+    static func sidebarTitle(_ category: PluginCategory) -> String {
+        category == .community ? "Plugins" : category.title
+    }
+
+    /// One group: its header, as Finder and Mail head their sidebar groups, then its rows. The header is a stop of
+    /// the row grid too, so the list never rests with a header cut under the search field.
+    private func sidebarGroup<Rows: View>(_ title: String, id: String, @ViewBuilder rows: () -> Rows) -> some View {
+        VStack(alignment: .leading, spacing: FrogStyle.space2) {
+            SidebarGroupHeader(title: title)
+                .id("group-\(id)")
+                .sidebarGridRow(AnyHashable("group-\(id)"), in: sidebarGrid, keepsWith: FrogStyle.space2 + FrogStyle.sidebarRowHeight)
+            rows()
+        }
+        .accessibilityElement(children: .contain).accessibilityLabel(L10n.text(title))
+    }
+
+    @ViewBuilder private func pluginPageRows(_ pages: [PluginItem]) -> some View {
+        ForEach(pages) { item in
+            let route = ToolkitRoute.plugin(item.id)
+            navigationButton(NavigationItem(id: route, title: item.name, symbol: PluginSymbol.name(item.symbol), tint: PluginCommandRows.tint.color))
+                .id(route).sidebarGridRow(AnyHashable(route), in: sidebarGrid, group: AnyHashable("group-\(PluginCategory.community.rawValue)"))
+        }
+    }
+
+    /// Models, Features and Settings, pinned under the list at every window height.
+    private func workspaceGroup(_ items: [NavigationItem]) -> some View {
+        VStack(alignment: .leading, spacing: FrogStyle.space2) {
+            // Headed like every other group, so the pinned rows never read as strays of the group above them.
+            SidebarGroupHeader(title: "Frog")
+            ForEach(items) { item in navigationButton(item) }
+        }
+        .padding(.bottom, FrogStyle.sidebarRowInset)
+        .accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Frog"))
     }
 
     private func matches(_ title: String) -> Bool {
@@ -242,6 +420,15 @@ struct MainView: View {
     private var anyMatch: Bool {
         model.pluginHost.sidebar.flatMap(\.plugins).contains { matches($0.name) }
             || model.pluginPages.contains { matches($0.name) } || workspaceNavigation.contains { matches($0.title) }
+            || offFeatureMatches
+    }
+
+    /// A feature that is off has no row of its own, so a search that names one shows Features, which lists it.
+    private var offFeatureMatches: Bool {
+        let query = sidebarQuery.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return false }
+        let host = model.pluginHost
+        return host.descriptors.map(\.info).contains { !host.enabled($0.id) && PluginsCatalogView.matches($0, query) }
     }
 
     /// Frog's own row at the top, like Rex's server row: its status. It opens Settings, at Permissions while one is
@@ -260,6 +447,13 @@ struct MainView: View {
         SidebarRow(item: item, selected: section == item.id || (item.id == .settings && section == .statistics)) { model.toolkit.select(item.id) }
             .optionalNavigationShortcut(item.key)
     }
+}
+
+/// The heights the sidebar's layout is worked out from (`MainView.layOutSidebar`).
+struct SidebarHeights: Equatable {
+    /// The scroll view and its content.
+    var viewport: CGFloat = 0
+    var content: CGFloat = 0
 }
 
 /// Pages visited before and after the open one. Choosing a page clears forward, as in a browser.
@@ -299,7 +493,7 @@ struct PageHistory {
     mutating func cancelTravel() { travelling = false }
 }
 
-/// One half of the back and forward capsule.
+/// Back or forward: a plain chevron that fills a round hover, dimmed while there is nowhere to go.
 private struct HistoryButton: View {
     let title: String
     let symbol: String
@@ -309,12 +503,28 @@ private struct HistoryButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(enabled ? FrogStyle.ink : FrogStyle.muted.opacity(0.5))
-                .frame(width: 35, height: 32)
-                .background(hovering && enabled ? FrogStyle.hover : .clear, in: Capsule())
-                .contentShape(Capsule())
+                .foregroundStyle(enabled ? (hovering ? FrogStyle.ink : FrogStyle.muted) : FrogStyle.placeholder)
+                .frame(width: FrogStyle.controlHeight, height: FrogStyle.controlHeight)
+                .background(hovering && enabled ? FrogStyle.hover : .clear, in: Circle())
+                .contentShape(Circle())
         }.buttonStyle(.plain).disabled(!enabled).onHover { hovering = $0 }
             .accessibilityLabel(L10n.text(title)).help(L10n.text(title))
+    }
+}
+
+/// The first part of the toolbar's breadcrumb: the page a step came from, in the title's size but muted, which
+/// darkens on hover and goes back when clicked.
+private struct FrogBreadcrumbLink: View {
+    let title: String
+    let action: () -> Void
+    @State private var hovering = false
+    var body: some View {
+        Button(action: action) {
+            Text(title).font(FrogType.pageTitle).tracking(-0.3).lineLimit(1)
+                .foregroundStyle(hovering ? FrogStyle.ink : FrogStyle.muted)
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain).onHover { hovering = $0 }
+            .accessibilityLabel(L10n.text("Back to \(title)")).help(L10n.text("Back to \(title)"))
     }
 }
 
@@ -340,13 +550,26 @@ private struct SettingsHeroRow: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, FrogStyle.space6).padding(.vertical, FrogStyle.space6)
+            .padding(.horizontal, FrogStyle.space6).padding(.vertical, FrogStyle.space4)
             .background(selected ? FrogStyle.sidebarSelection : hovering ? FrogStyle.hover : .clear,
                         in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: FrogStyle.cardRadius, style: .continuous))
         }.buttonStyle(.plain).onHover { hovering = $0 }
             .accessibilityLabel("Frog, \(L10n.text(status))").accessibilityAddTraits(selected ? .isSelected : [])
             .help(L10n.text("Settings"))
+    }
+}
+
+/// A group's name over its rows in the sidebar: small, muted and semibold, on the rows' icon edge, as Finder heads
+/// Favorites and Locations. It takes no clicks.
+private struct SidebarGroupHeader: View {
+    let title: String
+    var body: some View {
+        Text(L10n.text(title)).font(FrogType.label.weight(.semibold)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+            .padding(.horizontal, FrogStyle.space6)
+            .frame(maxWidth: .infinity, minHeight: FrogStyle.sidebarHeaderHeight, alignment: .bottomLeading)
+            .padding(.bottom, FrogStyle.space2)
+            .accessibilityAddTraits(.isHeader)
     }
 }
 

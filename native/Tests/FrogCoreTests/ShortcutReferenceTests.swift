@@ -26,8 +26,18 @@ final class ShortcutReferenceTests: XCTestCase {
         XCTAssertEqual(group[fix.id.uuidString], .writing)
         XCTAssertEqual(group[ask.id.uuidString], .explain)
         XCTAssertEqual(group[dictate.id.uuidString], .dictation)
-        XCTAssertEqual(group[left.id.uuidString], .shortcuts)
-        XCTAssertEqual(group[extra.id.uuidString], .shortcuts)
+        XCTAssertEqual(group[left.id.uuidString], .windows)
+        XCTAssertEqual(group[extra.id.uuidString], .windows)
+    }
+
+    func testARowThatOnlyNamesItsPageJoinsFrogsShortcuts() {
+        let explain = ShortcutReferenceItem(id: "explain", title: "Explain", hotkey: key, group: .explain)
+        let dictate = ShortcutReferenceItem(id: "dictate", title: "Dictate", hotkey: key, group: .dictation)
+        let fix = ShortcutReferenceItem(id: "fix", title: "Proofread", hotkey: key, group: .writing)
+        let bar = ShortcutReferenceItem(id: "frog.command-bar", title: "Command bar", hotkey: key, group: .frog)
+        let grouped = ShortcutReference.grouped([explain, dictate, fix, bar])
+        XCTAssertEqual(grouped.map(\.group), [.writing, .frog])
+        XCTAssertEqual(grouped.last?.items.map(\.id), ["explain", "dictate", "frog.command-bar"])
     }
 
     func testOnlyEnabledRulesWithAShortcutWhosePageIsOnAreListed() {

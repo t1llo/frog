@@ -71,10 +71,10 @@ actor LocalToolClient {
             if !supported { detail = Self.unsupported(kind, version: capability.unverifiedVersion) }
             else {
                 switch authentication {
-                case .signedIn: detail = "Existing CLI login found. Model access is checked when you run a rule."
-                case .signedOut: detail = kind.loginInstructions
-                case .unknown: detail = "Installed; login status could not be verified. Check your login in \(kind.title)."
-                case .notChecked: detail = "Installed; login not checked."
+                case .signedIn: detail = "Signed in. Model access is checked when you run a rule."
+                case .signedOut: detail = kind.signInInstructions
+                case .unknown: detail = "Installed. Frog could not check the sign-in; check it in \(kind.title)."
+                case .notChecked: detail = "Installed. Sign-in not checked yet."
                 }
             }
             return .init(kind: kind, installed: true, authentication: authentication,
@@ -364,7 +364,7 @@ enum LocalToolOutput {
             guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   object["type"] as? String == "result", object["subtype"] as? String == "success",
                   object["is_error"] as? Bool != true, let result = object["result"] as? String else {
-                throw FrogError.message("Claude Code did not return a complete text result. Check your CLI login and model access.")
+                throw FrogError.message("Claude Code did not return a complete text result. Check its sign-in and model access.")
             }
             if let denials = object["permission_denials"] as? [Any], !denials.isEmpty {
                 throw FrogError.message("The coding tool attempted a disabled tool action. No text was inserted.")
@@ -433,11 +433,11 @@ enum LocalToolOutput {
         // bounded streams only inside the invocation; expose an allowlisted diagnosis.
         let output = String(decoding: result.stderr + result.stdout, as: UTF8.self).lowercased()
         if ["unauthorized", "not logged in", "authentication", "login required", "401"].contains(where: output.contains) {
-            return .message("\(kind.title) needs a valid CLI login. \(kind.loginInstructions)")
+            return .message("\(kind.title) needs a valid sign-in. \(kind.signInInstructions)")
         }
         if ["rate limit", "quota", "429"].contains(where: output.contains) { return .message("\(kind.title) reached its usage limit. Check your plan and retry later.") }
         if ["unknown option", "unexpected argument", "unrecognized"].contains(where: output.contains) { return .message("Update \(kind.title); its CLI does not support Frog's text-only options.") }
-        return .message("\(kind.title) exited with status \(result.status). Check its CLI login and selected model. No text was inserted.")
+        return .message("\(kind.title) exited with status \(result.status). Check its sign-in and selected model. No text was inserted.")
     }
 }
 

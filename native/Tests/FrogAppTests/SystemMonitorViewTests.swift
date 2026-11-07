@@ -25,14 +25,14 @@ import XCTest
         XCTAssertEqual(window.frame.width, 292, accuracy: 0.5)
         XCTAssertEqual(window.frame.maxY, top, accuracy: 0.5)
         XCTAssertEqual(systemHeight, host.fittingSize.height, accuracy: 1)
-        XCTAssertLessThan(systemHeight, 520, "Overview must remain compact")
+        XCTAssertLessThan(systemHeight, 580, "Overview must remain compact")
         try capture(host, suffix: "battery")
 
         state.snapshot.power.batteryFlow = .drawing(watts: 18)
         state.snapshot.power.charging = false
         state.snapshot.power.source = "Battery"
         try await settle(host)
-        XCTAssertEqual(window.frame.height, systemHeight, accuracy: 0.5)
+        XCTAssertEqual(window.frame.height, systemHeight, accuracy: 1)
         XCTAssertEqual(window.frame.height, host.fittingSize.height, accuracy: 1)
         try capture(host, suffix: "battery-draw")
 

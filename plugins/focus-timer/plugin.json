@@ -8,7 +8,7 @@
   "symbol": "timer",
   "frog": "1.0.48",
   "permissions": ["notifications", "menubar", "hotkeys", "background"],
-  "menubar": { "symbol": "timer", "popup": "popup.html", "width": 260, "height": 96 },
+  "menubar": { "symbol": "timer", "popup": "popup.html", "width": 232, "height": 106 },
   "settings": [
     { "key": "length", "title": "Focus minutes", "type": "integer", "default": 25, "min": 1, "max": 240,
       "help": "How long a focus session lasts." },

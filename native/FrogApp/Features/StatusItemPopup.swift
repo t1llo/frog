@@ -5,6 +5,8 @@ import SwiftUI
 /// popover arrow. A click anywhere else, Frog becoming inactive or another Frog popup opening
 /// closes it.
 @MainActor final class StatusItemPopup {
+    /// The width of Frog's menu-bar popup and of every popup under a status item.
+    nonisolated static let width: CGFloat = 292
     /// Told to Frog's other popups as it opens, so they close.
     let name: String
     private(set) var panel: NSPanel?
@@ -100,3 +102,4 @@ private final class StatusPopupPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override func cancelOperation(_ sender: Any?) { onCancel?() }
 }
+

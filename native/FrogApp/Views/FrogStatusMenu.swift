@@ -20,24 +20,34 @@ struct FrogStatusMenu: View {
     @State private var selectedTab = Self.frogTab
 
     static let popupName = "Frog"
-    private static let frogTab = "frog"
+    static let frogTab = "frog"
+
+    /// `tab` opens the popup on a plugin's tab rather than Frog's own, for pictures of each tab.
+    init(model: AppModel, tab: String = Self.frogTab) {
+        self.model = model
+        _selectedTab = State(initialValue: tab)
+    }
 
     var body: some View {
         let host = model.pluginHost
         let tabs = host.menuTabs
         let shown = tabs.contains { $0.id == selectedTab } ? selectedTab : Self.frogTab
         VStack(alignment: .leading, spacing: 0) {
-            header(tabs: tabs, shown: shown)
-            VStack(alignment: .leading, spacing: FrogStyle.space8) {
-                if let tab = tabs.first(where: { $0.id == shown }) {
-                    // A tab's own views observe their own models, so an unrelated AppModel change need not rebuild them.
-                    MenuTabBody(id: tab.id, build: tab.content).equatable()
-                } else {
-                    frogContent(host.menuRows)
+            VStack(alignment: .leading, spacing: 0) {
+                header(tabs: tabs, shown: shown)
+                VStack(alignment: .leading, spacing: FrogStyle.panelCardGap) {
+                    if let tab = tabs.first(where: { $0.id == shown }) {
+                        // A tab's own views observe their own models, so an unrelated AppModel change need not rebuild them.
+                        MenuTabBody(id: tab.id, build: tab.content).equatable()
+                    } else {
+                        frogContent(host.menuRows)
+                    }
                 }
-            }.padding(.bottom, FrogStyle.listInset)
-            footer
-        }.padding(FrogStyle.panelCardInset).frame(width: 292).fixedSize(horizontal: false, vertical: true)
+            }
+            // Cards sit their inset in from the panel's sides and top, and 8 above the footer band, as in every popup.
+            .padding([.horizontal, .top], FrogStyle.panelCardInset).padding(.bottom, FrogStyle.space8)
+            footer(status: tabs.first(where: { $0.id == shown })?.status, frog: shown == Self.frogTab)
+        }.frame(width: StatusItemPopup.width).fixedSize(horizontal: false, vertical: true)
             .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .frogPanel()
             .background(MenuWindowSizing())
@@ -61,12 +71,13 @@ struct FrogStatusMenu: View {
                                 title: { id in tabs.first { $0.id == id }?.tabTitle ?? "Frog" }) { selectedTab = $0 }
                     .accessibilityElement(children: .contain).accessibilityLabel("Menu view")
             }
-        }.padding(.horizontal, FrogStyle.space6).frame(height: 40)
+        }
+        // On the popup header's edge: the logo sits where FrogPopupHeader's tile and the rows' tiles do.
+        .padding(.leading, FrogStyle.cardPadding).padding(.trailing, FrogStyle.space6).frame(height: 40)
     }
 
-    /// One muted line of state, then the plugins' rows in a card, and an error when there is one.
+    /// The plugins' rows in a card, and an error when there is one.
     @ViewBuilder private func frogContent(_ rows: [MenuContribution]) -> some View {
-        statusLine
         VStack(alignment: .leading, spacing: FrogStyle.space2) {
             ForEach(rows) { $0.content() }
             if model.isProcessing {
@@ -84,39 +95,29 @@ struct FrogStatusMenu: View {
         UpdateReadyRow { dismiss(); UpdateService.shared.installReadyUpdate() }
     }
 
-    private var statusLine: some View {
-        let (text, color): (String, Color) = model.isProcessing ? ("Processing", FrogStyle.accent)
+    /// Processing, Needs attention or Setup not finished; nothing while Frog is simply ready.
+    private var status: (text: String, color: Color)? {
+        model.isProcessing ? ("Processing", FrogStyle.accent)
             : model.errorMessage != nil ? ("Needs attention", FrogStyle.warning)
-            : model.setupPresented ? ("Setup not finished", FrogStyle.warning) : ("Ready", FrogStyle.good)
-        return HStack(spacing: FrogStyle.space6) {
-            Circle().fill(color).frame(width: 6, height: 6)
-            Text(L10n.text(text)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-            Spacer(minLength: 0)
-        }.padding(.horizontal, FrogStyle.space6).accessibilityElement(children: .combine)
+            : model.setupPresented ? ("Setup not finished", FrogStyle.warning) : nil
     }
 
-    /// Secondary actions under a hairline, with their shortcuts as key caps.
-    private var footer: some View {
-        HStack(spacing: FrogStyle.space4) {
-            footerButton(model.setupPresented ? "Set up Frog…" : "Open Frog", symbol: "arrow.up.forward.app", key: "\u{2318}", key2: ",",
-                         tint: FrogStyle.accent) { dismiss(); model.showSettings() }.keyboardShortcut(",")
-            Spacer(minLength: 0)
-            footerButton("Quit Frog", symbol: "power", key: "\u{2318}", key2: "Q", tint: FrogStyle.muted) {
-                NSApplication.shared.terminate(nil)
-            }.keyboardShortcut("q")
-        }.padding(.horizontal, FrogStyle.space4).padding(.top, FrogStyle.space4)
-            .overlay(alignment: .top) { Rectangle().fill(FrogStyle.hairline).frame(height: 1) }
-    }
-
-    private func footerButton(_ title: String, symbol: String, key: String, key2: String, tint: Color,
-                              perform: @escaping () -> Void) -> some View {
-        Button(action: perform) {
-            HStack(spacing: FrogStyle.space6) {
-                Image(systemName: symbol).font(FrogType.label).foregroundStyle(tint)
-                Text(L10n.text(title)).font(FrogType.small).lineLimit(1)
-                HStack(spacing: 3) { KeyCap(key); KeyCap(key2) }
-            }.padding(.horizontal, FrogStyle.space8).frame(height: FrogStyle.controlHeight).contentShape(Rectangle())
-        }.buttonStyle(MenuRowStyle())
+    /// The footer every popup has: the open tab's status on the leading side (Frog's own state on Frog's tab), and
+    /// Settings and Quit with their keys on the trailing side.
+    private func footer(status tabStatus: (@MainActor () -> AnyView)?, frog: Bool) -> some View {
+        FrogFooter {
+            if let tabStatus { tabStatus() }
+            else if frog {
+                let state = status ?? ("Ready", FrogStyle.good)
+                Circle().fill(state.color).frame(width: 6, height: 6)
+                Text(L10n.text(state.text))
+            }
+        } actions: {
+            FrogFooterHint(model.setupPresented ? "Set up Frog" : "Settings", keys: "\u{2318},") {
+                dismiss(); model.showSettings()
+            }.keyboardShortcut(",")
+            FrogFooterHint("Quit", keys: "\u{2318}Q") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
+        }
     }
 }
 
@@ -153,9 +154,62 @@ struct PhoneMenuRow: View {
     let open: () -> Void
     var body: some View {
         let connected = phone.overall != .offline
-        MenuActionRow(title: "Phone", symbol: connected ? "iphone" : "iphone.slash",
+        // The feature's own green tile in every state, as in the sidebar and the command bar; the dot and the
+        // status word say whether a phone is connected.
+        MenuActionRow(title: "Phone", symbol: PhonePlugin.info.symbol,
                       key: L10n.text(phone.statusText), dot: connected ? FrogStyle.good : nil,
-                      tint: connected ? FrogStyle.good : FrogStyle.muted, closes: true, action: open)
+                      tint: PhonePlugin.info.tint.color, closes: true, opensPage: true, action: open)
+    }
+}
+
+/// Stay awake in Frog's popup, set like the command rows beside it: the feature's tile and name, then how long while
+/// it is off or until when while it is on, and its switch.
+struct StayAwakeMenuRow: View {
+    @ObservedObject var power: StayAwakeController
+    let choose: (StayAwakeController.DurationChoice) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: FrogStyle.space2) {
+            HStack(spacing: FrogStyle.space10) {
+                PluginIconTile(symbol: power.isEnabled ? "cup.and.saucer.fill" : "cup.and.saucer", tint: StayAwakePlugin.info.tint.color, size: .sidebar)
+                // The name, and under it how long (while off, a choice) or until when (while on), so the switch is
+                // the row's one trailing control and the duration never reads as a stepper beside it.
+                VStack(alignment: .leading, spacing: 0) {
+                    // Truncates rather than pushing the controls out where a translation runs long.
+                    Text(L10n.text("Stay awake")).font(FrogType.row).lineLimit(1)
+                    if power.isEnabled {
+                        Text(power.deadline.map { "Until \($0.formatted(date: .omitted, time: .shortened))" } ?? "Until turned off")
+                            .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                            .frame(height: FrogStyle.compactHeight - FrogStyle.space4, alignment: .leading)
+                    } else {
+                        FrogDropdown(selected: power.duration, options: StayAwakeController.DurationChoice.allCases, width: 96, compact: true,
+                                     title: { L10n.text($0 == .untilTime ? "Until \(StayAwakePage.title(of: power.untilTime))" : $0.title) },
+                                     choose: choose)
+                            .fitToContent()
+                            .accessibilityLabel("Stay-awake duration")
+                            // The value starts on the title's edge; only the hover fill reaches past it.
+                            .padding(.leading, -7)
+                            .frame(height: FrogStyle.compactHeight - FrogStyle.space4)
+                    }
+                }
+                Spacer(minLength: FrogStyle.space6)
+                Toggle("Stay awake", isOn: Binding(get: { power.isEnabled }, set: power.setEnabled))
+                    .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+                    .accessibilityHint("Keep this Mac awake")
+                    // While a change is under way the spinner takes the switch's place, so the row needs no extra width.
+                    .opacity(power.isBusy ? 0 : 1)
+                    .overlay { if power.isBusy { FrogSpinner(size: .mini) } }
+            }
+            // The switch ends where the command rows' keys do, `rowPadding` in; two lines, a little taller than them.
+            .padding(.horizontal, FrogStyle.rowPadding).padding(.vertical, FrogStyle.space6)
+            if let message = power.error ?? power.notice {
+                Text(String(message.prefix(300))).font(FrogType.caption)
+                    .foregroundStyle(power.error == nil ? FrogStyle.muted : FrogStyle.warning).lineLimit(2)
+                    .padding(.horizontal, FrogStyle.rowPadding).padding(.bottom, FrogStyle.space6)
+                    .help("Open Stay awake for details.")
+            }
+        }
+        .task { await power.refresh() }
     }
 }
 
@@ -164,12 +218,17 @@ struct MenuActionRow: View {
     let title: String
     let symbol: String
     var key: String? = nil
+    /// The keys that run it, drawn as caps, one per key.
+    var shortcut: String? = nil
     /// A status dot before `key`, such as green for a connected phone.
     var dot: Color? = nil
-    /// The colour of the icon tile; neutral unless the row has a meaning of its own.
-    var tint: Color = FrogStyle.muted
+    /// The colour of the icon tile: the feature's own colour, or a fixed grey that reads the same in light and dark.
+    var tint: Color = PluginTint.gray.color
     /// Closes the popup first, for rows that open something else.
     var closes = false
+    /// Opens a page of Frog's window: a chevron ends the row, so a row without keys still reads as one that goes
+    /// somewhere.
+    var opensPage = false
     let action: () -> Void
     @Environment(\.dismiss) private var dismiss
     var body: some View {
@@ -180,7 +239,12 @@ struct MenuActionRow: View {
                 Spacer()
                 if let dot { Circle().fill(dot).frame(width: 6, height: 6) }
                 if let key { Text(key).font(FrogType.small).foregroundStyle(FrogStyle.muted) }
-            }.padding(.horizontal, FrogStyle.rowPadding).frame(height: FrogStyle.rowHeight - 8).contentShape(Rectangle())
+                if let shortcut, !shortcut.isEmpty { KeyCaps(shortcut) }
+                if opensPage {
+                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.muted)
+                        .accessibilityHidden(true)
+                }
+            }.padding(.horizontal, FrogStyle.rowPadding).frame(height: FrogStyle.menuRowHeight).contentShape(Rectangle())
         }.buttonStyle(MenuRowStyle())
     }
 }

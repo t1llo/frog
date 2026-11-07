@@ -19,11 +19,10 @@ struct WindowsView: View {
                     .help("Gives every layout without a shortcut one with ⌃⌥, where it is free.")
             }
             if !model.accessibilityGranted {
-                FrogSection {
-                    FrogRow("Accessibility", caption: "Needed to move and resize windows") {
-                        Button("Allow") { SelectionService.requestAccess(); SelectionService.openAccessibilitySettings() }
-                            .buttonStyle(.frog(.primary))
-                    }
+                // A problem, not a setting: one notice with its fix, above the headed cards.
+                ProblemNotice(title: "Windows needs Accessibility", message: "Allow it to move and resize windows.") {
+                    Button("Allow") { SelectionService.requestAccess(); SelectionService.openAccessibilitySettings() }
+                        .buttonStyle(.frog(.primary))
                 }
             }
             layouts
@@ -42,11 +41,23 @@ struct WindowsView: View {
     private var layouts: some View {
         let rules = Dictionary(uniqueKeysWithValues: WindowAction.shortcutRows(configured: model.configuration.rules)
             .compactMap { rule in rule.action?.windowAction.map { ($0, rule) } })
+        let assigned = rules.values.filter { $0.hotkey != nil }.count
+        // Grouped as the cheat sheet groups them; a layout without a shortcut shows the Record shortcut button.
         return FrogSection("Layouts") {
+            // How many of the layouts have keys, at the rows' text size so it reads at a glance.
+            Text(verbatim: "\(assigned) \(L10n.text("of")) \(rules.count) \(L10n.text("set"))")
+                .font(FrogType.body.monospacedDigit()).foregroundStyle(FrogStyle.muted)
+        } content: {
             if let suggestion { FrogRowNote(text: suggestion) }
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 24), GridItem(.flexible(), spacing: 24)], spacing: 0) {
-                ForEach(Self.layoutOrder) { action in
-                    if let rule = rules[action] { LayoutShortcutCell(rule: rule, issue: model.hotkeyErrors[rule.id], model: model) }
+            ForEach(Self.layoutGroups, id: \.title) { group in
+                VStack(alignment: .leading, spacing: 0) {
+                    SectionCaption(text: group.title).padding(.top, FrogStyle.space10)
+                    // One layout per row, in the cheat sheet's order, with every shortcut in the same trailing column.
+                    ForEach(group.actions, id: \.self) { action in
+                        if let rule = rules[action] {
+                            LayoutShortcutCell(rule: rule, issue: model.hotkeyErrors[rule.id], model: model)
+                        }
+                    }
                 }
             }
         }
@@ -55,9 +66,9 @@ struct WindowsView: View {
     private var snap: some View {
         FrogSection("Snap") {
             FrogRow("Drag to screen edges") { Toggle("Drag to screen edges", isOn: binding(\.dragToSnap)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small) }
-            FrogRow("Restore size when dragged away") {
+            FrogRow("Restore size when dragged away", caption: settings.dragToSnap ? nil : "Works with Drag to screen edges.") {
                 Toggle("Restore size when dragged away", isOn: binding(\.restoreOnDrag)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
-            }.disabled(!settings.dragToSnap)
+            }.disabled(!settings.dragToSnap).opacity(settings.dragToSnap ? 1 : 0.6)
             FrogRow("Zones while holding Shift") {
                 FrogDropdown(selected: settings.zoneOverlay ? Optional(settings.zones) : nil,
                              options: [nil] + WindowsSettings.Zones.allCases.map(Optional.some), width: 180,
@@ -70,7 +81,7 @@ struct WindowsView: View {
             }
             if let note = nativeTilingNote {
                 FrogRow(note) {
-                    Button("Open Desktop & Dock") { MacWindowManagerReader.openDesktopAndDock() }.buttonStyle(.frog(.ghost))
+                    Button("Open Desktop & Dock") { MacWindowManagerReader.openDesktopAndDock() }.buttonStyle(.frog())
                 }
             }
         }
@@ -84,12 +95,12 @@ struct WindowsView: View {
                     Toggle("Layout picker", isOn: binding(\.layoutPicker)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
             }
-            FrogRow("Cheat sheet", caption: "Hold to see every window shortcut") { commandRecorder(.cheatSheet) }
+            FrogRow("Cheat sheet", caption: "Hold to see every window shortcut.") { commandRecorder(.cheatSheet) }
         }
     }
 
     private var sizes: some View {
-        FrogSection("Sizes") {
+        FrogSection("Tiling") {
             FrogRow("Gap between windows") {
                 FrogDropdown(selected: settings.gap, options: Self.gapChoices(including: settings.gap), width: 180,
                              title: { "\($0) pt" }) { gap in plugin.update { $0.gap = gap } }
@@ -114,6 +125,26 @@ struct WindowsView: View {
         let b = WindowCheatSheet.order.firstIndex(of: WindowCheatSheet.group(for: second.element)) ?? .max
         return (a, first.offset) < (b, second.offset)
     }.map(\.element)
+
+    /// The cheat sheet's groups, one layout per row. Restore joins Displays rather than standing alone; a layout added
+    /// later lands at its group's end.
+    static let layoutGroups: [(title: String, actions: [WindowAction])] = {
+        var groups: [(title: String, actions: [WindowAction])] = [
+            ("Halves", [.leftHalf, .rightHalf, .topHalf, .bottomHalf]),
+            ("Quarters", [.topLeft, .topRight, .bottomLeft, .bottomRight]),
+            ("Thirds", [.leftThird, .centerThird, .rightThird, .leftTwoThirds, .rightTwoThirds]),
+            ("Sizes", [.maximize, .toggleFullScreen, .minimize, .center, .centeredSmall, .centeredMedium, .centeredLarge]),
+            ("Displays", [.nextDisplay, .previousDisplay, .restore])
+        ]
+        let placed = Set(groups.flatMap(\.actions))
+        for action in layoutOrder where !placed.contains(action) {
+            var title = WindowCheatSheet.group(for: action)
+            if title == "Undo" { title = "Displays" }
+            let index = groups.firstIndex { $0.title == title } ?? { groups.append((title, [])); return groups.count - 1 }()
+            groups[index].actions.append(action)
+        }
+        return groups
+    }()
 
     static func zonesTitle(_ zones: WindowsSettings.Zones) -> String {
         ZoneGrid(rawValue: zones.rawValue)?.title ?? zones.rawValue
@@ -164,7 +195,7 @@ struct WindowsView: View {
     }
 }
 
-/// One layout in the grid: its picture, its name and its shortcut. Recording a shortcut turns the layout on,
+/// One layout row: its picture, its name and its shortcut. Recording a shortcut turns the layout on,
 /// clearing it turns it off.
 private struct LayoutShortcutCell: View {
     let rule: Rule
@@ -173,18 +204,31 @@ private struct LayoutShortcutCell: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            if let action = rule.action?.windowAction { WindowLayoutGlyph(action: action).frame(width: 22, height: 22) }
-            Text(L10n.text(rule.name)).font(FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
+            // Big enough that a quarter's corner and a third's strip read at a glance.
+            if let action = rule.action?.windowAction {
+                WindowLayoutGlyph(action: action, size: CGSize(width: 28, height: 18)).frame(width: 28, height: 22)
+            }
+            // The layout's one name, as the picker and the cheat sheet show it, even where an older version saved
+            // the rule under another.
+            Text(L10n.text(rule.action?.windowAction?.title ?? rule.name)).font(FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
                 .opacity(rule.hotkey != nil && !rule.enabled ? 0.5 : 1)
             if let issue {
                 Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10)).foregroundStyle(FrogStyle.warning).help(issue)
             }
-            Spacer(minLength: 8)
+            // Room for the recorder's hover clear button, so it never covers the name in a narrow column.
+            Spacer(minLength: HotkeyRecorder.clearButtonRoom)
+            // The shared recorder, as in every other shortcut row: the caps when one is set; when not, a quiet dash
+            // that turns into the Record shortcut button while the row is pointed at or the recorder has focus, so
+            // a page of mostly empty slots is no wall of buttons.
             HotkeyRecorder(hotkey: Binding(get: { rule.hotkey }, set: { value in
                 var updated = rule; updated.hotkey = value; updated.enabled = value != nil
                 do { try model.saveRule(updated) } catch { model.report(error) }
-            }), emptyTitle: "Add")
+            }), unset: .placeholder)
+            .frogRowAccessory()
         }
-        .frame(minHeight: FrogStyle.rowHeight)
+        // Every row the same height, whether or not its caps show.
+        .frame(maxWidth: .infinity, minHeight: FrogStyle.rowHeight, maxHeight: FrogStyle.rowHeight)
+        .contentShape(Rectangle())
+        .frogRevealsRecorder()
     }
 }

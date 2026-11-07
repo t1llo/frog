@@ -28,9 +28,8 @@ struct DesignGallery: View {
 
     var body: some View {
         FrogPage(width: FrogStyle.wideWidth) {
-            FrogPageHeader(title: "Design gallery", subtitle: "Every Frog component, with sample values.") {
-                Button("Secondary") {}
-                Button("Primary") {}.buttonStyle(.frog(.primary))
+            FrogPageHeader(title: "Design gallery", subtitle: "Every Frog component, with sample values") {
+                FrogAddButton("Add rule") {}
             }
             HStack(alignment: .top, spacing: FrogStyle.sectionSpacing) {
                 VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
@@ -42,11 +41,20 @@ struct DesignGallery: View {
                             Button("New note") {}.buttonStyle(.frog(.primary))
                         }
                     }
+                    FrogSection("Sheet buttons", footer: "Delete alone on the left; Cancel next to the primary on the right") {
+                        FrogSheetButtons {
+                            Button("Delete", systemImage: "trash", role: .destructive) {}.buttonStyle(.frog(.destructive))
+                        } trailing: {
+                            FrogCancelButton {}
+                            FrogPrimaryButton("Save") {}
+                        }.padding(.horizontal, -FrogStyle.sheetPadding).padding(.bottom, -FrogStyle.space8)
+                    }
                 }.frame(maxWidth: .infinity)
                 VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
                     lists
                     tiles
                     fields
+                    waiting
                 }.frame(maxWidth: .infinity)
             }
         }
@@ -57,11 +65,11 @@ struct DesignGallery: View {
     }
 
     private var choices: some View {
-        FrogSection("Choices", footer: "One dropdown for every choice; segments for two to four.") {
+        FrogSection("Choices", footer: "One dropdown for every choice; segments for two to four") {
             FrogRow("Theme") {
                 FrogDropdown(selection: $theme, options: Self.themes, title: { $0 })
             }
-            FrogRow("Speech model", caption: "Searchable, in sections.") {
+            FrogRow("Speech model", caption: "Searchable, in sections") {
                 FrogDropdown(selection: $model, sections: Self.modelSections, searchPrompt: "Find a model",
                              placeholder: "Choose a model", item: Self.modelItem)
             }
@@ -77,16 +85,26 @@ struct DesignGallery: View {
                 CompactSegments(values: ["System", "Light", "Dark"], selected: mode, title: { $0 }) { mode = $0 }
             }
             FrogRow("Open at login") { Toggle("Open at login", isOn: $launch).labelsHidden().toggleStyle(.frogSwitch) }
+            FrogRow("Managed by your organisation", caption: "On, and cannot be changed here.") {
+                Toggle("Managed", isOn: .constant(true)).labelsHidden().toggleStyle(.frogSwitch).disabled(true)
+            }
         }
     }
 
     private var rows: some View {
-        FrogSection("Rows", accessory: { Button("Add") {}.buttonStyle(.frog(compact: true)) }) {
+        FrogSection("Rows", accessory: { FrogAddButton("Add row") {} }) {
             FrogRow("Clipboard history", caption: "⌘⇧V opens it.", icon: { PluginIconTile(symbol: "doc.on.clipboard", tint: Self.tints[0].1) }) {
                 Toggle("Clipboard history", isOn: .constant(true)).labelsHidden().toggleStyle(.frogSwitch)
             }
             FrogRow("Dictation", icon: { PluginIconTile(symbol: "mic.fill", tint: Self.tints[1].1) }) {
                 ShortcutBadge(text: "⌥Space")
+            }
+            FrogRow("Try a rule", caption: "Row actions are 24 tall.") {
+                HStack(spacing: FrogStyle.space8) {
+                    Button("Try") {}
+                    Button("Turn on") {}.buttonStyle(.frog(.primary))
+                    IconAction(title: "Edit", symbol: "pencil") {}
+                }
             }
             FrogRow("Sounds", caption: "Plays a tick when a recording starts.") {
                 Toggle("Sounds", isOn: $sounds).labelsHidden().toggleStyle(.frogSwitch)
@@ -104,14 +122,12 @@ struct DesignGallery: View {
                 HStack(spacing: 8) {
                     Button("Save") {}.buttonStyle(.frog(.primary))
                     Button("Cancel") {}
-                    Button("Reset") {}.buttonStyle(.frog(.ghost))
+                    Button("Skip") {}.buttonStyle(.frog(.ghost))
                     Button("Delete") {}.buttonStyle(.frog(.destructive))
                     Button("Disabled") {}.disabled(true)
+                    Button("Use model") {}.buttonStyle(.frog(.primary)).frogDisabled("Choose a model first")
                 }
                 HStack(spacing: 8) {
-                    Button("Compact") {}.buttonStyle(.frog(.primary, compact: true))
-                    Button("Compact") {}.buttonStyle(.frog(compact: true))
-                    Button("Ghost") {}.buttonStyle(.frog(.ghost, compact: true))
                     IconAction(title: "Copy", symbol: "doc.on.doc") {}
                     IconAction(title: "Remove", symbol: "trash", destructive: true) {}
                     IconAction(title: "Add", symbol: "plus", bordered: true) {}
@@ -135,7 +151,7 @@ struct DesignGallery: View {
     }
 
     private var tiles: some View {
-        FrogSection("Plugin icons", footer: "20 in the sidebar, 28 in lists, 40 in headers.") {
+        FrogSection("Plugin icons", footer: "20 in the sidebar, 28 in lists, 40 in headers") {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     ForEach(Self.tints, id: \.0) { PluginIconTile(symbol: $0.0, tint: $0.1, size: .sidebar) }
@@ -145,6 +161,8 @@ struct DesignGallery: View {
                 }
                 HStack(spacing: 10) {
                     ForEach(Self.tints.prefix(6), id: \.0) { PluginIconTile(symbol: $0.0, tint: $0.1, size: .header) }
+                    // A grey theme's accent: drawn as the neutral tile, never a glaring pale square.
+                    PluginIconTile(symbol: "command", tint: FrogStyle.accent, size: .header)
                 }
             }.padding(.vertical, 12)
         }
@@ -154,14 +172,21 @@ struct DesignGallery: View {
         FrogSection("Fields and labels") {
             VStack(alignment: .leading, spacing: 12) {
                 SearchBox(placeholder: "Search", text: $search)
-                LabeledField(title: "Name") { TextField("Name", text: .constant("Work")) }
+                LabeledField(title: "Name") { FrogTextField(placeholder: "Name", text: .constant("Work")) }
+                LabeledField(title: "Endpoint") { FrogTextField(placeholder: "https://…", text: .constant("")) }
                 HStack(spacing: 4) {
                     ForEach(["All", "Text", "Audio"], id: \.self) { tag in FilterTag(title: tag, selected: filter == tag) { filter = tag } }
                     Spacer()
                     FrogBadge(text: "New", active: true)
                     FrogBadge(text: "Beta")
-                    KeyCap("⌘")
-                    KeyCap("K")
+                    KeyCaps("⌘K")
+                    KeyCaps("⌃⌥Space")
+                }
+                HStack(spacing: 16) {
+                    FrogStatusLabel("Connected")
+                    FrogStatusLabel("Running", tone: .active)
+                    FrogStatusLabel("Needs access", tone: .warning)
+                    FrogStatusLabel("Off", tone: .off)
                 }
                 HStack(spacing: 16) {
                     ForEach(["Downloads", "Desktop", "Caches"], id: \.self) { item in
@@ -171,6 +196,18 @@ struct DesignGallery: View {
                     }
                 }
             }.padding(.vertical, 12)
+        }
+    }
+
+    private var waiting: some View {
+        FrogSection("Waiting", footer: "Skeletons stand in for values being measured; one spinner and line for a wait.") {
+            FrogRow("CPU") { FrogSkeleton(width: 32) }
+            FrogRow("Memory") { FrogSkeleton(width: 56) }
+            FrogLoadingNote(text: "Looking for apps…")
+            HStack(spacing: FrogStyle.space8) {
+                FrogNoticePill(symbol: "checkmark", text: "Done")
+                FrogNoticePill(symbol: "exclamationmark.circle", tone: FrogStyle.warning, text: "Ollama is not running", action: ("Details", {}))
+            }.padding(.vertical, FrogStyle.space10)
         }
     }
 

@@ -63,30 +63,34 @@ final class SnapZoneOverlay {
 }
 
 @MainActor
-private final class SnapZoneOverlayModel: ObservableObject {
+final class SnapZoneOverlayModel: ObservableObject {
     @Published var layout: SnapZoneLayout?
 }
 
-/// Tiles with a window's corner radius, a 1 pt accent outline and the layout's name; the one under
-/// the pointer filled with the accent at 30 %.
-private struct SnapZoneOverlayView: View {
+/// Tiles with a window's corner radius and the layout's name. The one under the pointer is tinted with the theme's
+/// accent and ringed in it, as macOS marks where a dragged window will go; the others are quiet outlines.
+struct SnapZoneOverlayView: View {
     @ObservedObject var model: SnapZoneOverlayModel
+    private var accent: Color { FrogStyle.accent }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             if let layout = model.layout {
                 ForEach(layout.zones) { zone in
-                    let local = zone.frame.offsetBy(dx: -layout.frame.minX, dy: -layout.frame.minY).insetBy(dx: 4, dy: 4)
+                    // Whole points, so the outline's corners draw cleanly.
+                    let local = zone.frame.offsetBy(dx: -layout.frame.minX, dy: -layout.frame.minY).insetBy(dx: 4, dy: 4).integral
                     let highlighted = zone.action == layout.highlight
-                    RoundedRectangle(cornerRadius: FrogStyle.panelRadius)
-                        .fill(highlighted ? FrogStyle.accent.opacity(0.3) : Color.black.opacity(0.06))
-                        .overlay(RoundedRectangle(cornerRadius: FrogStyle.panelRadius).strokeBorder(FrogStyle.accent, lineWidth: 1))
+                    let shape = RoundedRectangle(cornerRadius: FrogStyle.panelRadius, style: .continuous)
+                    shape
+                        .fill(highlighted ? accent.opacity(0.22) : Color.black.opacity(0.06))
+                        .overlay(shape.strokeBorder(highlighted ? accent : Color.primary.opacity(0.3), lineWidth: highlighted ? 2 : 1))
                         .overlay {
+                            // Sized for a zone a third of a display wide, read at arm's length while dragging.
                             Text(zone.action.title)
-                                .font(FrogType.bodyMedium)
-                                .foregroundStyle(FrogStyle.ink)
-                                .padding(.horizontal, 8).frame(height: FrogStyle.compactHeight)
-                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+                                .font(FrogType.title)
+                                .foregroundStyle(highlighted ? FrogStyle.onAccent : FrogStyle.ink)
+                                .padding(.horizontal, FrogStyle.space16).padding(.vertical, FrogStyle.space6)
+                                .background(highlighted ? AnyShapeStyle(accent) : AnyShapeStyle(.regularMaterial), in: Capsule())
                         }
                         .frame(width: max(0, local.width), height: max(0, local.height))
                         .offset(x: local.minX, y: local.minY)

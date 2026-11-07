@@ -259,6 +259,9 @@ final class CleanerModel: ObservableObject {
 
     @Published private(set) var apps: [CleanerAppRow] = []
     @Published private(set) var loadingApps = false
+    /// How many app bundles the running load found and is reading, for the loading page's progress line; nil
+    /// while it still looks for them.
+    @Published private(set) var foundAppCount: Int?
     @Published var search = ""
     @Published var sort: CleanerAppSort = .name
     @Published private(set) var review: CleanerReview?
@@ -368,6 +371,7 @@ final class CleanerModel: ObservableObject {
     private func reloadApps() async {
         let urls = await dependencies.applications()
         guard !Task.isCancelled else { return }
+        foundAppCount = urls.count
         let context = ListContext(roots: dependencies.roots, safety: dependencies.safety, inspector: dependencies.inspector,
                                   displayName: dependencies.displayName, ownBundleID: dependencies.ownBundleID)
         let cache = identityCache
@@ -378,6 +382,7 @@ final class CleanerModel: ObservableObject {
         identitiesLoaded = true
         apps = found.listed.map { CleanerAppRow(identity: $0, size: appSizes[key($0.path)]) }
         loadingApps = false
+        foundAppCount = nil
         loadTask = nil
     }
 
@@ -418,6 +423,14 @@ final class CleanerModel: ObservableObject {
     func setGroup(_ kind: CleanerGroupKind, selected: Bool) {
         guard var review else { return }
         let ids = review.groups(showPossible: showPossibleMatches).first { $0.kind == kind }?.items.map(\.id) ?? []
+        if selected { review.selected.formUnion(ids) } else { review.selected.subtract(ids) }
+        self.review = review
+    }
+
+    /// Ticks or clears every item the review shows, from the footer's one Select all.
+    func setAll(selected: Bool) {
+        guard var review else { return }
+        let ids = review.groups(showPossible: showPossibleMatches).flatMap { $0.items.map(\.id) }
         if selected { review.selected.formUnion(ids) } else { review.selected.subtract(ids) }
         self.review = review
     }
@@ -805,7 +818,7 @@ final class CleanerModel: ObservableObject {
         answerForceQuit(false)
         review = nil; pending = nil; outcome = nil; issue = nil; scanningApp = nil
         apps = []; identities = []; identitiesLoaded = false; identityCache = [:]; appSizes = [:]
-        loadingApps = false
+        loadingApps = false; foundAppCount = nil
         fullDiskAccess = nil
         records = []; missingFromTrash = [:]; showsRecent = false; putBackSummary = nil; puttingBack = nil
         phase = .idle

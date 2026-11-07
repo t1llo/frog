@@ -13,23 +13,36 @@ struct LocalModelSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            FrogSection("Memory") {
+            // One card: until a model is installed the folder is storage's only row, which would stand alone.
+            FrogSection("Memory and storage") {
                 FrogRow("Unload idle models") {
                     FrogDropdown(selected: prefs.idleUnloadSeconds, options: [0] + LocalModelSettingsView.idleUnloadChoices,
                                  title: { LocalModelSettings.idleTitle(seconds: $0) }) { seconds in update { $0.idleUnloadSeconds = seconds } }
                 }
-                FrogRow(model.localModels.loaded.isEmpty ? "No models loaded" : "Models in memory", caption: LocalModelSettings.inMemory(model.localModels.loaded, catalog: model.configuration.modelCatalog)) {
-                    Button("Unload now") { Task { await model.localModels.unload() } }.disabled(model.localModels.loaded.isEmpty || model.localModels.busy || model.dictating)
+                // A value row while nothing is loaded, like Disk used; Unload now appears once there is something to unload.
+                FrogRow("In memory", caption: LocalModelSettings.inMemory(model.localModels.loaded, catalog: model.configuration.modelCatalog)) {
+                    if model.localModels.loaded.isEmpty {
+                        Text("None").font(FrogType.body).foregroundStyle(FrogStyle.muted)
+                    } else {
+                        Button("Unload now") { Task { await model.localModels.unload() } }
+                            .frogDisabledShowingReason(model.dictating ? "Wait for dictation to finish" : model.localModels.busy ? "Frog is busy with a model" : nil)
+                    }
                 }
-            }
-            FrogSection("Storage") {
-                FrogRow("Model folder", caption: model.localModels.root.path) {
+                let root = model.localModels.root
+                // The default folder is named by where Frog keeps it for everyone, never by the data folder a test or
+                // another copy of Frog was started with.
+                let shown = root == model.localModels.defaultDirectory ? LocalModels.standardDirectory : root
+                FrogRow("Model folder", caption: .path(shown.path)) {
                     HStack(spacing: 8) {
-                        Button("Use default") { setModelFolder(model.localModels.defaultDirectory) }.buttonStyle(.frog(.ghost)).disabled(model.localModels.root == model.localModels.defaultDirectory)
+                        // Offered only while another folder is in use; the same pill as the buttons beside it.
+                        if root != model.localModels.defaultDirectory {
+                            Button("Use default") { setModelFolder(model.localModels.defaultDirectory) }
+                        }
                         Button("Choose…") { chooseModelFolder() }
-                        Button("Show in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: model.localModels.root.path) }
-                    }.disabled(model.localModels.busy || !model.localModels.progress.isEmpty || model.dictating)
-                }.textSelection(.enabled)
+                        Button("Show in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: root.path) }
+                    }
+                    .disabled(model.localModels.busy || !model.localModels.progress.isEmpty || model.dictating)
+                }
                 if let use = LocalModelSettings.diskUse(model.localModels.totalDiskUse(of: model.localModels.installed)) {
                     FrogRow("Disk used") { Text(use).font(FrogType.body).foregroundStyle(FrogStyle.muted) }
                 }

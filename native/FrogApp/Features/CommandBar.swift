@@ -10,6 +10,7 @@ import SwiftUI
         didSet {
             guard query != oldValue else { return }
             disarm()
+            actionsShown = false
             if argument != nil { updateResults(preserveSelection: false); return }
             if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 removeFiles()
@@ -25,6 +26,7 @@ import SwiftUI
         didSet {
             guard selection != oldValue else { return }
             selectionWasMoved = true
+            actionsShown = false
             if let armed = armedRecord, !(results.indices.contains(selection) && results[selection].id == armed.id) { disarm() }
         }
     }
@@ -33,6 +35,11 @@ import SwiftUI
     /// Published so that rows already drawn switch to their own icon, even when nothing else about them changed.
     @Published private(set) var iconPaths: [String: String] = [:]
     @Published private(set) var showsPositionReset = false
+    /// The caption above a row that starts a group, by the row's ID: "Suggestions", "Applications", "Results".
+    @Published private(set) var headers: [String: String] = [:]
+    /// The selected row's actions, listed over the footer by ⌘K.
+    @Published private(set) var actionsShown = false
+    @Published var actionSelection = 0
     @Published private(set) var invocation = UUID()
     var onToolUse: ((ActivityToolKind) -> Void)?
     /// How long the last open took: building the rows, and from the key press until the panel was on screen.
@@ -81,6 +88,10 @@ import SwiftUI
     private var fileRecords: [SearchRecord] = []
     private var fileIDs = Set<String>()
     private var recentSelections: [String] = []
+    /// The rows listed first because they were picked before or are suggested, before anything is typed.
+    private var suggestionIDs = Set<String>()
+    /// Rows a provider put above the ranked results, such as a calculation.
+    private var leadingIDs = Set<String>()
     private var recentFiles: [SearchRecord] = []
     private var selectedFiles: [SearchRecord] = []
 
@@ -250,7 +261,18 @@ import SwiftUI
                 // Backspace in an empty prompt goes back, unless an input method is composing there.
                 if event.keyCode == 51, self.argument != nil, self.query.isEmpty,
                    (self.panel?.firstResponder as? NSTextInputClient)?.hasMarkedText() != true { self.leaveArgument(); return true }
+                if Self.isActionsShortcut(event, firstResponder: self.panel?.firstResponder) { self.toggleActions(); return true }
                 guard Self.handlesKey(event.keyCode, firstResponder: self.panel?.firstResponder) else { return false }
+                if self.actionsShown {
+                    let count = self.selectedActions.count
+                    switch event.keyCode {
+                    case 53: self.actionsShown = false
+                    case 125: self.actionSelection = min(max(0, count - 1), self.actionSelection + 1)
+                    case 126: self.actionSelection = max(0, self.actionSelection - 1)
+                    default: self.runAction(self.actionSelection)
+                    }
+                    return true
+                }
                 switch event.keyCode {
                 case 53: if self.argument != nil { self.leaveArgument() } else { self.hide() }; return true
                 case 125: self.selection = min(max(0, self.results.count - 1), self.selection + 1); return true
@@ -282,6 +304,12 @@ import SwiftUI
         lastOpen = (built - start, clock.now - start)
         searchFiles()
         applications.rescan()
+    }
+    /// ⌘K, by the character it types, so it follows the keyboard layout; not while an input method is composing.
+    static func isActionsShortcut(_ event: NSEvent, firstResponder: NSResponder?) -> Bool {
+        event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
+            && event.charactersIgnoringModifiers?.lowercased() == "k"
+            && (firstResponder as? NSTextInputClient)?.hasMarkedText() != true
     }
     /// Escape, the arrow keys and Return act on the results before the search field sees them. An input method
     /// that is composing there needs them itself, to cancel, pick or confirm a candidate.
@@ -370,6 +398,7 @@ import SwiftUI
         argument = nil; prompt = nil
         records = []; rows = [:]; fileRecords = []; fileIDs = []; results = []
         queryRows = [:]; context = nil
+        headers = [:]; actionsShown = false
     }
 
     // MARK: Ranking
@@ -389,6 +418,8 @@ import SwiftUI
             } else { confirmation.disarm(); armedRecord = nil; disarming?.cancel(); disarming = nil }
         }
         if results != next { results = next }
+        let nextHeaders = sectionHeaders(next)
+        if headers != nextHeaders { headers = nextHeaders }
         let nextSelection = selectedID.flatMap { id in next.firstIndex(where: { $0.id == id }) } ?? 0
         if selection != nextSelection { selection = nextSelection }
         selectionWasMoved = preserveChoice
@@ -409,10 +440,10 @@ import SwiftUI
         }
         if !typed {
             let files = fileRecords.prefix(4)
-            let commands = records.lazy.filter { $0.id.hasPrefix("feature:") || $0.id.hasPrefix("rule:") }.prefix(4)
-            preferred += files + commands
+            preferred += files + Self.starterSuggestions(records)
             preferred += applications.suggested
         }
+        suggestionIDs = typed ? [] : Set(preferred.map(\.id))
         // Late Spotlight results must not bury an equally good app or Frog command.
         let ranked = CommandSearch.results(records, query: query, preferred: preferred, trailing: typed ? fileRecords : [], latched: latched, boosts: boosts)
         queryRows = [:]
@@ -425,7 +456,70 @@ import SwiftUI
                 }
             }
         }
+        leadingIDs = Set(leading.map(\.id))
         return leading + ranked + trailing
+    }
+
+    /// What the bar suggests before anything is typed or learned: a mix of what it can do, so the first rows are
+    /// not all pages. Two rules, one feature command and one window layout, then pages up to five rows. The bar's
+    /// own settings page is no suggestion inside the bar.
+    static func starterSuggestions(_ records: [SearchRecord], limit: Int = 5) -> [SearchRecord] {
+        func first(_ count: Int, _ prefixes: String...) -> [SearchRecord] {
+            Array(records.lazy.filter { record in prefixes.contains { record.id.hasPrefix($0) } }.prefix(count))
+        }
+        let doing = first(2, "rule:") + first(1, "action:") + first(1, "layout:")
+        let pages = records.lazy.filter { $0.id.hasPrefix("feature:") && $0.id != "feature:\(FeatureID.commandBar.rawValue)" }
+        return doing + pages.prefix(max(0, limit - doing.count))
+    }
+
+    // MARK: Groups and actions
+
+    /// A caption over the first row of each group. Before anything is typed: the suggestions, then the catalogue by
+    /// kind. With text: what a provider answered first, then the ranked results under one caption.
+    private func sectionHeaders(_ list: [SearchRecord]) -> [String: String] {
+        guard argument == nil else { return [:] }
+        let typed = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        var headers: [String: String] = [:], previous: String?, suggesting = !typed
+        for record in list {
+            let group: String
+            if suggesting, suggestionIDs.contains(record.id) { group = "Suggestions" }
+            else {
+                suggesting = false
+                group = typed && !leadingIDs.contains(record.id) ? "Results" : CommandRowKind(record.id).group
+            }
+            if group != previous { headers[record.id] = group; previous = group }
+        }
+        return headers
+    }
+    /// The colour of a row's icon tile, from its provider.
+    func tint(for record: SearchRecord) -> PluginTint? { row(record.id)?.tint }
+    /// The rule a row runs, for its tile.
+    func rule(for record: SearchRecord) -> Rule? { row(record.id)?.rule }
+    /// What Return runs on a row, for the footer: "Open", "Paste", "Run".
+    func primaryTitle(for record: SearchRecord) -> String? {
+        if record.id.hasPrefix("argument:") { return "Run" }
+        if fileIDs.contains(record.id) { return "Open" }
+        return row(record.id)?.primary?.title
+    }
+    /// The selected row's actions: Return's, then ⌘Return's when the row has one.
+    var selectedActions: [CommandBarAction] {
+        guard results.indices.contains(selection) else { return [] }
+        let record = results[selection]
+        var actions: [CommandBarAction] = []
+        if let title = primaryTitle(for: record) { actions.append(CommandBarAction(title: title, keys: "↩", copyOnly: false)) }
+        if argument == nil, let secondary = row(record.id)?.secondary { actions.append(CommandBarAction(title: secondary.title, keys: "⌘↩", copyOnly: true)) }
+        return actions
+    }
+    func toggleActions() {
+        guard actionsShown || !selectedActions.isEmpty else { return }
+        actionSelection = 0
+        actionsShown.toggle()
+    }
+    func runAction(_ index: Int) {
+        let actions = selectedActions
+        actionsShown = false
+        guard actions.indices.contains(index) else { return }
+        choose(copyOnly: actions[index].copyOnly)
     }
 
     // MARK: Asking for a value
@@ -760,56 +854,159 @@ private final class CommandBarPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
+/// One of the selected row's actions, as the ⌘K list shows it.
+struct CommandBarAction: Equatable {
+    let title: String
+    /// The keys that run it without the list: "↩" or "⌘↩".
+    let keys: String
+    let copyOnly: Bool
+}
+
+/// What a row is, by its ID: the word on its trailing side and the group it is listed in before anything is typed.
+struct CommandRowKind: Equatable {
+    let title: String
+    let group: String
+
+    init(_ id: String) {
+        func has(_ prefix: String) -> Bool { id.hasPrefix(prefix) }
+        switch true {
+        case id == "features", has("feature:"), has("plugin-page:"), has("route:"): (title, group) = ("Page", "Frog")
+        case has("app:"): (title, group) = ("Application", "Applications")
+        case has("window:"): (title, group) = ("Window", "Windows")
+        case has("rule:"): (title, group) = ("Rule", "Writing rules")
+        case has("layout:"): (title, group) = ("Window layout", "Window layouts")
+        case has("quick:"): (title, group) = ("Command", "Tools")
+        case has("calculation:"): (title, group) = ("Calculator", "Calculator")
+        case has("emoji:"): (title, group) = ("Emoji", "Emoji")
+        case has("clipboard:"): (title, group) = ("Clipboard", "Clipboard")
+        case has("snippet:"), has("note:"): (title, group) = ("Note", "Notes")
+        case has("script:"): (title, group) = ("Script", "Scripts")
+        case has("file:"): (title, group) = ("File", "Files")
+        case has("mac-setting:"): (title, group) = ("System Settings", "System Settings")
+        case has("system:"): (title, group) = ("Command", "Mac")
+        case has("plugin:"): (title, group) = ("Plugin", "Plugins")
+        case has("action:"): (title, group) = ("Command", "Commands")
+        case has("argument:"): (title, group) = ("", "")
+        default:
+            if CleanerCommand.path(fromRowID: id) != nil { (title, group) = ("App cleaner", "App cleaner") }
+            else { (title, group) = ("Command", "Commands") }
+        }
+    }
+}
+
+/// The command bar in Raycast's arrangement: the search field, the rows in captioned groups, and a footer that
+/// names what Return does and opens the selected row's actions with ⌘K.
 struct CommandBarView: View {
-    static let size = NSSize(width: 640, height: 440)
+    static let size = NSSize(width: 680, height: 460)
+    static let rowHeight: CGFloat = 40
+    static let headerHeight: CGFloat = 28
     @ObservedObject var bar: CommandBar
     @FocusState private var focused: Bool
+    /// A group caption's scroll target, apart from its first row's.
+    private struct CaptionID: Hashable { let row: String }
     var body: some View {
         VStack(spacing: 0) {
-            searchField.padding(.horizontal, FrogStyle.panelInset).padding(.top, FrogStyle.panelInset).padding(.bottom, FrogStyle.space6)
+            searchField.padding(.horizontal, FrogStyle.panelInset).padding(.top, FrogStyle.panelInset).padding(.bottom, FrogStyle.space4)
                 .background(WindowDragRegion(onDragEnd: bar.finishDragging))
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: FrogStyle.space2) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(bar.results.enumerated()), id: \.element.id) { index, result in
-                            CommandResultRow(bar: bar, result: result, iconKey: bar.iconPath(for: result), selected: index == bar.selection)
+                            if let header = bar.headers[result.id] {
+                                SectionCaption(text: header).padding(.horizontal, FrogStyle.rowPadding)
+                                    .frame(height: Self.headerHeight, alignment: .bottomLeading).padding(.bottom, FrogStyle.space2)
+                                    .id(CaptionID(row: result.id))
+                            }
+                            CommandResultRow(bar: bar, result: result, iconKey: bar.iconPath(for: result), tint: bar.tint(for: result),
+                                             query: bar.argument == nil ? bar.query : "", selected: index == bar.selection)
                                 .equatable().id(result.id)
                         }
                         if bar.results.isEmpty {
                             Text(bar.argument == nil ? "No results" : "Type, then press Return")
-                                .font(FrogType.row).foregroundStyle(FrogStyle.muted).padding(FrogStyle.sectionSpacing)
+                                .font(FrogType.row).foregroundStyle(FrogStyle.muted).frame(maxWidth: .infinity).padding(FrogStyle.sectionSpacing)
                         }
-                    }.padding(FrogStyle.panelInset)
+                    }.padding(.horizontal, FrogStyle.panelInset).padding(.top, FrogStyle.space2)
                 }
                 // `.never`, not `.hidden`: with "Show scroll bars: Always" macOS shows a hidden indicator anyway.
                 .scrollIndicators(.never)
-                .onChange(of: bar.selection) { _, value in
-                    if bar.results.indices.contains(value) { proxy.scrollTo(bar.results[value].id) }
+                // A row cut by the bottom edge fades out over a whole row's height, so it reads as more below rather
+                // than as clipped under the footer.
+                .bottomScrollFade(height: Self.rowHeight)
+                .onChange(of: bar.selection) { previous, value in
+                    guard bar.results.indices.contains(value) else { return }
+                    let id = bar.results[value].id
+                    // The first row brings its group's caption with it, and so does a row that starts a group on the
+                    // way up; the row sits right under its caption, so both come into view.
+                    if value == 0 { proxy.scrollTo(id, anchor: .bottom) }
+                    else if value < previous, bar.headers[id] != nil { proxy.scrollTo(CaptionID(row: id)) }
+                    else { proxy.scrollTo(id) }
                 }
             }
+            .overlay(alignment: .bottomTrailing) {
+                if bar.actionsShown { CommandActionsList(bar: bar).padding(FrogStyle.panelInset) }
+            }
+            footer
         }.frame(width: Self.size.width, height: Self.size.height).frogPanel().environment(\.frogKeyboardSurface, true)
             // Opening, typing and the arrow keys are instant: nothing inside the bar animates.
             .transaction { $0.animation = nil }
             .onAppear { focused = true }.onChange(of: bar.invocation) { focused = true }
     }
 
-    /// The search field is a control layer inside the panel, as Rex's search box is.
+    /// The search line is borderless, as Raycast's: the magnifier in the rows' icon column and the query, a step
+    /// larger than the rows, starting where their titles do. Space, not a box, sets it apart from the list.
     private var searchField: some View {
         HStack(spacing: FrogStyle.space10) {
-            Image(systemName: "magnifyingglass").font(.system(size: 13, weight: .medium)).foregroundStyle(FrogStyle.muted)
-                .frame(width: 20, height: 36).overlay { WindowDragRegion(onDragEnd: bar.finishDragging).help("Drag to move") }
+            Image(systemName: "magnifyingglass").font(.system(size: 15, weight: .medium)).foregroundStyle(FrogStyle.muted)
+                .frame(width: 22, height: 36).overlay { WindowDragRegion(onDragEnd: bar.finishDragging).help("Drag to move") }
             if let argument = bar.argument {
                 Label(argument.title, systemImage: argument.symbol).font(FrogType.label).lineLimit(1)
                     .foregroundStyle(FrogStyle.ink).padding(.horizontal, FrogStyle.space8).frame(height: FrogStyle.compactHeight)
-                    .background(FrogStyle.hover, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
+                    .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
             }
-            TextField(bar.argument?.placeholder ?? "Search", text: $bar.query)
-                .textFieldStyle(.plain).font(FrogType.lead).focused($focused)
+            // The field draws no placeholder of its own, which macOS sets nearly as dark as typed text; this one is lighter.
+            TextField("", text: $bar.query)
+                .textFieldStyle(.plain).font(FrogType.query).focused($focused)
+                .accessibilityLabel(L10n.text(bar.argument?.placeholder ?? "Search apps, commands and files"))
+                .background(alignment: .leading) {
+                    if bar.query.isEmpty {
+                        Text(L10n.text(bar.argument?.placeholder ?? "Search apps, commands and files")).font(FrogType.query)
+                            .foregroundStyle(FrogStyle.placeholder).lineLimit(1).allowsHitTesting(false).accessibilityHidden(true)
+                    }
+                }
             if bar.showsPositionReset {
                 IconAction(title: "Center command bar", symbol: "scope") { bar.center() }
             }
-        }.padding(.horizontal, FrogStyle.space12)
-            .frogControlSurface(height: 40, radius: FrogStyle.controlRadius)
+        }.padding(.horizontal, FrogStyle.rowPadding).frame(height: 40)
+    }
+
+    /// Where the bar is on the left; what Return does and the actions on the right.
+    private var footer: some View {
+        let selected = bar.results.indices.contains(bar.selection) ? bar.results[bar.selection] : nil
+        let actions = bar.selectedActions
+        return PanelFooter(symbol: bar.argument?.symbol ?? "magnifyingglass", name: bar.argument?.title ?? "Command bar",
+                           primaryTitle: selected.flatMap { bar.primaryTitle(for: $0) }, showsActions: !actions.isEmpty,
+                           closeTitle: bar.argument == nil ? "Close" : "Back")
+    }
+}
+
+/// The selected row's actions over the footer's corner, opened and closed with ⌘K: arrows move, Return runs.
+private struct CommandActionsList: View {
+    @ObservedObject var bar: CommandBar
+    var body: some View {
+        let actions = bar.selectedActions
+        VStack(alignment: .leading, spacing: FrogStyle.space2) {
+            SectionCaption(text: "Actions").padding(.horizontal, FrogStyle.rowPadding).frame(height: FrogStyle.compactHeight, alignment: .leading)
+            ForEach(Array(actions.enumerated()), id: \.offset) { index, action in
+                Button { bar.runAction(index) } label: {
+                    HStack(spacing: FrogStyle.space8) {
+                        Text(L10n.text(action.title)).font(FrogType.body).foregroundStyle(FrogStyle.ink)
+                        Spacer(minLength: FrogStyle.space16)
+                        KeyCaps(action.keys)
+                    }.padding(.horizontal, FrogStyle.rowPadding).frame(height: FrogStyle.controlHeight).contentShape(Rectangle())
+                        .frogRowHighlight(hovering: false, selected: index == bar.actionSelection)
+                }.buttonStyle(.plain)
+            }
+        }.padding(FrogStyle.listInset).frame(width: 240).frogPanel()
     }
 }
 
@@ -817,32 +1014,92 @@ private struct CommandResultRow: View, Equatable {
     let bar: CommandBar
     let result: SearchRecord
     let iconKey: String?
+    let tint: PluginTint?
+    let query: String
     let selected: Bool
     @State private var hovering = false
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.bar === rhs.bar && lhs.result == rhs.result && lhs.iconKey == rhs.iconKey && lhs.selected == rhs.selected
+        lhs.bar === rhs.bar && lhs.result == rhs.result && lhs.iconKey == rhs.iconKey && lhs.tint == rhs.tint
+            && lhs.query == rhs.query && lhs.selected == rhs.selected
     }
 
+    /// One line: the icon, the title with the typed letters in bold, a dim subtitle, and the kind on the right.
     /// The keyboard's row is a neutral raised layer, the pointer's the faint hover layer, as in Rex's lists.
     var body: some View {
+        let kind = CommandRowKind(result.id)
+        let emoji = result.id.hasPrefix("emoji:") ? Self.emojiParts(result.title) : nil
+        let title = emoji?.name ?? result.title
         Button {
             if let index = bar.results.firstIndex(where: { $0.id == result.id }) { bar.choose(index) }
         } label: {
-            HStack(spacing: FrogStyle.space12) {
-                CommandResultIcon(bar: bar, result: result, key: iconKey)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(result.title).font(FrogType.row).lineLimit(1)
-                    if !result.subtitle.isEmpty {
-                        Text(result.subtitle).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
+            HStack(spacing: FrogStyle.space10) {
+                Group {
+                    if let emoji { Text(emoji.symbol).font(.system(size: 16)).frame(width: 22, height: 22) }
+                    else { CommandResultIcon(bar: bar, result: result, key: iconKey, tint: tint) }
+                }
+                HStack(alignment: .firstTextBaseline, spacing: FrogStyle.space8) {
+                    Text(CommandMatch.highlighted(title, query: query)).font(FrogType.row).foregroundStyle(FrogStyle.ink)
+                        .lineLimit(1).layoutPriority(1)
+                    if let subtitle = Self.subtitle(result, kind: kind) {
+                        Text(subtitle).font(FrogType.row).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
                     }
                 }
                 Spacer(minLength: FrogStyle.space10)
-                Image(systemName: "return").font(.system(size: 11, weight: .semibold)).foregroundStyle(FrogStyle.muted)
-                    .frame(width: 14).opacity(selected ? 1 : 0)
-            }.padding(.horizontal, FrogStyle.space10).frame(height: FrogStyle.rowHeight)
+                // Every row says what it is, Frog's own pages included, so a page and a command never look alike.
+                if !kind.title.isEmpty {
+                    Text(L10n.text(kind.title)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).fixedSize()
+                }
+            }.padding(.horizontal, FrogStyle.rowPadding).frame(height: CommandBarView.rowHeight)
                 .frogRowHighlight(hovering: hovering, selected: selected)
         }.buttonStyle(.plain).onHover { hovering = $0 }
+    }
+
+    /// The subtitle, unless it only repeats the kind on the right ("App", "Plugin", "System Settings").
+    private static func subtitle(_ result: SearchRecord, kind: CommandRowKind) -> String? {
+        let text = result.subtitle.trimmingCharacters(in: .whitespaces)
+        let repeats = [kind.title, kind.group, "App", "Plugin", "Frog"].contains { $0.caseInsensitiveCompare(text) == .orderedSame }
+        return text.isEmpty || repeats ? nil : text
+    }
+
+    /// "😀  Grinning Smile Happy" as the emoji, drawn in the icon's place, and its name.
+    private static func emojiParts(_ title: String) -> (symbol: String, name: String)? {
+        guard let space = title.firstIndex(of: " ") else { return nil }
+        return (String(title[..<space]), title[space...].trimmingCharacters(in: .whitespaces))
+    }
+}
+
+/// The letters of a title that the typed words matched, for drawing them in bold: only where a typed word starts a
+/// word of the title. A word found only inside another word or letter by letter is not marked, so the bold never
+/// scatters across a title.
+enum CommandMatch {
+    static func ranges(in title: String, query: String) -> [Range<String.Index>] {
+        let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !words.isEmpty else { return [] }
+        let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
+        var found: [Range<String.Index>] = []
+        for word in words {
+            var candidates: [Range<String.Index>] = []
+            var start = title.startIndex
+            while let range = title.range(of: word, options: options, range: start..<title.endIndex) {
+                candidates.append(range); start = title.index(after: range.lowerBound)
+            }
+            let free = candidates.filter { candidate in !found.contains { $0.overlaps(candidate) } }
+            if let atWord = free.first(where: { $0.lowerBound == title.startIndex || !title[title.index(before: $0.lowerBound)].isLetter }) {
+                found.append(atWord)
+            }
+        }
+        return found
+    }
+
+    static func highlighted(_ title: String, query: String) -> AttributedString {
+        var text = AttributedString(title)
+        for range in ranges(in: title, query: query) {
+            guard let lower = AttributedString.Index(range.lowerBound, within: text),
+                  let upper = AttributedString.Index(range.upperBound, within: text) else { continue }
+            text[lower..<upper].inlinePresentationIntent = .stronglyEmphasized
+        }
+        return text
     }
 }
 
@@ -851,28 +1108,67 @@ private struct CommandResultIcon: View {
     let result: SearchRecord
     /// The row's icon key. A pane's own icon replaces the System Settings icon of a row that is already drawn.
     let key: String?
+    let tint: PluginTint?
     @State private var icon: NSImage?
-    init(bar: CommandBar, result: SearchRecord, key: String?) {
-        self.bar = bar; self.result = result; self.key = key
+    init(bar: CommandBar, result: SearchRecord, key: String?, tint: PluginTint?) {
+        self.bar = bar; self.result = result; self.key = key; self.tint = tint
         // A cached icon is drawn at once instead of after a frame with the placeholder.
         _icon = State(initialValue: bar.cachedIcon(for: result))
     }
     var body: some View {
         Group {
             if let icon { Image(nsImage: icon).resizable() }
-            else { PluginIconTile(symbol: result.symbol, tint: result.isFrogCommand ? FrogStyle.accent : FrogStyle.muted, size: .list) }
-        }.frame(width: 28, height: 28)
+            else if let action = Self.layout(result) { CommandLayoutTile(action: action) }
+            else if let rule = bar.rule(for: result) { RuleIconTile(rule: rule, size: .sidebar) }
+            else { PluginIconTile(symbol: result.symbol, tint: (tint ?? .gray).color, size: .sidebar) }
+        }.frame(width: 22, height: 22)
             .task(id: [result.id, key]) {
                 guard key != nil else { icon = nil; return }
                 // The icon shown stays until its replacement is read, so a changing key never flashes the symbol.
                 if let loaded = await bar.icon(for: result), !Task.isCancelled { icon = loaded }
             }
     }
+    private static func layout(_ result: SearchRecord) -> WindowAction? {
+        guard result.id.hasPrefix("layout:") else { return nil }
+        return WindowAction(rawValue: String(result.id.dropFirst("layout:".count)))
+    }
 }
 
-private extension SearchRecord {
-    /// Frog's own pages, commands and answers, set apart from apps, windows, files and system destinations.
-    var isFrogCommand: Bool { id == "features" || ["feature:", "plugin-page:", "route:", "rule:", "quick:", "layout:", "system:", "calculation:", "action:", "argument:"].contains { id.hasPrefix($0) } }
+/// A window layout's tile: the Windows tile, filled and edged exactly as `PluginIconTile` draws it, with a white
+/// picture of where the layout puts the window at a symbol's size, the same picture the Windows page and the layout
+/// picker draw, so a layout row reads as one more tile among the command bar's rows.
+private struct CommandLayoutTile: View {
+    let action: WindowAction
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        let size = PluginIconTile.Size.sidebar.rawValue
+        let shape = RoundedRectangle(cornerRadius: FrogStyle.smallRadius, style: .continuous)
+        let fill = PluginIconTile.fill(for: PluginTint.purple.color, colorScheme: colorScheme, contrast: contrast) ?? PluginTint.purple.color
+        ZStack {
+            shape.fill(fill.gradient)
+            if let symbol = WindowLayoutGlyph.symbol(for: action) {
+                Image(systemName: symbol).font(.system(size: size * 0.52, weight: .medium)).foregroundStyle(.white)
+            } else {
+                // A screen a little wider than a tile's symbol, 14 by 10 points, centred, so a quarter or a third
+                // still shows its area as clearly as a half does.
+                Canvas { context, canvas in
+                    let screenCorner: CGFloat = 2, areaCorner: CGFloat = 0.75
+                    let bounds = CGRect(x: (canvas.width - 14) / 2, y: (canvas.height - 10) / 2, width: 14, height: 10)
+                    context.stroke(Path(roundedRect: bounds, cornerRadius: screenCorner), with: .color(.white), lineWidth: 1.2)
+                    if let area = WindowLayoutGlyph.area(for: action) {
+                        let fill = CGRect(x: bounds.minX + area.minX * bounds.width, y: bounds.minY + area.minY * bounds.height,
+                                          width: area.width * bounds.width, height: area.height * bounds.height).insetBy(dx: 1.4, dy: 1.4)
+                        context.fill(Path(roundedRect: fill, cornerRadius: areaCorner), with: .color(.white))
+                    }
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .overlay(shape.strokeBorder(.black.opacity(0.06), lineWidth: 0.5))
+        .accessibilityHidden(true)
+    }
 }
 
 private extension URL {

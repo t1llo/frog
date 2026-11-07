@@ -8,14 +8,20 @@ struct DictationPage: View {
     let dictation: DictationController
 
     private var rules: [Rule] { model.configuration.rules.filter { $0.category == .audio } }
+    @State private var pickerRequest = ModelPickerOpenRequest()
 
     var body: some View {
         FrogPage {
             FrogPageHeader(title: "Dictation", subtitle: "Press a shortcut, speak, and Frog types it.") {
-                Button("New rule", systemImage: "plus") { add() }.buttonStyle(.frog(compact: true))
+                // Only the page's own action; each rule's Record sits on its card's heading.
+                FrogAddButton("Add rule") { add() }
+            }
+            if let missing = rules.first(where: { $0.enabled && !model.ruleHasModel($0) }) {
+                ModelMissingNotice(feature: "Dictation", speech: true) { pickerRequest.open(missing.id) }
             }
             if rules.isEmpty {
-                FrogEmptyState(symbol: "waveform", title: "No dictation rules", message: "Add one to choose its shortcut and model.")
+                FrogEmptyState(symbol: DictationPlugin.info.symbol, title: "No dictation rules", message: "Add one to choose its shortcut and model.",
+                               tint: DictationPlugin.info.tint)
             }
             ForEach(rules) { rule in
                 DictationRuleSection(rule: rule, dictation: dictation, feature: feature)
@@ -33,6 +39,7 @@ struct DictationPage: View {
                 }
             }
         }.toggleStyle(.frogSwitch).controlSize(.small)
+        .environment(\.modelPickerOpenRequest, pickerRequest)
     }
 
     private func add() {
@@ -45,7 +52,8 @@ struct DictationPage: View {
     }
 }
 
-/// One dictation rule as a section: its switch, Record and a menu above, its settings as rows.
+/// One dictation rule as a section: Record and its menu (Rename, Delete) beside its heading, its switch as the first
+/// row and its settings below it.
 private struct DictationRuleSection: View {
     @EnvironmentObject private var model: AppModel
     let rule: Rule
@@ -54,32 +62,47 @@ private struct DictationRuleSection: View {
     @State private var renaming = false
 
     var body: some View {
-        FrogSection(rule.name, accessory: {
-            RecordButton(rule: rule, dictation: dictation, feature: feature)
-            Toggle("Enable \(rule.name)", isOn: binding(\.enabled)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
-            IconMenu(title: "More for \(rule.name)") {
-                Button("Rename…") { renaming = true }
-                Button("Delete", role: .destructive) {
-                    do { try model.deleteRule(id: rule.id) } catch { model.report(error) }
+        // Record and the rule's own menu (Rename, Delete) sit on its heading, so the card ends with its last setting.
+        FrogSection(heading, accessory: {
+            HStack(spacing: FrogStyle.space6) {
+                RecordButton(rule: rule, dictation: dictation, feature: feature)
+                IconMenu(title: "Rule actions", bordered: false) {
+                    Button("Rename…", systemImage: "pencil") { renaming = true }
+                    Button("Delete rule", systemImage: "trash", role: .destructive) {
+                        do { try model.deleteRule(id: rule.id) } catch { model.report(error) }
+                    }
                 }
             }
         }) {
-            rows.opacity(rule.enabled ? 1 : 0.5)
+            FrogRow("Turned on") {
+                Toggle("Enable \(rule.name)", isOn: binding(\.enabled)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+            }
+            rows
         }
-        .sheet(isPresented: $renaming) { RenameSheet(name: rule.name) { name in save { $0.name = name } } }
+        .sheet(isPresented: $renaming) {
+            RenameSheet(name: rule.name, kind: "dictation rule") { name in save { $0.name = name } }
+        }
     }
 
-    /// The rule's settings; a rule that is off keeps them, dimmed.
+    /// The rule's name heads its card, unless it is the page's own name, as the rule Frog starts with is: a heading
+    /// never repeats the page's title, so that rule's card is headed "Default rule", beside "Recording" for every rule.
+    private var heading: String {
+        rule.name.trimmingCharacters(in: .whitespaces).localizedCaseInsensitiveCompare("Dictation") == .orderedSame ? "Default rule" : rule.name
+    }
+
+    /// The rule's settings; a rule that is off keeps them, still changeable, so they are not dimmed.
     @ViewBuilder private var rows: some View {
-        FrogRow("Shortcut") {
-            HStack(spacing: 8) {
-                CompactSegments(values: RecordingMode.allCases, selected: rule.action?.recordingMode ?? .toggle,
-                                title: { $0 == .hold ? "Hold" : "Toggle" }) { mode in save { $0.action?.recordingMode = mode } }
-                HotkeyRecorder(hotkey: binding(\.hotkey))
-            }
-        }
+        FrogRow("Shortcut") { HotkeyRecorder(hotkey: binding(\.hotkey)) }
         if let issue = model.hotkeyErrors[rule.id] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
-        FrogRow("Speech model") { RuleModelPicker(rule: Binding(get: { rule }, set: { save(reconciling: $0) }), speech: true) }
+        // Its own row, so the shortcut's chip is not read as a third segment.
+        FrogRow("Hold to talk", caption: "Records only while you hold the shortcut down.") {
+            Toggle("Hold to talk", isOn: Binding(get: { rule.action?.recordingMode == .hold },
+                                                 set: { hold in save { $0.action?.recordingMode = hold ? .hold : .toggle } })).labelsHidden()
+        }
+        // The page's notice already says Dictation cannot type yet, so the picker asks without a second mark.
+        FrogRow("Speech model") {
+            RuleModelPicker(rule: Binding(get: { rule }, set: { save(reconciling: $0) }), speech: true, marksMissing: !rule.enabled)
+        }
         FrogRow("Language") {
             FrogDropdown(selected: rule.action?.transcriptionLanguage ?? languages.first ?? "auto", options: languages,
                          searchPrompt: languages.count > 8 ? "Find a language" : nil,
@@ -148,7 +171,7 @@ private struct DictationRuleSection: View {
 
     private func cleanupItem(_ choice: CleanupChoice) -> FrogDropdownItem {
         switch choice {
-        case .off: FrogDropdownItem("Off", symbol: "circle.slash")
+        case .off: FrogDropdownItem("Off")
         case .own: FrogDropdownItem("Own instructions", symbol: "text.alignleft")
         case .rule(let id): FrogDropdownItem(textRules.first { $0.id == id }?.name ?? "Deleted rule", symbol: "text.alignleft")
         }
@@ -176,28 +199,38 @@ private struct RecordButton: View {
 
     var body: some View {
         let mine = dictation.ruleID == rule.id && dictation.active
-        Button(mine ? "Stop" : "Record") { mine ? feature.stop() : feature.start(rule) }
-            .buttonStyle(.frog(compact: true))
+        Button(mine ? "Stop" : "Record", systemImage: mine ? "stop.fill" : "mic") { mine ? feature.stop() : feature.start(rule) }
+            .buttonStyle(.frog())
             .disabled(mine ? dictation.phase != .recording : !rule.enabled || dictation.active || model.isProcessing)
             .accessibilityLabel(mine ? "Stop recording" : "Record with \(rule.name)")
     }
 }
 
-private struct RenameSheet: View {
+struct RenameSheet: View {
     @State var name: String
+    /// What is renamed, in lower case ("dictation rule"), for the title.
+    let kind: String
     let save: (String) -> Void
     @Environment(\.dismiss) private var dismiss
+    private let original: String
+
+    init(name: String, kind: String, save: @escaping (String) -> Void) {
+        _name = State(initialValue: name); self.kind = kind; self.save = save; original = name
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            LabeledField(title: "Rename") { TextField("Name", text: $name).labelsHidden().onSubmit(done) }
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }.buttonStyle(.frog()).keyboardShortcut(.cancelAction)
-                Button("Rename") { done() }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+        VStack(alignment: .leading, spacing: FrogStyle.space16) {
+            // A sheet is its own window, so its header keeps the title.
+            // Says what is renamed and what it is called now, since the field below is already edited.
+            FrogPageHeader(title: "Rename \(kind)", subtitle: "Now called “\(original)”").environment(\.frogToolbarTitle, false)
+            FrogTextField(placeholder: original, text: $name).textFieldStyle(.plain).font(FrogType.body)
+                .padding(.horizontal, FrogStyle.space10).frogControlSurface()
+                .accessibilityLabel("Name").onSubmit(done)
+            FrogSheetButtons(padded: false) {
+                FrogCancelButton { dismiss() }
+                FrogPrimaryButton("Rename", disabledReason: name.trimmingCharacters(in: .whitespaces).isEmpty ? "Enter a name first" : nil) { done() }
             }
-        }.padding(20).frame(width: 320)
+        }.padding(FrogStyle.sheetPadding).frame(width: 340).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent)
     }
 
     private func done() {

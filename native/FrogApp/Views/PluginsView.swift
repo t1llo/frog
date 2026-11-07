@@ -25,25 +25,33 @@ struct PluginsView: View {
     @State private var removing: PluginItem?
     @State private var settings: PluginSettingsTarget?
 
+    /// `tab` opens the page on another tab than Installed, for pictures of each tab.
+    init(plugins: PluginRuntime, tab: PluginsTab = .installed) {
+        self.plugins = plugins
+        _tab = State(initialValue: tab)
+    }
+
     var body: some View {
         FrogPage {
             FrogPageHeader(title: "Community plugins", subtitle: "Each runs in its own sandbox, with only the access you approve.") {
                 if let host = plugins.downloading {
-                    ProgressView().controlSize(.small).help("Downloading from \(host)")
+                    FrogSpinner().help("Downloading from \(host)")
                 }
-                IconAction(title: "Install a plugin file", symbol: "square.and.arrow.down") { chooseFile() }
+                Button("Install from file…", systemImage: "square.and.arrow.down") { chooseFile() }
+                    .help("Install a plugin file")
             }
-            HStack(spacing: 8) {
-                CompactSegments(values: PluginsTab.allCases, selected: tab, title: \.title) { tab = $0 }
-                Spacer()
-                if tab == .browse, !plugins.registry.isEmpty {
-                    SearchBox(placeholder: "Search the directory", text: $search).frame(width: 220)
+            // The tabs head a list without a heading of its own a little apart, as History's filters do; the build
+            // tab's headed sections keep a section's space under them.
+            VStack(alignment: .leading, spacing: tab == .build ? FrogStyle.sectionSpacing : FrogStyle.space12) {
+                ListToolbar(placeholder: "Search the directory", search: $search,
+                            showsSearch: tab == .browse && !plugins.registry.isEmpty) {
+                    CompactSegments(values: PluginsTab.allCases, selected: tab, title: \.title) { tab = $0 }
                 }
-            }
-            switch tab {
-            case .installed: installed
-            case .browse: directory
-            case .build: build
+                switch tab {
+                case .installed: installed
+                case .browse: directory
+                case .build: build
+                }
             }
         }
         .onAppear { plugins.refresh() }
@@ -62,51 +70,36 @@ struct PluginsView: View {
 
     @ViewBuilder private var installed: some View {
         if plugins.items.isEmpty {
-            FrogEmptyState(symbol: "puzzlepiece.extension", title: "No plugins yet",
-                           message: "Install one from the directory, or have your AI agent build one.") {
-                HStack(spacing: 8) {
-                    Button("Open the directory") { tab = .browse }.buttonStyle(.frog(.primary))
-                    Button("Build your own") { tab = .build }
-                }
+            FrogEmptyState(symbol: CommunityPlugin.info.symbol, title: "No plugins yet",
+                           message: "Install one from the directory, or have your AI agent build one.", tint: CommunityPlugin.info.tint) {
+                // Building one is the tab beside this one, so the state offers only the directory.
+                Button("Open the directory") { tab = .browse }.buttonStyle(.frog(.primary))
             }.frogTableSurface()
         } else {
-            FrogSection {
+            // One list under its tab, like the Directory beside it: a heading would only repeat the tab's name.
+            // The footer says where more come from, so a short list does not end in a blank page.
+            FrogSection(footer: "Find more in the Directory, or have your AI agent build one.") {
                 ForEach(plugins.items) { installedRow($0) }
             }
         }
     }
 
+    /// One installed plugin: the row opens its page, its summary is one line (the whole of it on hover), and it ends
+    /// in at most two controls, the switch (or Review) and the menu with the rest.
     private func installedRow(_ item: PluginItem) -> some View {
-        FrogRow(item.name, caption: item.problem ?? caption(item)) {
-            PluginIconTile(symbol: PluginSymbol.name(item.symbol), tint: FrogStyle.accent)
-        } control: {
-            HStack(spacing: 6) {
-                if item.needsReview {
-                    Button("Review") {
-                        do { try plugins.reviewInstalled(item.id) } catch { model.report(error) }
-                    }.buttonStyle(.frog(.primary, compact: true))
-                } else if item.problem == nil {
-                    if plugins.running.contains(item.id) { FrogBadge(text: "Running") }
-                    if item.runs, item.hasPage { Button("Open") { model.openPlugin(item.id) }.buttonStyle(.frog(compact: true)) }
-                    Toggle("", isOn: Binding(get: { item.record.enabled }, set: { plugins.setEnabled(item.id, $0) }))
-                        .toggleStyle(.frogSwitch).controlSize(.small).labelsHidden()
-                        .accessibilityLabel("\(item.name) on")
-                }
-                IconMenu(title: "More about \(item.name)") {
-                    Text(source(item))
-                    if item.runs, item.hasSettings {
-                        Button("Settings…", systemImage: "slider.horizontal.3") { settings = PluginSettingsTarget(id: item.id) }
-                    }
-                    Button("Remove…", systemImage: "trash", role: .destructive) { removing = item }
-                }
-            }
-        }
+        InstalledPluginRow(item: item, running: plugins.running.contains(item.id), source: source(item),
+                           help: item.problem ?? [item.manifest?.description, caption(item)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n"),
+                           open: { model.openPlugin(item.id) },
+                           review: { do { try plugins.reviewInstalled(item.id) } catch { model.report(error) } },
+                           setEnabled: { plugins.setEnabled(item.id, $0) },
+                           settings: { settings = PluginSettingsTarget(id: item.id) },
+                           remove: { removing = item })
     }
 
     private func caption(_ item: PluginItem) -> String {
         let manifest = item.manifest
         let actions = manifest?.actions.count ?? 0
-        return [manifest?.version, manifest?.description, actions > 0 ? (actions == 1 ? "1 action" : "\(actions) actions") : nil]
+        return [manifest?.version, manifest?.description.taglineInCaption, actions > 0 ? (actions == 1 ? "1 action" : "\(actions) actions") : nil]
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
@@ -124,17 +117,26 @@ struct PluginsView: View {
     @ViewBuilder private var directory: some View {
         Group {
             if plugins.registryKeys.isEmpty {
-                FrogEmptyState(symbol: "checkmark.seal", title: "The directory opens soon",
-                               message: "Frog installs only plugins the directory signed, and no entry is signed yet.").frogTableSurface()
+                FrogEmptyState(symbol: CommunityPlugin.info.symbol, title: "No plugins listed yet",
+                               message: "Plugins people share will be listed here.",
+                               tint: CommunityPlugin.info.tint) {
+                    Button("Build your own") { tab = .build }.buttonStyle(.frog(.primary))
+                }.frogTableSurface()
             } else if plugins.loadingRegistry, plugins.registry.isEmpty {
-                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 44)
+                FrogLoadingNote(text: "Loading the directory…").frame(maxWidth: .infinity).padding(.vertical, 36).frogTableSurface()
             } else if let error = plugins.registryError, plugins.registry.isEmpty {
                 FrogEmptyState(symbol: "wifi.exclamationmark", title: "The directory did not load", message: error) {
                     Button("Try again") { Task { await plugins.loadRegistry() } }
                 }.frogTableSurface()
             } else if plugins.registry.isEmpty {
-                FrogEmptyState(symbol: "square.grid.2x2", title: "Nothing listed yet",
-                               message: "Plugins people share appear here once frog.beffa.xyz/plugins lists them.").frogTableSurface()
+                FrogEmptyState(symbol: CommunityPlugin.info.symbol, title: "Nothing listed yet",
+                               message: "Plugins people share will be listed here.",
+                               tint: CommunityPlugin.info.tint) {
+                    HStack(spacing: FrogStyle.space8) {
+                        Button("Check again") { Task { await plugins.loadRegistry() } }
+                        Button("Build your own") { tab = .build }.buttonStyle(.frog(.primary))
+                    }
+                }.frogTableSurface()
             } else if shown.isEmpty {
                 FrogEmptyState(symbol: "magnifyingglass", title: "Nothing matches", message: "Try another word.").frogTableSurface()
             } else {
@@ -152,20 +154,20 @@ struct PluginsView: View {
     private func listingRow(_ entry: PluginRegistryEntry) -> some View {
         let installed = plugins.item(entry.id)
         let permissions = entry.permissions.compactMap { PluginPermission(rawValue: $0)?.title.lowercased() }
-        let caption = [entry.summary, "by \(entry.author)", permissions.isEmpty ? nil : "asks to " + permissions.joined(separator: ", ")]
+        let caption = [entry.summary.taglineInCaption, "by \(entry.author)", permissions.isEmpty ? nil : "asks to " + permissions.joined(separator: ", ")]
             .compactMap { $0 }.joined(separator: " · ")
         return FrogRow("\(entry.name) \(entry.version)", caption: caption) {
-            PluginIconTile(symbol: PluginSymbol.name(entry.displaySymbol), tint: FrogStyle.accent)
+            PluginIconTile(symbol: PluginSymbol.name(entry.displaySymbol), tint: PluginTint.purple.color)
         } control: {
             if let installed, installed.record.sha256 == entry.sha256.lowercased() || !Self.isNewer(entry, than: installed) {
-                FrogBadge(text: "Installed")
+                FrogStatusLabel("Installed")
             } else if plugins.installing == entry.id {
-                ProgressView().controlSize(.small).frame(width: 60)
+                FrogSpinner().frame(width: 60)
             } else if !entry.runs(on: AppVersion.current) {
                 FrogBadge(text: "Needs Frog \(entry.frog ?? "")")
             } else {
                 Button(installed == nil ? "Install" : "Update") { install(entry) }
-                    .buttonStyle(.frog(installed == nil ? .primary : .secondary, compact: true))
+                    .buttonStyle(.frog(installed == nil ? .primary : .secondary))
                     .disabled(plugins.installing != nil || plugins.downloading != nil)
             }
         }
@@ -183,24 +185,38 @@ struct PluginsView: View {
     private static let prompt = "Build me a Frog plugin that … Run `frog plugin guide` first and follow it."
 
     @ViewBuilder private var build: some View {
-        FrogSection("Build one with your AI agent",
-                    footer: "Your agent writes the files, installs the plugin for your review and checks a picture of its page.") {
-            FrogRow("Ask your agent", caption: Self.prompt) {
-                CopyAction { ViewActions.copy(Self.prompt) }
+        // Two cards, each one kind of task: making a plugin with an agent, then passing one on or taking one in.
+        FrogSection("Make one with your agent", footer: "Your agent writes the files, installs the plugin for your review and checks a picture of its page.") {
+            FrogRow("Ask your agent", caption: "Paste this prompt and finish the sentence.")
+            // The prompt itself, set like code where it names a command, and without the backticks; its copy
+            // action sits in the block it copies.
+            HStack(alignment: .center, spacing: FrogStyle.space8) {
+                Text(InlineCode.attributed(Self.prompt)).font(FrogType.body).foregroundStyle(FrogStyle.ink).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, FrogStyle.space4)
+                CopyAction(title: "Copy prompt", labeled: true) { ViewActions.copy(Self.prompt) }.frogRowAccessory()
             }
-            FrogRow("Let it use Frog", caption: "Settings → Agents installs the frog command and skill.") {
-                Button("Settings") { model.toolkit.select(.settings) }.buttonStyle(.frog(compact: true))
+            .padding(.leading, FrogStyle.space10).padding(.trailing, FrogStyle.space4).padding(.vertical, FrogStyle.space4)
+            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
+            .padding(.bottom, FrogStyle.space6)
+            FrogRow("Let it use Frog", caption: "Turn on agents in Settings to install the frog command.") {
+                Button("Open Settings") { model.toolkit.select(.settings) }.buttonStyle(.frog())
             }
-            FrogRow("Share it", caption: "frog plugin publish packs it and prints the entry for the directory.")
         }
-        FrogSection("Install from a link") {
-            FrogRow("Link to a .frogplugin file", caption: "You review what it asks for before anything is installed.") {
-                HStack(spacing: 6) {
-                    TextField("https://…", text: $link).textFieldStyle(.plain).font(FrogType.body)
-                        .padding(.horizontal, 8).frame(width: 240).frogControlSurface()
+        FrogSection("Share and install") {
+            FrogRow("Share yours", caption: .attributed(InlineCode.attributed(L10n.text("Run `frog plugin publish` to pack it for the directory.")))) {
+                CopyAction(title: "Copy command", labeled: true) { ViewActions.copy("frog plugin publish") }
+            }
+            // The caption says what Review needs, so the button never waits without a reason in sight.
+            FrogRow("Install from a link", caption: "Paste a link to a .frogplugin file. You review it first.") {
+                // A field is `controlHeight` like every field and dropdown; Review is the one button size,
+                // centred on it, as a search box and its add button are.
+                HStack(spacing: FrogStyle.space8) {
+                    FrogTextField(placeholder: "https://…", text: $link).textFieldStyle(.plain).font(FrogType.body)
+                        .padding(.horizontal, 8).frame(width: 220).frogControlSurface()
                         .onSubmit(openTypedLink)
-                    Button("Review", action: openTypedLink).buttonStyle(.frog(compact: true))
-                        .disabled(typedLink == nil || plugins.downloading != nil)
+                    Button("Review", action: openTypedLink)
+                        .frogDisabled(plugins.downloading != nil ? "Downloading…" : typedLink == nil ? "Paste a link to a .frogplugin file" : nil)
                 }
             }
         }
@@ -240,6 +256,84 @@ struct PluginsView: View {
     }
 }
 
+/// An installed plugin's row in Community plugins: clicking it opens the plugin's page, as a Features row does.
+private struct InstalledPluginRow: View {
+    let item: PluginItem
+    let running: Bool
+    let source: String
+    let help: String
+    let open: () -> Void
+    let review: () -> Void
+    let setEnabled: (Bool) -> Void
+    let settings: () -> Void
+    let remove: () -> Void
+    @State private var hovering = false
+
+    private var opens: Bool { item.runs && item.hasPage }
+
+    /// The icon, name, version, Running badge and the description or problem.
+    private var summary: some View {
+        HStack(spacing: FrogStyle.space12) {
+            PluginIconTile(symbol: PluginSymbol.name(item.symbol), tint: PluginTint.purple.color)
+            VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                HStack(alignment: .firstTextBaseline, spacing: FrogStyle.space6) {
+                    Text(L10n.text(item.name)).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
+                    if let version = item.manifest?.version, !version.isEmpty {
+                        Text(version).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                    }
+                    if running { FrogStatusLabel("Running", tone: .active) }
+                }
+                // Up to two lines, so a plugin's one-sentence description reads to its end instead of breaking off.
+                Text(L10n.text(item.problem ?? item.manifest?.description.taglineInCaption ?? ""))
+                    .font(FrogType.small).foregroundStyle(item.problem == nil ? FrogStyle.muted : FrogStyle.warning)
+                    .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: FrogStyle.space12) {
+            // A row that opens is a button; one that cannot (stopped, or with a problem) is plain content, so its
+            // problem keeps the warning colour and VoiceOver reads all of it.
+            if opens {
+                Button(action: open) { summary.contentShape(Rectangle()) }
+                    .buttonStyle(.plain)
+                    .help(help)
+                    .accessibilityElement(children: .combine).accessibilityHint(L10n.text("Opens its page"))
+            } else {
+                summary.help(help).accessibilityElement(children: .combine)
+            }
+            HStack(spacing: FrogStyle.space8) {
+                if item.needsReview {
+                    Button("Review", action: review).buttonStyle(.frog(.primary))
+                } else if item.problem == nil {
+                    Toggle("", isOn: Binding(get: { item.record.enabled }, set: setEnabled))
+                        .toggleStyle(.frogSwitch).controlSize(.small).labelsHidden()
+                        .accessibilityLabel("\(item.name) on")
+                }
+                IconMenu(title: "More about \(item.name)", bordered: false) {
+                    if opens { Button("Open", systemImage: "macwindow", action: open) }
+                    if item.runs, item.hasSettings { Button("Settings…", systemImage: "slider.horizontal.3", action: settings) }
+                    Text(source)
+                    if let actions = item.manifest?.actions.count, actions > 0 { Text(actions == 1 ? "1 action" : "\(actions) actions") }
+                    Button("Remove…", systemImage: "trash", role: .destructive, action: remove)
+                }
+            }.fixedSize()
+        }
+        .padding(.vertical, FrogStyle.space6).padding(.horizontal, FrogStyle.rowPadding)
+        .frame(minHeight: FrogStyle.rowHeight)
+        .frogRowHighlight(hovering: hovering && opens)
+        .padding(.horizontal, -FrogStyle.rowPadding)
+        .onHover { hovering = $0 }
+        .contextMenu {
+            if opens { Button("Open", action: open) }
+            if item.runs, item.hasSettings { Button("Settings…", action: settings) }
+            Button("Remove…", role: .destructive, action: remove)
+        }
+    }
+}
+
 enum PluginSymbol {
     /// The plugin's SF Symbol, or the default one when this Mac has no symbol by that name.
     static func name(_ symbol: String) -> String {
@@ -259,98 +353,115 @@ struct PluginReviewSheet: View {
 
     var body: some View {
         let additions = review.additions
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                SymbolTile(symbol: PluginSymbol.name(manifest.displaySymbol), size: 40)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(review.approved == nil ? "Install \(manifest.name)?" : "Update \(manifest.name)?").font(FrogType.section)
-                    Text("Version \(manifest.version)\(manifest.author.map { " · by \($0)" } ?? "")").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                    origin
+        let updating = review.approved != nil
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: FrogStyle.space12) {
+                HStack(alignment: .center, spacing: FrogStyle.space12) {
+                    PluginIconTile(symbol: PluginSymbol.name(manifest.displaySymbol), tint: PluginTint.purple.color, size: .header)
+                    VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                        Text(updating ? "Update \(manifest.name)?" : review.installed ? "Allow \(manifest.name)?" : "Install \(manifest.name)?").font(FrogType.title).tracking(-0.4)
+                            .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
+                        Text("Version \(manifest.version)\(manifest.author.map { " · by \($0)" } ?? "")").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    }
+                }
+                origin
+                Text(manifest.description).font(FrogType.body).fixedSize(horizontal: false, vertical: true)
+                if let replacing = review.replacing {
+                    InlineIssue(message: "You have \(manifest.name) from \(replacing.label). This one comes from \(review.source.label): it replaces that plugin and gets what it stored. Install it only if both come from the same author.")
+                }
+                if !review.compatible {
+                    InlineIssue(message: "It needs Frog \(manifest.frog ?? "") or later. Update Frog first.")
                 }
             }
-            Text(manifest.description).font(FrogType.body).fixedSize(horizontal: false, vertical: true)
-            if let replacing = review.replacing {
-                InlineIssue(message: "You have \(manifest.name) from \(replacing.label). This one comes from \(review.source.label): it replaces that plugin and gets what it stored. Install it only if both come from the same author.")
-            }
-            if !review.compatible {
-                InlineIssue(message: "It needs Frog \(manifest.frog ?? "") or later. Update Frog first.")
-            }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
+            // The header's icon, title and description start where the sections' headings and rows' text do,
+            // `rowInset` inside the cards, so the sheet reads down one left edge.
+            .padding(.horizontal, FrogStyle.sheetPadding + FrogStyle.rowInset).padding(.top, FrogStyle.sheetPadding)
+            .padding(.bottom, FrogStyle.space16)
+            FrogSheetScroll {
+                VStack(alignment: .leading, spacing: FrogStyle.space16) {
                     if manifest.permissions.isEmpty {
-                        Text("It asks for no permissions: it shows its page, keeps its own storage and receives its commands.")
-                            .font(FrogType.body).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                        FrogSection("Permissions") {
+                            FrogRow("Nothing beyond its own page", caption: "It shows its page, keeps its own storage and receives its commands.", icon: {
+                                permissionIcon("checkmark.shield")
+                            }, control: { EmptyView() })
+                        }
                     } else {
-                        SectionCaption(text: review.approved != nil && additions.isEmpty
-                                       ? "It asks for nothing new" : "It asks to")
-                        ForEach(manifest.permissions, id: \.self) { permission in
-                            permissionRow(permission, new: review.approved != nil && additions.permissions.contains(permission))
+                        let sensitive = manifest.permissions.filter(\.isSensitive).count
+                        FrogSection(updating && additions.isEmpty ? "It asks for nothing new" : "It asks to",
+                                    footer: sensitive == 0 ? nil : "Caution marks what can read or send your data, or act for you.") {
+                            ForEach(manifest.permissions, id: \.self) { permission in
+                                permissionRow(permission, new: updating && additions.permissions.contains(permission))
+                            }
                         }
                     }
                     if !manifest.actions.isEmpty {
-                        SectionCaption(text: "Actions you and your agents can run")
-                        ForEach(manifest.actions, id: \.id) { action in
-                            HStack(spacing: 6) {
-                                Text(action.title).font(FrogType.body)
-                                if let shortcut = action.shortcut, let parsed = try? Shortcut(shortcut) {
-                                    FrogBadge(text: HotkeyManager.display(parsed.hotkey))
+                        // What the actions may do is said once per kind, not under every action: one kind in the
+                        // footer, several each under its own caption, the ones that change nothing first.
+                        let groups = Dictionary(grouping: manifest.actions, by: \.effect).sorted { $0.key < $1.key }
+                        FrogSection("Actions you and your agents can run", footer: groups.count == 1 ? groups[0].key.sentence : nil) {
+                            ForEach(groups, id: \.key) { effect, actions in
+                                if groups.count > 1 {
+                                    SectionCaption(text: effect.sentence).padding(.top, FrogStyle.space6)
                                 }
-                                Spacer(minLength: 8)
-                                Text(action.effect.title).font(FrogType.small)
-                                    .foregroundStyle(action.effect == .read ? FrogStyle.muted : FrogStyle.ink)
+                                ForEach(actions, id: \.id) { action in
+                                    FrogRow(action.title) {
+                                        if let shortcut = action.shortcut, let parsed = try? Shortcut(shortcut) {
+                                            ShortcutBadge(text: HotkeyManager.display(parsed.hotkey))
+                                        }
+                                    }.help(effect.explanation)
+                                }
                             }
                         }
                     }
                     if !manifest.uses.isEmpty {
-                        SectionCaption(text: "Frog actions it can run")
-                        ForEach(manifest.uses, id: \.self) { pattern in
-                            HStack(spacing: 6) {
-                                Text(pattern).font(FrogType.mono)
-                                if review.approved != nil, additions.uses.contains(pattern) { FrogBadge(text: "New", active: true) }
+                        FrogSection("Frog actions it can run") {
+                            ForEach(manifest.uses, id: \.self) { pattern in
+                                listRow(pattern, badge: updating && additions.uses.contains(pattern) ? "New" : nil)
                             }
                         }
                     }
                     if !manifest.hosts.isEmpty {
-                        SectionCaption(text: "Sites it can reach")
-                        ForEach(manifest.hosts, id: \.self) { host in
-                            HStack(spacing: 6) {
-                                Text(host).font(FrogType.mono)
-                                if review.approved != nil, additions.hosts.contains(host) { FrogBadge(text: "New", active: true) }
+                        FrogSection("Sites it can reach") {
+                            ForEach(manifest.hosts, id: \.self) { host in
+                                listRow(host, badge: updating && additions.hosts.contains(host) ? "New" : nil)
                             }
                         }
                     }
                     if !manifest.scripts.isEmpty {
-                        SectionCaption(text: "Scripts it can run")
-                        ForEach(manifest.scripts.keys.sorted(), id: \.self) { name in
-                            DisclosureGroup {
-                                ScrollView {
-                                    Text((try? review.package.scriptText(name)) ?? "The script could not be read.")
-                                        .font(FrogType.mono).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                                }.frame(maxHeight: 160).padding(8).background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Text(name).font(FrogType.mono)
-                                    if review.approved != nil, additions.scripts.contains(name) { FrogBadge(text: "Changed", active: true) }
+                        FrogSection("Scripts it can run") {
+                            ForEach(manifest.scripts.keys.sorted(), id: \.self) { name in
+                                DisclosureGroup {
+                                    ScrollView {
+                                        Text((try? review.package.scriptText(name)) ?? "The script could not be read.")
+                                            .font(FrogType.mono).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                                    }.bottomScrollFade(height: FrogStyle.space10).frame(maxHeight: 160).padding(8).background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+                                        .padding(.bottom, FrogStyle.space8)
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Text(name).font(FrogType.mono)
+                                        if updating, additions.scripts.contains(name) { FrogBadge(text: "Changed", active: true) }
+                                    }.frame(minHeight: FrogStyle.rowHeight)
                                 }
                             }
-                        }
-                        if review.approved != nil, additions.scripts.contains(PluginGrant.filesKey) {
-                            HStack(spacing: 6) {
-                                Text("Its files changed, and its scripts can run any of them.").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                                FrogBadge(text: "Changed", active: true)
+                            if updating, additions.scripts.contains(PluginGrant.filesKey) {
+                                FrogRowNote(text: "Its files changed, and its scripts can run any of them.", tone: FrogStyle.warning)
                             }
                         }
                     }
-                }.frame(maxWidth: .infinity, alignment: .leading)
-            }.frame(maxHeight: 320).fixedSize(horizontal: false, vertical: true)
-            HStack {
+                }
+                .padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space4)
+            }
+            FrogSheetButtons {
                 Text("\(review.package.files.count) files · \(ByteCountFormatter.string(fromByteCount: Int64(review.package.size), countStyle: .file))")
                     .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                Spacer()
-                Button(review.installed ? "Not now" : "Cancel") { plugins.dismissReview() }.keyboardShortcut(.cancelAction)
-                Button(review.installed ? "Allow" : review.approved == nil ? "Install" : "Update") {
+            } trailing: {
+                FrogCancelButton(review.installed ? "Not now" : "Cancel") { plugins.dismissReview() }
+                // It looks ready at once; a click in its first second after the sheet changes is ignored, so a click
+                // meant for something else cannot approve it.
+                Button(review.installed ? "Allow" : updating ? "Update" : "Install") {
+                    guard armed else { return }
                     do { try plugins.approve(review) } catch { report(error); plugins.dismissReview() }
-                }.buttonStyle(.frog(.primary)).disabled(!review.compatible || !armed)
+                }.buttonStyle(.frog(.primary)).frogDisabled(review.compatible ? nil : "Update Frog first")
             }
         }
         .task(id: review.id) {
@@ -358,37 +469,107 @@ struct PluginReviewSheet: View {
             try? await Task.sleep(for: .seconds(1))
             armed = true
         }
-        .padding(FrogStyle.sheetPadding).frame(width: 480)
+        .frame(width: 500)
         .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
     }
 
     @ViewBuilder private var origin: some View {
         switch review.source {
         case .folder(let path):
-            Text("Built on this Mac in \((path as NSString).abbreviatingWithTildeInPath)").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+            // Where it was built is the folder's whole path, often a long temporary one, in the tooltip; the line
+            // itself names no internal folder.
+            let shown = (path as NSString).abbreviatingWithTildeInPath
+            Label("Built on this Mac", systemImage: "hammer")
+                .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).help(shown)
         case .link, .file:
-            HStack(spacing: 6) {
-                Text("From \(review.source.label)").font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
+            VStack(alignment: .leading, spacing: FrogStyle.space4) {
                 if plugins.isListed(review.sha256) {
-                    Label("Signed by the Frog directory", systemImage: "checkmark.seal").font(FrogType.small).foregroundStyle(FrogStyle.good)
+                    Label("Signed by the Frog directory", systemImage: "checkmark.seal.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
                 } else {
-                    Label("Not in the Frog directory", systemImage: "exclamationmark.triangle").font(FrogType.small).foregroundStyle(FrogStyle.warning)
+                    Label("Not in the Frog directory", systemImage: "exclamationmark.triangle.fill").font(FrogType.small).foregroundStyle(FrogStyle.warning)
                 }
+                Text("From \(review.source.label)").font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
+                    .help(review.source.label)
             }
         }
     }
 
+    private func permissionIcon(_ symbol: String) -> some View {
+        Image(systemName: symbol).font(.system(size: 13, weight: .medium))
+            .foregroundStyle(FrogStyle.ink.opacity(0.75))
+            .frame(width: 28, height: 28).background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius - 2, style: .continuous))
+            .accessibilityHidden(true)
+    }
+
     private func permissionRow(_ permission: PluginPermission, new: Bool) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: permission.isSensitive ? "exclamationmark.triangle.fill" : "checkmark.circle")
-                .foregroundStyle(permission.isSensitive ? FrogStyle.warning : FrogStyle.muted).frame(width: 16)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(permission.title).font(FrogType.bodyMedium)
+        PluginPermissionRow(permission: permission, new: new) { permissionIcon(permission.symbol) }
+    }
+
+    private func listRow(_ text: String, badge: String?) -> some View {
+        HStack(spacing: FrogStyle.space6) {
+            Text(text).font(FrogType.mono).textSelection(.enabled)
+            if let badge { FrogBadge(text: badge, active: true) }
+            Spacer(minLength: 0)
+        }.frame(minHeight: 32)
+    }
+
+}
+
+/// One permission: its symbol and its one-line title with a Caution or New badge beside it. Its explanation opens
+/// under it from the chevron; a sensitive permission opens with it shown, so what can read or send data, or act for
+/// the user, is never agreed to unread.
+private struct PluginPermissionRow<Icon: View>: View {
+    let permission: PluginPermission
+    let new: Bool
+    @ViewBuilder var icon: Icon
+    @State private var expanded: Bool?
+
+    private var open: Bool { expanded ?? permission.isSensitive }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: FrogStyle.space12) {
+            icon
+            VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                HStack(spacing: FrogStyle.space6) {
+                    Text(permission.title).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
+                    if permission.isSensitive { FrogBadge(text: "Caution", tone: .warning, symbol: "exclamationmark.triangle.fill") }
                     if new { FrogBadge(text: "New", active: true) }
                 }
-                Text(permission.detail).font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                if open {
+                    Text(permission.detail).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }.frame(minHeight: FrogStyle.controlHeight, alignment: open ? .top : .center)
+            Spacer(minLength: 0)
+            IconAction(title: open ? "Hide details" : "Show details", symbol: open ? "chevron.up" : "chevron.down") {
+                expanded = !open
             }
+        }
+        .padding(.vertical, FrogStyle.space6).frame(minHeight: FrogStyle.rowHeight)
+        .contentShape(Rectangle()).onTapGesture { expanded = !open }
+        .help(permission.detail)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(permission.detail)
+    }
+}
+
+extension PluginPermission {
+    /// A neutral symbol for what the permission reaches; the review adds a caution mark to the sensitive ones.
+    var symbol: String {
+        switch self {
+        case .clipboardRead: "doc.on.clipboard"
+        case .clipboardWrite: "clipboard"
+        case .selection: "character.cursor.ibeam"
+        case .notifications: "bell"
+        case .links: "link"
+        case .menubar: "menubar.rectangle"
+        case .hotkeys: "command"
+        case .background: "clock.arrow.circlepath"
+        case .files: "folder"
+        case .network: "network"
+        case .ai: "sparkles"
+        case .frogActions: "bolt"
+        case .scripts: "terminal"
         }
     }
 }
@@ -404,20 +585,20 @@ struct PluginPageView: View {
     var body: some View {
         let item = model.plugins.item(id)
         VStack(spacing: 0) {
-            // The plugin's page has its own title, so this row only leads back and, while building, reloads.
-            HStack(spacing: 8) {
-                Button("Community plugins", systemImage: "chevron.left") { model.toolkit.select(.feature(.plugins)) }
-                    .buttonStyle(.frog(.ghost))
-                Spacer()
-                if case .folder = item?.record.source {
-                    IconAction(title: "Reload", symbol: "arrow.clockwise") { model.plugins.reload(id) }
+            // The toolbar leads back ("Community plugins › Name"); this row only holds the page's own actions.
+            let reloads: Bool = { if case .folder = item?.record.source { return true }; return false }()
+            if reloads || item?.hasSettings == true {
+                HStack(spacing: FrogStyle.space8) {
+                    Spacer()
+                    if reloads {
+                        IconAction(title: "Reload", symbol: "arrow.clockwise") { model.plugins.reload(id) }
+                    }
+                    if item?.hasSettings == true {
+                        IconAction(title: "Settings", symbol: "slider.horizontal.3") { settings = PluginSettingsTarget(id: id) }
+                    }
                 }
-                if item?.hasSettings == true {
-                    IconAction(title: "Settings", symbol: "slider.horizontal.3") { settings = PluginSettingsTarget(id: id) }
-                }
+                .frame(height: FrogStyle.controlHeight).padding(.horizontal, FrogStyle.pagePadding)
             }
-            .frame(height: FrogStyle.controlHeight).padding(.horizontal, 20)
-            .background { WindowDragRegion().accessibilityHidden(true) }
             if let host {
                 PluginWebContainer(host: host)
                     .background(FeatureVisibility { shown in host.isShowing = shown; if shown { host.refreshTheme() } })
@@ -428,9 +609,10 @@ struct PluginPageView: View {
                 }
                 Spacer()
             } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                FrogSpinner(label: "Opening the plugin").frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .frogPageBack("plugin-page-\(id)", parent: "Community plugins") { model.toolkit.select(.feature(.plugins)) }
         .task(id: id) {
             do { host = try await model.plugins.host(for: id); failure = nil }
             catch { failure = error.localizedDescription }
@@ -471,12 +653,30 @@ struct PluginWebContainer: NSViewRepresentable {
 }
 
 extension PluginManifestAction.Effect {
-    /// How the review names what an action may do.
-    var title: String {
+    /// What actions of this kind may do, said once for them in the review: its footer, or a caption over the group.
+    var sentence: String {
         switch self {
-        case .read: "Only reads"
-        case .write: "Changes things"
-        case .network: "Uses the network"
+        case .read: "These only read. They change nothing."
+        case .write: "These can change what the plugin keeps, the clipboard or notifications."
+        case .network: "These can change what the plugin keeps and reach the internet."
         }
+    }
+
+    /// What the effect lets an action do, under the pointer.
+    var explanation: String {
+        switch self {
+        case .read: "Reads its storage or, with permission, the clipboard. Changes nothing."
+        case .write: "Can change its storage, the clipboard, show a notification, run a script or open a link, as its permissions allow."
+        case .network: "Can also reach the sites it lists or your AI model, as its permissions allow."
+        }
+    }
+}
+
+extension String {
+    /// A plugin's own summary as it reads inside a `·` caption: a tagline, so a trailing full stop is dropped
+    /// ("Fetch the weather." becomes "Fetch the weather · 2 actions").
+    var taglineInCaption: String {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.hasSuffix(".") && !trimmed.hasSuffix("...") ? String(trimmed.dropLast()) : trimmed
     }
 }

@@ -73,6 +73,11 @@ final class LocalModels: ObservableObject {
         measureDiskUse()
     }
     func descriptor(_ id: String) -> LocalModelDescriptor? { catalog.first { $0.id == id } }
+    /// Where Frog keeps downloaded models unless the user chose another folder.
+    static var standardDirectory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Frog", isDirectory: true).appendingPathComponent("Models", isDirectory: true)
+    }
 
     init(directory: URL? = nil, runtime: any LocalInferenceEngine = LocalInference(), downloader: @escaping Downloader = LocalInference.download, freeSpace: @escaping FreeSpaceReader = LocalModels.availableCapacity,
          fileChecker: @escaping FileChecker = { ModelFiles.check($0, folder: $1, installed: $2, contents: true) }) {

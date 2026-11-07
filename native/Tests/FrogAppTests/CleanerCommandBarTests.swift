@@ -94,7 +94,7 @@ import FrogCore
         let first = try XCTUnwrap(on.results.first)
         XCTAssertEqual(first.id, CleanerCommand.rowID(path: path))
         XCTAssertEqual(first.title, "Uninstall Fixture App")
-        XCTAssertEqual(first.subtitle, "App cleaner · Review before anything moves")
+        XCTAssertEqual(first.subtitle, "Review before anything moves")
         if let ranked = on.results.firstIndex(where: { $0.id == "app:\(path)" }) { XCTAssertGreaterThan(ranked, 0) }
         on.query = "remove fix"
         XCTAssertEqual(on.results.first?.id, CleanerCommand.rowID(path: path))

@@ -84,8 +84,10 @@ public struct WorkflowPreferences: Codable, Equatable, Sendable {
 
 extension Rule {
     public var category: RuleCategory { action?.category ?? .text }
+    /// The preset's name before it became "Dictation".
+    public static let legacyDictationPresetName = "Dictate"
     public static var dictationPreset: Rule {
-        var rule = Rule(name: "Dictate", instructions: "Clean up this transcript. Fix punctuation, spelling and obvious speech recognition mistakes. Preserve meaning and language. Return only the corrected text, without commentary.", hotkey: Hotkey(keyCode: 49, modifiers: 2048), preset: true)
+        var rule = Rule(name: "Dictation", instructions: "Clean up this transcript. Fix punctuation, spelling and obvious speech recognition mistakes. Preserve meaning and language. Return only the corrected text, without commentary.", hotkey: Hotkey(keyCode: 49, modifiers: 2048), preset: true)
         rule.action = RuleAction(category: .audio)
         return rule
     }
@@ -154,7 +156,7 @@ extension Configuration {
         let factory = Rule.dictationPreset
         for index in rules.indices {
             let rule = rules[index]
-            if rule.category == .audio, rule.preset, rule.name == factory.name,
+            if rule.category == .audio, rule.preset, rule.name == factory.name || rule.name == Rule.legacyDictationPresetName,
                rule.instructions == factory.instructions, rule.providerID == nil,
                rule.action?.localTextModelID == nil {
                 rules[index].action?.cleanup = false

@@ -149,7 +149,7 @@ actor WindowManager {
         try Task.checkCancellation()
         guard access.isTrusted() else { throw FrogError.message("Allow Accessibility in Settings → Permissions to move windows.") }
         guard let window = access.focusedWindow(pid: pid) else {
-            throw FrogError.message("There is no focused window to \(action.title.lowercased()).")
+            throw FrogError.message("There is no focused window for \(action.title).")
         }
         try apply(action, to: window, displays: displays, options: options)
     }

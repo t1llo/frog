@@ -79,11 +79,11 @@ enum SecureInput {
     }
 
     static func summary(_ holder: Holder) -> String {
-        "Window switcher paused — \(holder.name ?? "another app") is asking for a password"
+        "Paused: \(holder.name ?? "another app") wants a password"
     }
 
     static func status(_ holder: Holder) -> String {
-        "Paused — \(holder.name ?? "another app") is asking for a password. macOS hides the keyboard from every other app until you enter it or close that window."
+        "Paused: \(holder.name ?? "another app") is asking for a password. macOS hides the keyboard from every other app until you enter it or close that window."
     }
 }
 
@@ -138,10 +138,7 @@ final class SecureInputNoticePanel {
             panel = created
         }
         guard let panel else { return }
-        let host = NSHostingView(rootView: HStack(spacing: 8) {
-            Image(systemName: "lock").foregroundStyle(FrogStyle.warning)
-            Text(message).font(FrogType.label).lineLimit(1)
-        }.padding(.horizontal, 14).frame(height: 36).frogPanel(pill: true))
+        let host = NSHostingView(rootView: SecureInputPill(message: message))
         let size = host.fittingSize
         panel.contentView = host
         if let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main {
@@ -156,4 +153,12 @@ final class SecureInputNoticePanel {
     }
 
     func hide() { dismissal?.cancel(); dismissal = nil; panel?.orderOut(nil) }
+}
+
+/// The notice's pill: a lock and the message.
+struct SecureInputPill: View {
+    let message: String
+    var body: some View {
+        FrogNoticePill(symbol: "lock", tone: FrogStyle.warning, text: message)
+    }
 }

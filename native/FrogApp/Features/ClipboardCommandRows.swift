@@ -18,14 +18,15 @@ import FrogCore
         let target = context.pasteTarget, retention = store.retentionGeneration, pasteboard = context.pasteboard
         let waitForRelease = context.waitForRelease, toolUse = context.toolUse
         return (pending ?? store.entries).filter { !$0.isSensitive }.map { entry in
+            let kind = entry.kind
             let copy = CommandRowAction(title: "Copy") { [weak model] in
                 guard let model, model.configuration.preferences.featureEnabled(.clipboard), model.clipboardHistoryStore.copy(entry) else {
                     throw FrogError.message("The clipboard item is no longer available.")
                 }
             }
             return CommandBarRow(
-                record: SearchRecord(id: "clipboard:\(entry.id)", title: String(entry.text.prefix(100)), subtitle: "Clipboard · Paste · ⌘↩ Copy",
-                                     keywords: String(entry.text.prefix(512)), symbol: "clipboard"),
+                record: SearchRecord(id: "clipboard:\(entry.id)", title: String(entry.text.prefix(100)), subtitle: kind.title,
+                                     keywords: "clipboard " + String(entry.text.prefix(512)), symbol: kind.symbol),
                 primary: CommandRowAction(title: "Paste") { [weak model] in
                     guard let model else { return }
                     try await ClipboardHistoryDelivery.paste(entry, plainText: false, pasteboard: pasteboard, target: target, isCurrent: {
@@ -34,7 +35,7 @@ import FrogCore
                     }, waitForRelease: waitForRelease)
                     toolUse(.clipboardPaste)
                 },
-                secondary: copy)
+                secondary: copy, tint: kind.tint)
         }
     }
 

@@ -263,6 +263,7 @@ extension AgentCommands {
         case .centeredSmall: "Centered \(name) at 50% of its display."
         case .centeredMedium: "Centered \(name) at 70% of its display."
         case .centeredLarge: "Centered \(name) at 90% of its display."
+        case .topLeft, .topRight, .bottomLeft, .bottomRight: "Moved \(name) to the \(action.title.lowercased()) quarter."
         default: "Moved \(name) to the \(action.title.lowercased())."
         }
     }

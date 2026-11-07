@@ -6,16 +6,19 @@
   <title>Focus timer</title>
   <link rel="stylesheet" href="/_frog/frog.css">
   <style>
-    .clock { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-    .time { font-size: 34px; font-weight: 300; line-height: 1; letter-spacing: -0.8px; font-variant-numeric: tabular-nums; }
+    .heading { display: flex; align-items: baseline; gap: 8px; }
+    .heading strong { flex: 1; font-size: 13px; font-weight: 600; }
   </style>
 </head>
 <body>
   <main class="frog-page">
     <p id="error" class="frog-error" role="alert" hidden></p>
-    <div class="clock">
-      <div id="time" class="time" role="timer">25:00</div>
-      <span id="today" class="frog-muted frog-tabular"></span>
+    <div class="frog-stack" style="--gap: 2px">
+      <div class="heading">
+        <strong id="mode">Focus</strong>
+        <span id="today" class="frog-small frog-muted frog-tabular"></span>
+      </div>
+      <div id="time" class="frog-figure" role="timer">25:00</div>
     </div>
     <div id="progress" class="frog-meter" style="--value: 0" aria-hidden="true"></div>
     <div class="frog-row">

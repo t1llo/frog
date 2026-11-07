@@ -173,19 +173,20 @@ public struct RemovalPrompt: Equatable, Sendable {
             finderDenied = "Frog may not control Finder, so \(staying). \(allow)"
         } else {
             finderDenied = nil
-            let items = finder == 1 ? "1 item" : "\(finder) items"
+            // Said against the list above it, so "1 item" never reads as all that moves.
+            let moves = finder < count ? "Finder moves \(finder) of the \(count) items."
+                : count == 1 ? "Finder moves the item." : count == 2 ? "Finder moves both items." : "Finder moves all \(count) items."
             // Once allowed, macOS does not ask again.
             if finder > 0 {
-                notes.append(finderAutomation == .allowed ? "Finder moves \(items)."
-                    : "Finder moves \(items). macOS asks once whether Frog may control Finder.")
+                notes.append(finderAutomation == .allowed ? moves : "\(moves) macOS asks once whether Frog may control Finder.")
             }
         }
         let administrator = plan.administratorCount
         if administrator == 1 {
-            notes.append("1 item belongs to the system. Finder asks for your administrator password; Frog never sees it.")
+            notes.append("1 item belongs to the system. Finder asks for your administrator password, which Frog never sees.")
         }
         if administrator > 1 {
-            notes.append("\(administrator) items belong to the system. Finder asks for your administrator password; Frog never sees it.")
+            notes.append("\(administrator) items belong to the system. Finder asks for your administrator password, which Frog never sees.")
         }
         let restarting = plan.restartLabels.count
         if restarting == 1 { notes.append("1 background service stops after you restart your Mac.") }
@@ -197,11 +198,10 @@ public struct RemovalPrompt: Equatable, Sendable {
         if refused == 1 { notes.append("Frog leaves out 1 item it may not move.") }
         if refused > 1 { notes.append("Frog leaves out \(refused) items it may not move.") }
         let space = formatBytes(plan.totalBytes)
-        notes.append(plan.sizeIncomplete ? "The space (at least \(space)) is freed when you empty the Trash."
-            : "The space (\(space)) is freed when you empty the Trash.")
+        notes.append(plan.sizeIncomplete ? "Emptying the Trash frees at least \(space)." : "Emptying the Trash frees \(space).")
         notes.append(administrator > 0
-            ? "Put back items that belong to the system with Put Back in Finder's Trash; Frog puts back only your own items."
-            : "You can put items back from Recently moved in Frog, or from the Trash.")
+            ? "Frog puts back only your own items. Put back the system's from Finder's Trash."
+            : "You can put them back from Recently moved.")
         self.notes = notes
         confirm = "Move to Trash"
         cancel = "Cancel"

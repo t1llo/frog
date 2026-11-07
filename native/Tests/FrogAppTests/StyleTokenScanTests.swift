@@ -33,10 +33,20 @@ final class StyleTokenScanTests: XCTestCase {
         // Markdown rules and quote bars are the user's own content.
         try assertNoMatch(#"Rectangle\(\)\.fill\(FrogStyle\.border"#, "separate with space, a heading or a surface",
                           except: ["Views/MarkdownPreview.swift"])
-        // The one line in Frog's own chrome: `FrogSection` draws it between the rows of a card, and the plugin
-        // stylesheet's `.frog-section` the same line from the colour the page source hands it.
-        try assertNoMatch(#"FrogStyle\.separator"#, "only FrogSection draws the line between rows",
-                          except: ["Views/DesignSystem.swift", "Views/Design/FrogPage.swift", "Community/PluginPageSource.swift"])
+        // Cards set their rows apart by space; the separator colour is only handed to plugin pages' stylesheet.
+        try assertNoMatch(#"FrogStyle\.separator"#, "set rows apart by space, not lines",
+                          except: ["Views/DesignSystem.swift", "Community/PluginPageSource.swift"])
+    }
+
+    /// A popup's footer sits on `frogFooterBand()`, never under a hairline. The files listed still draw one and are
+    /// to move to the band; remove each from the list once it has.
+    func testFootersSitOnTheBandRatherThanUnderALine() throws {
+        try assertNoMatch(#"Rectangle\(\)\.fill\(FrogStyle\.hairline\)"#, "put the footer on frogFooterBand()")
+    }
+
+    /// One accent: the theme's. The system accent would bring a second colour of selection into Frog.
+    func testSelectionUsesTheThemeAccent() throws {
+        try assertNoMatch(#"controlAccentColor|Color\.accentColor"#, "use FrogStyle.accent")
     }
 
     func testControlsAreFrogsOwn() throws {
@@ -47,6 +57,17 @@ final class StyleTokenScanTests: XCTestCase {
         // The dictation pill's microphone menu is the one bare symbol, in the accent colour.
         try assertNoMatch(#"\.menuStyle\(\.borderlessButton\)"#, "use IconMenu: the borderless style drops Frog's surface and hover",
                           except: ["Platform/DictationController.swift"])
+    }
+
+    func testWaitsUseFrogsSpinner() throws {
+        try assertNoMatch(#"\bProgressView\(\)"#, "use FrogSpinner, FrogLoadingNote or FrogSkeleton",
+                          except: ["Views/Design/FrogLoading.swift"])
+    }
+
+    /// A feature's tile is its own colour everywhere; the gallery shows how a grey accent is drawn.
+    func testFeatureTilesUseTheFeaturesTint() throws {
+        try assertNoMatch(#"PluginIconTile\(.*tint: FrogStyle\.(accent|muted)"#, "pass the feature's PluginTint",
+                          except: ["Views/Design/DesignGallery.swift"])
     }
 
     func testTextUsesFrogsTypeScale() throws {
@@ -66,6 +87,43 @@ final class StyleTokenScanTests: XCTestCase {
 
     func testTextIsNeverSetInNinePoints() throws {
         try assertNoMatch(#"Text\(.*\.font\(\.system\(size: 9\)\)"#, "use FrogType.caption")
+    }
+
+    /// A search sits in the row above the list it filters (`ListToolbar`), never in a header or beside an add button.
+    /// The sidebar, a dropdown's own list and the gallery keep their own field.
+    func testSearchSitsInTheListToolbar() throws {
+        try assertNoMatch(#"\bSearchBox\("#, "put the search in a ListToolbar above the list it filters",
+                          except: ["Views/CompactControls.swift", "Views/MainView.swift", "Views/Design/FrogDropdown.swift",
+                                   "Views/Design/DesignGallery.swift"])
+    }
+
+    /// Every popup, panel and menu has one footer, `FrogFooter`; nothing draws its own band.
+    func testEveryFooterIsFrogFooter() throws {
+        try assertNoMatch(#"\.frogFooterBand\(\)"#, "use FrogFooter, PanelFooter or FrogPopupFooter",
+                          except: ["Views/PanelFooter.swift"])
+    }
+
+    /// Three button looks: primary, secondary and destructive. The fill-less ghost is only the setup assistant's
+    /// way-finding (Back, Skip, Skip setup, Import settings…); the gallery shows it.
+    func testGhostButtonsAreOnlySetupWayFinding() throws {
+        try assertNoMatch(#"\.frog\(\.ghost\b|FrogButtonStyle\(\.ghost\b"#, "use .frog() (secondary) or .frog(.destructive)",
+                          except: ["Views/OnboardingView.swift", "Views/Design/DesignGallery.swift"])
+    }
+
+    /// One cap per key: a shortcut of several keys is `KeyCaps`, never one `KeyCap` holding them all.
+    func testShortcutsAreOneCapPerKey() throws {
+        try assertNoMatch(#"\bKeyCap\("[⌃⌥⇧⌘][^"]+"|\bKeyCap\(shortcut|\bKeyCap\(action\.keys"#, "use KeyCaps, one cap per key")
+    }
+
+    /// Glyphs mean one thing: a ring or dot reads as record, so Stop is `stop.fill`; `plus` only adds.
+    func testGlyphsMeanOneThing() throws {
+        try assertNoMatch(#""stop\.circle(\.fill)?""#, "use stop.fill for Stop")
+        try assertNoMatch(#"case \.center: name = "plus""#, "use rectangle.center.inset.filled for Center")
+    }
+
+    /// Services take their tile from `ServiceMark`, so none falls back to a generic computer, terminal or server.
+    func testServicesUseTheirOwnMark() throws {
+        try assertNoMatch(#"PluginIconTile\(symbol: [^)]*"(desktopcomputer|server\.rack|terminal\.fill)""#, "use PluginIconTile(mark: ServiceMark…)")
     }
 
     private func assertNoMatch(_ pattern: String, _ advice: String, except files: Set<String> = [],

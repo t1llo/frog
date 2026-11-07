@@ -7,31 +7,54 @@ public enum WindowAction: String, Codable, CaseIterable, Identifiable, Sendable 
     case leftThird, centerThird, rightThird, leftTwoThirds, rightTwoThirds
     case centeredSmall, centeredMedium, centeredLarge
     public var id: String { rawValue }
+    /// The layout's one name, the same on the Windows page, in the layout picker, the cheat sheet, the shortcut
+    /// reference and the command bar: short enough for a picker tile.
     public var title: String {
         switch self {
         case .leftHalf: "Left half"
         case .rightHalf: "Right half"
         case .topHalf: "Top half"
         case .bottomHalf: "Bottom half"
-        case .topLeft: "Top-left quarter"
-        case .topRight: "Top-right quarter"
-        case .bottomLeft: "Bottom-left quarter"
-        case .bottomRight: "Bottom-right quarter"
-        case .maximize: "Maximize on display"
+        case .topLeft: "Top left"
+        case .topRight: "Top right"
+        case .bottomLeft: "Bottom left"
+        case .bottomRight: "Bottom right"
+        case .maximize: "Maximize"
         case .minimize: "Minimize"
         case .center: "Center"
-        case .restore: "Restore previous size"
-        case .nextDisplay: "Move to next display"
-        case .previousDisplay: "Move to previous display"
-        case .toggleFullScreen: "Toggle full screen"
+        case .restore: "Restore"
+        case .nextDisplay: "Next display"
+        case .previousDisplay: "Previous display"
+        case .toggleFullScreen: "Full screen"
         case .leftThird: "Left third"
         case .centerThird: "Center third"
         case .rightThird: "Right third"
         case .leftTwoThirds: "Left two-thirds"
         case .rightTwoThirds: "Right two-thirds"
-        case .centeredSmall: "Centered · 50%"
-        case .centeredMedium: "Centered · 70%"
-        case .centeredLarge: "Centered · 90%"
+        case .centeredSmall: "Centered 50%"
+        case .centeredMedium: "Centered 70%"
+        case .centeredLarge: "Centered 90%"
+        }
+    }
+    /// Earlier names and other words for the layout, so search still finds it by them: "quarter" finds Top left,
+    /// "previous size" Restore. The command bar and the layout picker match them along with `title`.
+    public var searchKeywords: String {
+        switch self {
+        case .topLeft: "Top-left quarter"
+        case .topRight: "Top-right quarter"
+        case .bottomLeft: "Bottom-left quarter"
+        case .bottomRight: "Bottom-right quarter"
+        case .maximize: "Maximize on display fill"
+        case .restore: "Restore previous size undo"
+        case .nextDisplay: "Move to next display screen"
+        case .previousDisplay: "Move to previous display screen"
+        case .toggleFullScreen: "Toggle full screen"
+        case .leftTwoThirds: "Left ⅔"
+        case .rightTwoThirds: "Right ⅔"
+        case .centeredSmall: "Centered · 50% small"
+        case .centeredMedium: "Centered · 70% medium"
+        case .centeredLarge: "Centered · 90% large"
+        default: ""
         }
     }
     private var ruleNumber: Int {

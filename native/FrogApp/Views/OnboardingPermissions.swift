@@ -34,7 +34,7 @@ enum OnboardingPermissionSupport {
 }
 
 /// The centrepiece of setup: one row per permission the chosen plugins need, with its state live. Accessibility is
-/// granted in a list Frog has to be dragged into, so Grant opens that list and a small panel carries Frog's icon to
+/// granted in a list Frog has to be dragged into, so Allow opens that list and a small panel carries Frog's icon to
 /// it. Microphone and Notifications use the system prompt.
 struct OnboardingPermissions: View {
     @EnvironmentObject private var model: AppModel
@@ -49,10 +49,10 @@ struct OnboardingPermissions: View {
     var body: some View {
         let needed = OnboardingPermissionSupport.needed(model)
         let later = Self.askedLater(OnboardingPermissionSupport.wanted(model))
-        VStack(alignment: .leading, spacing: FrogStyle.space16) {
-            FrogSection(footer: later) {
+        VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing - 6) {
+            FrogSection("Needed by your features", footer: later) {
                 if needed.isEmpty {
-                    FrogRow("Nothing to allow", caption: "The tools you chose need no permissions.")
+                    FrogRow("Nothing to allow", caption: "The features you chose need no permissions.")
                 }
                 ForEach(needed, id: \.self) { permission in
                     FrogRow(permission.title, caption: Self.reason(permission), icon: {
@@ -64,9 +64,12 @@ struct OnboardingPermissions: View {
                 }
             }
             if needed.contains(.accessibility), !granted.contains(.accessibility) {
-                Label("Grant opens the list in System Settings. Drag Frog's icon from the small panel into it, then switch Frog on.",
-                      systemImage: "hand.draw").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                    .labelStyle(.titleAndIcon).padding(.horizontal, FrogStyle.rowInset)
+                // How the one permission macOS cannot ask for is given, as three short steps.
+                FrogSection("Allowing Accessibility") {
+                    hint(1, "Allow opens Accessibility in System Settings.")
+                    hint(2, "Drag Frog's icon from the small panel into the list.")
+                    hint(3, "Switch Frog on. This step updates by itself.")
+                }
             }
         }
         .animation(reduceMotion ? FrogMotion.reveal : FrogMotion.check, value: granted)
@@ -80,14 +83,23 @@ struct OnboardingPermissions: View {
         .onDisappear { PermissionDragHelper.shared.hide() }
     }
 
+    private func hint(_ number: Int, _ text: String) -> some View {
+        HStack(spacing: FrogStyle.space10) {
+            Text("\(number)").font(FrogType.label.monospacedDigit()).foregroundStyle(FrogStyle.muted)
+                .frame(width: 20, height: 20).background(FrogStyle.control, in: Circle()).accessibilityHidden(true)
+            Text(L10n.text(text)).font(FrogType.row).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }.frame(minHeight: 32)
+    }
+
     @ViewBuilder private func control(for permission: MacPermission) -> some View {
         if granted.contains(permission) {
-            Label("Granted", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
+            FrogStatusLabel("Allowed")
                 .transition(.opacity)
         } else {
-            Button("Grant") { request(permission) }.buttonStyle(.frog(.secondary, compact: true))
+            Button("Allow") { request(permission) }.buttonStyle(.frog(.secondary))
                 .focused($focused, equals: permission)
-                .accessibilityLabel(Text(L10n.text("Grant \(permission.title)")))
+                .accessibilityLabel(Text(L10n.text("Allow \(permission.title)")))
         }
     }
 

@@ -12,16 +12,18 @@ struct PluginSettingsSheet: View {
     var body: some View {
         let item = plugins.item(id)
         let manifest = item?.manifest
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
-                PluginIconTile(symbol: PluginSymbol.name(item?.symbol ?? PluginManifest.defaultSymbol), tint: FrogStyle.accent)
-                Text("\(item?.name ?? id) settings").font(FrogType.section)
+        VStack(alignment: .leading, spacing: FrogStyle.space16) {
+            // The plugin's tile and name; the sheet itself says these are its settings, so no subtitle repeats it.
+            HStack(spacing: FrogStyle.space12) {
+                PluginIconTile(symbol: PluginSymbol.name(item?.symbol ?? PluginManifest.defaultSymbol), tint: PluginTint.purple.color, size: .header)
+                Text(item?.name ?? id).font(FrogType.title).tracking(-0.4).accessibilityAddTraits(.isHeader)
+                    .accessibilityLabel(Text(L10n.text("\(item?.name ?? id) settings")))
             }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+            FrogSheetScroll(maxHeight: 440) {
+                VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing - 6) {
                     if let manifest, let item {
                         if !manifest.settings.isEmpty {
-                            FrogSection {
+                            FrogSection("General") {
                                 ForEach(manifest.settings, id: \.key) { setting in
                                     FrogRow(setting.title, caption: setting.help) { control(setting) }
                                 }
@@ -32,8 +34,9 @@ struct PluginSettingsSheet: View {
                             FrogSection("Shortcuts") {
                                 ForEach(shortcutActions, id: \.id) { action in
                                     FrogRow(action.title, caption: plugins.shortcutIssues[PluginRuntime.shortcutKey(id, action.id)]) {
-                                        HotkeyRecorder(hotkey: shortcutBinding(action.id))
+                                        HotkeyRecorder(hotkey: shortcutBinding(action.id), unset: .placeholder)
                                     }
+                                    .frogRevealsRecorder()
                                 }
                             }
                         }
@@ -58,11 +61,8 @@ struct PluginSettingsSheet: View {
                         }
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
-            }.frame(maxHeight: 420).fixedSize(horizontal: false, vertical: true)
-            HStack {
-                Spacer()
-                Button("Done", action: done).buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
             }
+            FrogSheetButtons(padded: false) { FrogPrimaryButton("Done", action: done) }
         }
         .padding(FrogStyle.sheetPadding).frame(width: 520)
         .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent)
@@ -79,8 +79,10 @@ struct PluginSettingsSheet: View {
             let current: String = if case .text(let text)? = value { text } else { setting.choices?.first ?? "" }
             FrogDropdown(selected: current, options: setting.choices ?? [], width: 180, title: { $0 }) { save(setting, .text($0)) }
         case .integer:
-            let current: String = if case .integer(let number)? = value { String(number) } else { "" }
-            PluginTextSetting(value: current, secret: false, width: 80) { save(setting, .text($0)) }
+            let current: Int? = if case .integer(let number)? = value { number } else { nil }
+            PluginNumberSetting(value: current, minimum: setting.minimum, maximum: setting.maximum, title: setting.title) {
+                save(setting, .text(String($0)))
+            }
         case .text:
             let current: String = if case .text(let text)? = value { text } else { "" }
             PluginTextSetting(value: current, secret: false, width: 220) { save(setting, .text($0)) }
@@ -133,5 +135,85 @@ private struct PluginTextSetting: View {
     private func save() {
         if secret { guard !draft.isEmpty else { return }; commit(draft); draft = ""; return }
         if draft != value { commit(draft) }
+    }
+}
+
+/// A whole number in the same field as the text settings, its digits on the trailing side; the arrow keys step it by
+/// one, and it stays within the plugin's bounds, which its tooltip names.
+private struct PluginNumberSetting: View {
+    let value: Int?
+    let minimum: Int?
+    let maximum: Int?
+    let title: String
+    let commit: (Int) -> Void
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        // Minus and plus beside the field show that it steps, and step it without the keyboard; each stops at its bound.
+        HStack(spacing: FrogStyle.space4) {
+            IconAction(title: "Decrease \(L10n.text(title))", symbol: "minus") { step(by: -1) }
+                .disabled(atBound(minimum))
+            field
+            IconAction(title: "Increase \(L10n.text(title))", symbol: "plus") { step(by: 1) }
+                .disabled(atBound(maximum))
+                // The plus ends on the content edge, level with switches and buttons; only its hover fill reaches past.
+                .padding(.trailing, -IconAction.glyphInset)
+        }
+    }
+
+    private func atBound(_ bound: Int?) -> Bool {
+        guard let bound, let current = Int(draft) ?? value else { return false }
+        return current == bound
+    }
+
+    private var field: some View {
+        TextField("", text: $draft).textFieldStyle(.plain).font(FrogType.body.monospacedDigit())
+            .multilineTextAlignment(.center).focused($focused)
+            .padding(.horizontal, FrogStyle.space6).frogControlSurface().frame(width: fieldWidth)
+            .accessibilityLabel(L10n.text(title)).help(range ?? "")
+            .onSubmit(save)
+            .onKeyPress(.upArrow) { step(by: 1); return .handled }
+            .onKeyPress(.downArrow) { step(by: -1); return .handled }
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: step(by: 1)
+                case .decrement: step(by: -1)
+                @unknown default: break
+                }
+            }
+            .onAppear { draft = value.map(String.init) ?? "" }
+            .onChange(of: value) { _, new in if !focused { draft = new.map(String.init) ?? "" } }
+            .onChange(of: focused) { _, now in if !now { save() } }
+    }
+
+    /// One width for every number setting, room for five digits, so the minus, the field and the plus of each row
+    /// line up down the card whatever the plugin's bounds.
+    private var fieldWidth: CGFloat { FrogStyle.numberFieldWidth }
+
+    /// "1–120", or the one bound the plugin sets.
+    private var range: String? {
+        switch (minimum, maximum) {
+        case let (low?, high?): "\(low)–\(high)"
+        case let (low?, nil): "At least \(low)"
+        case let (nil, high?): "At most \(high)"
+        default: nil
+        }
+    }
+
+    private func step(by delta: Int) {
+        // The field shows the stepped number at once, even while it has focus and ignores `value` changes.
+        let stepped = clamped((Int(draft) ?? value ?? 0) + delta)
+        draft = String(stepped)
+        if stepped != value { commit(stepped) }
+    }
+
+    private func clamped(_ number: Int) -> Int { min(max(number, minimum ?? .min), maximum ?? .max) }
+
+    private func save() {
+        guard let number = Int(draft.trimmingCharacters(in: .whitespaces)) else { draft = value.map(String.init) ?? ""; return }
+        let kept = clamped(number)
+        draft = String(kept)
+        if kept != value { commit(kept) }
     }
 }

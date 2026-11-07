@@ -128,7 +128,8 @@ final class NotesPlugin: LegacyPlugin, FrogPlugin {
     }
 }
 
-/// The Notes page: the list, and the chosen note to edit or preview.
+/// The Notes page: the list, and the chosen note to edit or preview in its card, with whether picking it in the
+/// command bar pastes it in the card's footer.
 struct NotesPage: View {
     @ObservedObject var documents: LocalDocuments
     let paste: NotePaste
@@ -136,23 +137,30 @@ struct NotesPage: View {
     @State private var preview = false
 
     var body: some View {
-        DocumentsPage(documents: documents, kind: .note, title: "Notes", symbol: "note.text",
+        DocumentsPage(documents: documents, kind: .note, title: "Notes", subtitle: "Markdown notes, and text the command bar pastes", symbol: "note.text",
                       emptyMessage: "Write one here, or have an agent add one with frog run notes.add.") { note in
-            CompactSegments(values: [false, true], selected: preview, compact: true, title: { $0 ? "Preview" : "Edit" }) { preview = $0 }
-            Toggle("Pastes", isOn: documents.binding(note.id, \.pastes)).toggleStyle(.frogSwitch).controlSize(.small)
-                .font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                .help("Choosing it in the command bar pastes its text, with {{date}}, {{time}} and {{clipboard}} filled in")
-            CopyAction(labeled: true) {
+            CompactSegments(values: [false, true], selected: preview, title: { $0 ? "Preview" : "Edit" }) { preview = $0 }
+            Spacer(minLength: FrogStyle.space8)
+            CopyAction(title: "Copy note") {
                 do { try paste.copy(note) } catch { report(error) }
             }
         } content: { note in
             if preview {
-                MarkdownPreviewView(markdown: note.text).id(note.id)
+                MarkdownPreviewView(markdown: SnippetExpansion.preview(note.text, fills: note.pastes)).id(note.id)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
             } else {
-                DocumentTextEditor(text: documents.binding(note.id, \.text))
+                NoteTextEditor(text: documents.binding(note.id, \.text), fillsTokens: note.pastes).id(note.id)
             }
+        } footer: { note in
+            // What picking the note in the command bar does: a setting of this note. In a narrow window the label
+            // shortens to the word the list's chip uses, rather than cutting off mid-word.
+            ViewThatFits(in: .horizontal) {
+                Text("Paste from command bar")
+                Text("Pastes")
+            }.foregroundStyle(FrogStyle.ink).lineLimit(1)
+            Toggle("Paste when picked in the command bar", isOn: documents.binding(note.id, \.pastes))
+                .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+                .help("Choosing it in the command bar pastes its text, with {{date}}, {{time}} and {{clipboard}} filled in")
         }
     }
 }

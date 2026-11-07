@@ -72,7 +72,9 @@ final class WritingBubble: ObservableObject {
     private func makeWatcher() -> any SelectionWatching {
         // Tests without a watcher of their own never install global monitors.
         guard let model, model.registerShortcuts else { return SilentSelectionWatcher() }
-        return SelectionWatcher(reader: model.selectionReader ?? SelectionReader(), presenter: SelectionBubbleController(), hooks: .init(
+        let presenter = SelectionBubbleController()
+        presenter.onEditRules = { [weak model] in model?.pluginHost.open("writing") }
+        return SelectionWatcher(reader: model.selectionReader ?? SelectionReader(), presenter: presenter, hooks: .init(
             options: { [weak self] in self?.settings.options ?? SelectionBubbleOptions() },
             state: { [weak self] in
                 self?.state ?? BubbleState(explainEnabled: false, bubbleEnabled: false, writingEnabled: false,

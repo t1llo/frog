@@ -50,8 +50,13 @@ struct FrogDropdown<Value: Hashable>: View {
     var footnote: String? = nil
     /// What the button says for a value, when it should be shorter than the list's row.
     var buttonTitle: ((Value) -> String)? = nil
+    /// Why the chosen value keeps something from working; the button then leads with a warning mark.
+    var warning: String? = nil
+    /// The button takes only the width its value needs, so a label can sit right against it.
+    var fitsContent = false
 
     @State private var showing = false
+    @Environment(\.frogDropdownOpenTick) private var openTick
     @Environment(\.compactRowTitle) private var rowTitle
     @Environment(\.isEnabled) private var enabled
 
@@ -62,10 +67,13 @@ struct FrogDropdown<Value: Hashable>: View {
         Button { showing.toggle() } label: {
             EmptyView()
         }
-        .buttonStyle(DropdownTriggerStyle(value: value, symbol: current?.symbol, width: width,
-                                          height: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight, open: showing))
-        .help(value)
+        .buttonStyle(DropdownTriggerStyle(value: value, symbol: current?.symbol, width: fitsContent ? nil : width,
+                                          height: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight, open: showing,
+                                          warning: warning != nil))
+        .help(warning.map { L10n.text($0) } ?? value)
+        .accessibilityHint(warning.map { L10n.text($0) } ?? "")
         .modifier(RowControlName(title: rowTitle, value: value))
+        .onChange(of: openTick) { _, tick in if tick > 0 { showing = true } }
         .popover(isPresented: $showing, arrowEdge: .bottom) {
             FrogDropdownList(sections: sections, selected: selected, item: item, searchPrompt: searchPrompt,
                              emptyMessage: emptyMessage, footnote: footnote,
@@ -123,30 +131,46 @@ extension FrogDropdown {
     func buttonTitle(_ title: @escaping (Value) -> String) -> Self {
         var copy = self; copy.buttonTitle = title; return copy
     }
+
+    /// Marks the choice as a problem, such as a rule without a model: a warning mark inside the button, the reason
+    /// in its tooltip. A page shows one notice for the problem; this is the one mark at the control.
+    func warning(_ reason: String?) -> Self {
+        var copy = self; copy.warning = reason; return copy
+    }
+
+    /// The button as wide as its value and no wider, such as "Time limit" followed by its value in a footer.
+    /// The list keeps `width` (at least 240).
+    func fitToContent() -> Self {
+        var copy = self; copy.fitsContent = true; return copy
+    }
 }
 
 /// The dropdown's button: the shared control surface, darker while pressed or open.
 private struct DropdownTriggerStyle: ButtonStyle {
     let value: String
     let symbol: String?
-    let width: CGFloat
+    let width: CGFloat?
     let height: CGFloat
     let open: Bool
+    var warning = false
     func makeBody(configuration: Configuration) -> some View {
-        DropdownTrigger(value: value, symbol: symbol, width: width, height: height, pressed: configuration.isPressed || open)
+        DropdownTrigger(value: value, symbol: symbol, width: width, height: height, pressed: configuration.isPressed || open,
+                        warning: warning)
     }
 }
 
 private struct DropdownTrigger: View {
     let value: String
     let symbol: String?
-    let width: CGFloat
+    let width: CGFloat?
     let height: CGFloat
     let pressed: Bool
+    var warning = false
     @Environment(\.isEnabled) private var enabled
     var body: some View {
-        CompactDropdownLabel(value: value, symbol: symbol, width: width, height: height, pressed: pressed && enabled)
-            .opacity(enabled ? 1 : 0.45)
+        CompactDropdownLabel(value: value, symbol: symbol, width: width, height: height, pressed: pressed && enabled,
+                             warning: warning)
+            .opacity(enabled ? 1 : FrogStyle.disabledOpacity)
     }
 }
 
@@ -291,7 +315,7 @@ struct FrogDropdownRow: View {
                     }
                 }
                 Spacer(minLength: 8)
-                Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.accent)
+                Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.accentText)
                     .opacity(chosen ? 1 : 0).accessibilityHidden(true)
             }
             .padding(.horizontal, 8).padding(.vertical, item.detail == nil ? 0 : 5)
@@ -301,5 +325,14 @@ struct FrogDropdownRow: View {
         }
         .buttonStyle(.plain).disabled(item.disabled)
         .accessibilityAddTraits(chosen ? .isSelected : [])
+    }
+}
+
+private struct FrogDropdownOpenTickKey: EnvironmentKey { static let defaultValue = 0 }
+extension EnvironmentValues {
+    /// A dropdown opens its list each time this rises above zero: how a notice's button opens the control it names.
+    var frogDropdownOpenTick: Int {
+        get { self[FrogDropdownOpenTickKey.self] }
+        set { self[FrogDropdownOpenTickKey.self] = newValue }
     }
 }

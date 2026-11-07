@@ -17,8 +17,27 @@ struct SearchBox: View {
         }.font(FrogType.body).padding(.horizontal, 10).frogControlSurface(capsule: true)
     }
     @ViewBuilder private var field: some View {
-        let field = TextField(L10n.text(placeholder), text: $text).textFieldStyle(.plain)
+        let field = FrogTextField(placeholder: placeholder, text: $text)
         if let focus { field.focused(focus) } else { field }
+    }
+}
+
+/// A plain text field whose placeholder is drawn in `FrogStyle.placeholder`, a step lighter than muted text, so
+/// an empty field never reads as filled in. Put it inside `LabeledField` or on `frogControlSurface()`.
+struct FrogTextField: View {
+    let placeholder: String
+    @Binding var text: String
+    var body: some View {
+        // macOS draws a plain field's own placeholder nearly as dark as its text and ignores a styled prompt, so
+        // the field draws none and this one sits behind it while the field is empty.
+        TextField("", text: $text).textFieldStyle(.plain)
+            .accessibilityLabel(L10n.text(placeholder))
+            .background(alignment: .leading) {
+                if text.isEmpty {
+                    Text(L10n.text(placeholder)).foregroundStyle(FrogStyle.placeholder).lineLimit(1)
+                        .allowsHitTesting(false).accessibilityHidden(true)
+                }
+            }
     }
 }
 
@@ -121,17 +140,24 @@ struct RowControlName: ViewModifier {
 struct CompactDropdownLabel: View {
     let value: String
     var symbol: String? = nil
-    var width: CGFloat = 220
+    /// The most it grows to, its value ending on the trailing edge; `nil` takes only the width its value needs.
+    var width: CGFloat? = 220
     /// `FrogStyle.controlHeight`, or `FrogStyle.compactHeight` in popups and panel headers.
     var height: CGFloat = FrogStyle.controlHeight
     /// Held down, or its list is open.
     var pressed = false
+    /// The value keeps something from working (a rule without a model): a warning mark leads the value, inside the
+    /// button, so the control and its problem read as one.
+    var warning = false
     @State private var hovering = false
+    @Environment(\.frogRowAccessory) private var inRow
     private var compact: Bool { height < FrogStyle.controlHeight }
     var body: some View {
         let knob: CGFloat = compact ? 16 : 20
         HStack(spacing: compact ? 5 : 7) {
-            if let symbol { Image(systemName: symbol).foregroundStyle(FrogStyle.muted) }
+            if warning {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(FrogStyle.warning).accessibilityHidden(true)
+            } else if let symbol { Image(systemName: symbol).foregroundStyle(FrogStyle.muted) }
             Text(value).lineLimit(1).truncationMode(.middle)
             Image(systemName: "chevron.up.chevron.down").font(.system(size: compact ? 7 : 9, weight: .bold))
                 .foregroundStyle(FrogStyle.ink.opacity(0.85))
@@ -141,9 +167,13 @@ struct CompactDropdownLabel: View {
             .padding(.leading, compact ? 7 : 9).padding(.trailing, (height - knob) / 2)
             .frame(height: height)
             .background(Capsule(style: .continuous).fill(hovering || pressed ? FrogStyle.hover : .clear))
-            .frame(maxWidth: width, alignment: .trailing)
+            .frame(maxWidth: width ?? .infinity, alignment: .trailing)
+            .fixedSize(horizontal: width == nil, vertical: false)
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
+            // In a row the knob ends on the content edge, level with a switch or button; only the hover fill reaches
+            // past it.
+            .padding(.trailing, inRow ? -(height - knob) / 2 : 0)
     }
 }
 
@@ -163,7 +193,7 @@ private struct CompactOptionStyle: PrimitiveButtonStyle {
                     configuration.label
                     Spacer(minLength: 0)
                     if chosen {
-                        Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.accent)
+                        Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.accentText)
                             .accessibilityHidden(true)
                     }
                 }
@@ -221,15 +251,30 @@ struct CompactSegments<Value: Hashable>: View {
     }
 }
 
+/// The one place a search goes: the row directly above the list it filters, never the page header or the window
+/// toolbar. Filters or tabs lead and the search trails at `searchWidth`; with no filters the search fills the row.
+/// `showsSearch` hides the field (an empty list) while the filters keep their place.
 struct ListToolbar<Filters: View>: View {
+    static var searchWidth: CGFloat { 220 }
     let placeholder: String
     @Binding var search: String
+    var showsSearch = true
     @ViewBuilder var filters: Filters
     var body: some View {
         HStack(spacing: 4) {
-            filters
-            Spacer(minLength: 12)
-            SearchBox(placeholder: placeholder, text: $search).frame(width: 190)
+            if Filters.self == EmptyView.self {
+                if showsSearch { SearchBox(placeholder: placeholder, text: $search) }
+            } else {
+                filters
+                Spacer(minLength: 12)
+                if showsSearch { SearchBox(placeholder: placeholder, text: $search).frame(width: Self.searchWidth) }
+            }
         }.frame(height: FrogStyle.controlHeight)
+    }
+}
+
+extension ListToolbar where Filters == EmptyView {
+    init(placeholder: String, search: Binding<String>, showsSearch: Bool = true) {
+        self.init(placeholder: placeholder, search: search, showsSearch: showsSearch) { EmptyView() }
     }
 }

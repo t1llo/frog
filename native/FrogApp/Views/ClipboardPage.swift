@@ -20,7 +20,7 @@ struct ClipboardPage: View {
                         .disabled(store.entries.isEmpty)
                 }
             }
-            FrogSection {
+            FrogSection("Shortcut and size") {
                 FrogRow("Shortcut") {
                     HotkeyRecorder(hotkey: Binding(get: { state.settings.shortcut.hotkey },
                                                    set: { if let value = $0 { plugin.setShortcut(value) } }),
@@ -39,14 +39,14 @@ struct ClipboardPage: View {
     @ViewBuilder private var copied: some View {
         let all = store.entries
         let found = ClipboardSearch.filter(all, query: search)
-        FrogSection("Copied", accessory: {
-            if !all.isEmpty { Text(all.count == 1 ? "1 item" : "\(all.count) items").font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
-        }) {
+        FrogSection("Copied", count: all.isEmpty ? nil : all.count) {
             if all.isEmpty {
-                FrogEmptyState(symbol: "clipboard", title: "Nothing copied yet", message: "Text you copy shows here.") { EmptyView() }
+                FrogEmptyState(symbol: ClipboardPlugin.info.symbol, title: "Nothing copied yet", message: "Text you copy shows here.",
+                               tint: ClipboardPlugin.info.tint)
             } else {
                 VStack(spacing: 10) {
-                    SearchBox(placeholder: "Search copied text", text: $search)
+                    // The count belongs to the heading, as every counted group's does.
+                    ListToolbar(placeholder: "Search copied items", search: $search)
                     if found.isEmpty {
                         Text("No matches").font(FrogType.body).foregroundStyle(FrogStyle.muted)
                             .frame(maxWidth: .infinity).padding(.vertical, 16)
@@ -54,6 +54,9 @@ struct ClipboardPage: View {
                         LazyVStack(spacing: 2) {
                             ForEach(found.prefix(Self.shown)) { entry in ClipboardPageRow(entry: entry, store: store) }
                         }
+                        // The list recipe: rows padded rowPadding, `listInset` from the card, so the tiles start
+                        // `rowInset` in, on the field's and the headings' edge, as on every page.
+                        .padding(.horizontal, FrogStyle.listInset - FrogStyle.rowInset)
                     }
                 }.padding(.vertical, 10)
             }
@@ -66,25 +69,52 @@ struct ClipboardPage: View {
     }
 }
 
+/// One copied item: its kind tile, its text and when it was copied, the time ending on the row's trailing edge. Its
+/// actions (Copy, and "…" with the rest) take the time's place while the pointer is over it, so the list stays quiet
+/// and the times line up down the card's edge.
 private struct ClipboardPageRow: View {
     let entry: ClipboardHistoryEntry
     let store: ClipboardHistoryStore
+    @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: entry.formatting.isEmpty ? "text.alignleft" : "doc.richtext")
-                .font(.system(size: 12)).foregroundStyle(FrogStyle.muted).frame(width: 18).accessibilityHidden(true)
+        HStack(spacing: FrogStyle.space10) {
+            // The same kind tile as the clipboard history panel.
+            let kind = entry.kind
+            PluginIconTile(symbol: kind.symbol, tint: kind.tint.color, size: .sidebar).help(L10n.text(kind.title))
+                .accessibilityLabel(L10n.text(kind.title))
+            // One type voice down the list: the tile says what kind of item it is, so code is not set in mono.
             Text(entry.preview).font(FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Text(entry.timestamp, style: .time).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-            CopyAction { store.copy(entry) }
-            IconAction(title: "Remove", symbol: "xmark") { store.delete(id: entry.id) }
+            ZStack(alignment: .trailing) {
+                // As far in from the trailing edge as the tile is from the leading one.
+                RecentTimestampText(date: entry.timestamp).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    .fixedSize()
+                    .opacity(hovering ? 0 : 1)
+                HStack(spacing: FrogStyle.space2) {
+                    CopyAction { store.copy(entry) }
+                    IconMenu(title: "More", bordered: false) { menu }
+                }
+                .frogRowAccessory()
+                .opacity(hovering ? 1 : 0)
+                .accessibilityHidden(!hovering)
+            }
         }
-        .padding(.leading, 8).padding(.trailing, 2).frame(minHeight: 32).frogHoverRow()
-        .contextMenu {
-            Button("Copy", systemImage: "doc.on.doc") { store.copy(entry) }
-            Button("Copy as plain text") { store.copy(entry, plainText: true) }
-            Button("Remove", systemImage: "trash", role: .destructive) { store.delete(id: entry.id) }
-        }
+        .padding(.horizontal, FrogStyle.rowPadding).frame(minHeight: 32)
+        .contentShape(Rectangle())
+        .frogRowHighlight(hovering: hovering)
+        .onHover { hovering = $0 }
+        .contextMenu { menu }
+        // The hover actions are hidden from VoiceOver until hovered, so the row itself offers every one of them.
+        .accessibilityElement(children: .combine)
+        .accessibilityAction(named: Text("Copy")) { store.copy(entry) }
+        .accessibilityAction(named: Text("Copy as plain text")) { store.copy(entry, plainText: true) }
+        .accessibilityAction(named: Text("Remove")) { store.delete(id: entry.id) }
+    }
+
+    @ViewBuilder private var menu: some View {
+        Button("Copy", systemImage: "doc.on.doc") { store.copy(entry) }
+        Button("Copy as plain text", systemImage: "doc.plaintext") { store.copy(entry, plainText: true) }
+        Button("Remove", systemImage: "trash", role: .destructive) { store.delete(id: entry.id) }
     }
 }

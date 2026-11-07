@@ -71,7 +71,7 @@ final class RecordingReadinessTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(300))
         XCTAssertEqual(controller.phase, .recording)
         XCTAssertEqual(recorder.starts, 1)
-        XCTAssertEqual(panel.frame.size, NSSize(width: 360, height: 108))
+        XCTAssertEqual(panel.frame.size, NSSize(width: 360, height: DictationPopupLayout.recordingHeight))
         XCTAssertEqual(panel.frame.midX, anchor.x, accuracy: 1)
         XCTAssertEqual(panel.frame.minY, anchor.y, accuracy: 1)
         for index in 0..<40 {

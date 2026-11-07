@@ -17,6 +17,8 @@ struct ClipboardHistoryEntry: Identifiable, Equatable, Sendable {
     /// Written marked as concealed and kept on this Mac, such as a note that pastes a copied password. The
     /// history never keeps one.
     let isSensitive: Bool
+    /// What the whole text looks like (a link, code, a sentence), worked out once for the lists' kind tiles.
+    let kind: ClipboardContentKind
 
     static let previewLength = 160
 
@@ -24,6 +26,7 @@ struct ClipboardHistoryEntry: Identifiable, Equatable, Sendable {
         id = UUID(); self.timestamp = timestamp; self.text = text; self.formatting = formatting; self.isSensitive = isSensitive
         preview = Self.preview(of: text)
         searchKey = ClipboardSearch.fold(text.prefix(ClipboardSearch.keyLength))
+        kind = ClipboardContentKind(text, formatted: !formatting.isEmpty)
     }
 
     /// What it costs to keep: its text, its search key and formatting.
@@ -323,10 +326,11 @@ final class ClipboardHistoryStore: ObservableObject {
 
     /// Explicitly include Frog results even if a subsequent compatibility Copy
     /// temporarily suppresses clipboard polling/restores that same result.
-    func recordCopiedText(_ text: String) {
+    /// `at` is when it was copied: now, or an earlier moment for sample data.
+    func recordCopiedText(_ text: String, at date: Date = Date()) {
         guard enabled, !text.isEmpty, text.utf8.count <= Self.textLimit, ClipboardSecret.detect(text) == nil else { return }
         epoch = UUID(); pendingCount = nil; pendingAttempts = 0
-        record(ClipboardHistoryEntry(text: text))
+        record(ClipboardHistoryEntry(text: text, timestamp: date))
         changeCount = pasteboard.changeCount
     }
 

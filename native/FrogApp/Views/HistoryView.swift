@@ -11,6 +11,13 @@ struct HistoryView: View {
     @State private var confirmClear = false
     @State private var deleting: HistoryEntry?
     @State private var note: NoteProgress?
+    /// The entry whose text was just copied from the header, so its button says Copied.
+    @State private var copiedEntry: UUID?
+    /// The row under the pointer, whose actions take the time's place.
+    @State private var hoveredEntry: UUID?
+
+    /// `viewing` opens one entry's detail rather than the list, for pictures of it.
+    init(viewing: UUID? = nil) { _viewing = State(initialValue: viewing) }
 
     private var preferences: Preferences { model.configuration.preferences }
     /// With Hide history text on, texts stay masked until revealed, and are masked again when the page closes.
@@ -56,18 +63,22 @@ struct HistoryView: View {
         let empty = HistoryEmptyState.describing(all: all, shown: shown, filter: filter, search: search)
         let filters = HistoryFilter.visible(explainEnabled: preferences.featureEnabled(.explain),
                                             hasAnswers: all.contains { $0.kind == .answers })
-        return FrogPage(width: FrogStyle.wideWidth) {
-            FrogPageHeader(title: "History") {
-                IconMenu(title: "History actions", bordered: false) {
-                    Button("Clear all", systemImage: "trash", role: .destructive) { confirmClear = true }.disabled(all.isEmpty)
+        return FrogPage {
+            FrogPageHeader(title: "History", subtitle: "Rewritten text, answers and recordings, kept on this Mac") {
+                if !all.isEmpty {
+                    IconMenu(title: "History actions", bordered: false) {
+                        Button("Clear all", systemImage: "trash", role: .destructive) { confirmClear = true }
+                    }
                 }
             }
             if !preferences.historyEnabled, all.isEmpty {
-                FrogEmptyState(symbol: "clock.arrow.circlepath", title: "History is off", message: "Turn it on to keep results on this Mac.") {
+                FrogEmptyState(symbol: HistoryPlugin.info.symbol, title: "History is off", message: "Turn it on to keep results on this Mac.",
+                               tint: HistoryPlugin.info.tint) {
                     Button("Turn on") { setHistoryEnabled() }.buttonStyle(.frog(.primary))
                 }
             } else {
-                VStack(alignment: .leading, spacing: 8) {
+                // The filters head the list as a section's heading would, a little apart from it.
+                VStack(alignment: .leading, spacing: FrogStyle.space12) {
                     if !all.isEmpty {
                         ListToolbar(placeholder: "Search history", search: $search) {
                             CompactSegments(values: [nil] + filters.map(Optional.some), selected: filter,
@@ -77,19 +88,30 @@ struct HistoryView: View {
                     if !preferences.historyEnabled {
                         HStack(spacing: 8) {
                             FrogRowNote(text: "History is off. New results are not kept.")
-                            Button("Turn on") { setHistoryEnabled() }.buttonStyle(.frog(compact: true))
+                            Button("Turn on") { setHistoryEnabled() }.buttonStyle(.frog())
                         }
                     }
                     switch empty {
                     case .noMatches?:
                         FrogEmptyState(symbol: "magnifyingglass", title: "No matches", message: "Try another word or filter.")
                     case .noAnswers?:
-                        FrogEmptyState(symbol: "questionmark.bubble", title: "No answers yet", message: "Answers from Explain show here.")
+                        FrogEmptyState(symbol: ExplainPlugin.info.symbol, title: "No answers yet", message: "Answers from Explain show here.",
+                                       tint: ExplainPlugin.info.tint)
                     case _?:
-                        FrogEmptyState(symbol: "clock.arrow.circlepath", title: "No history yet",
-                                       message: "Rewritten text, answers and recordings show here.")
+                        FrogEmptyState(symbol: HistoryPlugin.info.symbol, title: "No history yet",
+                                       message: "Rewritten text, answers and recordings show here.", tint: HistoryPlugin.info.tint)
                     case nil:
-                        LazyVStack(spacing: 2) { ForEach(shown) { entry in row(entry) } }.padding(6).frogTableSurface()
+                        // A card per day under the day's name, as Mail and Photos group by date, so each row shows
+                        // only its time of day and the times read down one column in one form.
+                        LazyVStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
+                            ForEach(HistoryDay.group(shown)) { day in
+                                VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                                    FrogSectionHeader(day.title)
+                                    LazyVStack(spacing: 2) { ForEach(day.entries) { entry in row(entry) } }
+                                        .padding(FrogStyle.listInset).frogTableSurface()
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -99,30 +121,54 @@ struct HistoryView: View {
     private func row(_ entry: HistoryEntry) -> some View {
         HStack(spacing: 10) {
             Button { viewing = entry.id } label: {
-                HStack(alignment: .top, spacing: 10) {
-                    SymbolTile(symbol: Self.symbol(entry.kind), size: 28)
+                HStack(alignment: .top, spacing: 12) {
+                    let feature = Self.feature(entry.kind)
+                    PluginIconTile(symbol: feature.symbol, tint: feature.tint.color, size: .list)
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 10) {
                             Text(entry.ruleName).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
                             Spacer(minLength: 8)
-                            Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
-                                .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                            // The row's actions take the time's place while the pointer is over it.
+                            Text(HistoryDay.time(entry.timestamp))
+                                .font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                                .help(entry.timestamp.formatted(date: .complete, time: .shortened))
+                                .opacity(hoveredEntry == entry.id ? 0 : 1)
                         }
                         Text(hidden(entry) ? "\(Self.mask) · Click to reveal"
                              : entry.processedText.isEmpty ? L10n.text("No transcript available") : HistoryPreview.text(entry.processedText))
                             .font(FrogType.body).foregroundStyle(FrogStyle.ink)
                             .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-                        Text(Self.metadata(entry.kind, entry)).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                        Text(Self.metadata(entry.kind, entry)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
                         interruptionStatus(entry)
                     }
                 }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain).help("Open entry")
-            if preferences.hideHistoryText { revealButton(entry) }
-            CopyAction(title: "Copy result") { ViewActions.copy(entry.processedText) }.disabled(entry.processedText.isEmpty || hidden(entry))
-        }.padding(.horizontal, 8).padding(.vertical, 8).frogHoverRow()
+        }
+        // The actions sit on the title's line in the time's place, shown only while the pointer is over the row, so
+        // a list of entries is not a column of copy icons. The context menu copies too.
+        .overlay(alignment: .topTrailing) {
+            if hoveredEntry == entry.id {
+                HStack(spacing: 0) {
+                    if preferences.hideHistoryText { revealButton(entry) }
+                    CopyAction(title: "Copy result") { ViewActions.copy(entry.processedText) }.disabled(entry.processedText.isEmpty || hidden(entry))
+                }.frame(height: 16)
+            }
+        }
+        .onHover { inside in
+            if inside { hoveredEntry = entry.id } else if hoveredEntry == entry.id { hoveredEntry = nil }
+        }
+        // Without a pointer the hover actions never show, so VoiceOver gets them as the row's own actions.
+        .accessibilityActions {
+            if !entry.processedText.isEmpty, !hidden(entry) { Button("Copy result") { ViewActions.copy(entry.processedText) } }
+            if preferences.hideHistoryText { Button(hidden(entry) ? "Reveal text" : "Hide text") { toggleReveal(entry) } }
+        }
+        .padding(.horizontal, FrogStyle.rowPadding).padding(.vertical, FrogStyle.space8).frogHoverRow()
             .contextMenu {
                 Button("Open entry") { viewing = entry.id }
                 Button("Copy", systemImage: "doc.on.doc") { ViewActions.copy(entry.processedText) }.disabled(entry.processedText.isEmpty || hidden(entry))
+                if preferences.hideHistoryText {
+                    Button(hidden(entry) ? "Reveal text" : "Hide text", systemImage: hidden(entry) ? "eye" : "eye.slash") { toggleReveal(entry) }
+                }
                 Button("Delete entry", systemImage: "trash", role: .destructive) { deleting = entry }
             }
     }
@@ -130,33 +176,52 @@ struct HistoryView: View {
     // MARK: Detail
 
     private func detail(_ entry: HistoryEntry) -> some View {
-        // ⌘[ and the toolbar's Back return to the list first.
-        FrogPage(width: FrogStyle.wideWidth) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Button { viewing = nil } label: { Label("History", systemImage: "chevron.left") }
-                        .buttonStyle(.frog(.ghost)).keyboardShortcut(.cancelAction)
-                    Spacer()
-                    if preferences.hideHistoryText { revealButton(entry) }
-                    if entry.answer != nil, model.answerNotesEnabled, !hidden(entry) { noteButton(entry) }
-                    IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = entry }
-                }.frame(height: FrogStyle.controlHeight)
-                FrogPageHeader(title: entry.ruleName, subtitle: entry.timestamp.formatted(date: .abbreviated, time: .shortened))
-                interruptionStatus(entry)
-                Group {
-                    if hidden(entry) {
-                        VStack(spacing: 12) {
-                            Image(systemName: "eye.slash").foregroundStyle(FrogStyle.muted)
-                            Button("Reveal text") { visibility.revealed.insert(entry.id) }
-                        }.frame(maxWidth: .infinity).padding(32)
-                    } else {
-                        HistoryDetail(entry: entry).padding(14)
+        // The toolbar's Back and ⌘[ (and Escape) return to the list; the entry's name takes the toolbar's title.
+        FrogPage {
+            FrogPageHeader(title: entry.ruleName, subtitle: Self.detailSubtitle(entry)) {
+                if preferences.hideHistoryText { revealButton(entry) }
+                if entry.answer != nil, model.answerNotesEnabled, !hidden(entry) { noteButton(entry) }
+                // One Copy for the page: the result, or the answer. The other texts copy from the menu.
+                let copied = copiedEntry == entry.id
+                // Words only, as every other button in a page header: the icon beside it is "…", a menu, not a twin.
+                Button(L10n.text(copied ? "Copied" : entry.answer != nil ? "Copy answer" : "Copy result")) {
+                    ViewActions.copy(entry.processedText); copiedEntry = entry.id
+                }.disabled(entry.processedText.isEmpty || hidden(entry))
+                IconMenu(title: "Entry actions", bordered: false) {
+                    if !entry.originalText.isEmpty {
+                        Button(entry.answer != nil ? "Copy selection" : "Copy original", systemImage: "doc.on.doc") {
+                            ViewActions.copy(entry.originalText)
+                        }.disabled(hidden(entry))
                     }
-                }.frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
-                    .onCopyCommand { hidden(entry) ? [] : [NSItemProvider(object: entry.processedText as NSString)] }
-                if note?.id == entry.id, case .failed(let message) = note?.state { InlineIssue(message: message) }
+                    if let followUps = entry.answer?.followUps, !followUps.isEmpty {
+                        Button("Copy follow-ups", systemImage: "doc.on.doc") {
+                            ViewActions.copy(followUps.map { "\($0.question)\n\n\($0.answer)" }.joined(separator: "\n\n"))
+                        }.disabled(hidden(entry))
+                    }
+                    Button("Delete entry…", systemImage: "trash", role: .destructive) { deleting = entry }
+                }
             }
-        }.frogPageBack("history-entry-\(entry.id)") { viewing = nil }
+            interruptionStatus(entry)
+            Group {
+                if hidden(entry) {
+                    VStack(spacing: 12) {
+                        Image(systemName: "eye.slash").foregroundStyle(FrogStyle.muted)
+                        Button("Reveal text") { visibility.revealed.insert(entry.id) }
+                    }.frame(maxWidth: .infinity).padding(32).frogTableSurface()
+                } else {
+                    HistoryDetail(entry: entry) { feature in model.toolkit.select(.feature(feature)) }
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+                .onCopyCommand { hidden(entry) ? [] : [NSItemProvider(object: entry.processedText as NSString)] }
+            if note?.id == entry.id, case .failed(let message) = note?.state { InlineIssue(message: message) }
+        }.frogPageBack("history-entry-\(entry.id)", parent: "History", escapes: true) { viewing = nil }
+    }
+
+    /// When, and with what: "Today 13:14 · Ollama · llama3.2".
+    static func detailSubtitle(_ entry: HistoryEntry) -> String {
+        let source: [String] = entry.answer.map { [$0.application ?? ""] } ?? []
+        return ([RecentTimestamp.text(entry.timestamp)] + source + [entry.providerName, entry.model, entry.targetLanguage])
+            .filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     private func setHistoryEnabled() {
@@ -165,12 +230,14 @@ struct HistoryView: View {
         do { try model.savePreferences(preferences) } catch { model.report(error) }
     }
 
-    static func symbol(_ filter: HistoryFilter) -> String {
-        switch filter { case .text: "text.alignleft"; case .answers: "questionmark.bubble"; case .audio: "waveform" }
+    /// The feature that made an entry, whose icon its row shows: Writing, Explain or Dictation.
+    static func feature(_ filter: HistoryFilter) -> PluginInfo {
+        switch filter { case .text: WritingPlugin.info; case .answers: ExplainPlugin.info; case .audio: DictationPlugin.info }
     }
 
+    /// What made it: "Ollama · llama3.2". The row's tile already names the feature.
     static func metadata(_ filter: HistoryFilter, _ entry: HistoryEntry) -> String {
-        [filter.title, entry.providerName, entry.model].filter { !$0.isEmpty }.joined(separator: " · ")
+        [entry.providerName, entry.model].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     @ViewBuilder
@@ -179,14 +246,14 @@ struct HistoryView: View {
             HStack(spacing: 8) {
                 FrogBadge(text: label)
                 if model.dictation?.recoveringHistoryIDs.contains(entry.id) == true {
-                    ProgressView().controlSize(.mini)
+                    FrogSpinner(size: .mini)
                     Text("Transcribing…")
                 } else if entry.transcriptState == .failed {
                     Text("Transcription failed")
                 } else if entry.transcriptState == .partial {
                     Text("Partial transcript")
                 }
-            }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+            }.font(FrogType.small).foregroundStyle(FrogStyle.muted)
         }
     }
 
@@ -212,9 +279,11 @@ struct HistoryView: View {
     }
 
     private func revealButton(_ entry: HistoryEntry) -> some View {
-        IconAction(title: hidden(entry) ? "Reveal text" : "Hide text", symbol: hidden(entry) ? "eye" : "eye.slash") {
-            if visibility.revealed.contains(entry.id) { visibility.revealed.remove(entry.id) } else { visibility.revealed.insert(entry.id) }
-        }
+        IconAction(title: hidden(entry) ? "Reveal text" : "Hide text", symbol: hidden(entry) ? "eye" : "eye.slash") { toggleReveal(entry) }
+    }
+
+    private func toggleReveal(_ entry: HistoryEntry) {
+        if visibility.revealed.contains(entry.id) { visibility.revealed.remove(entry.id) } else { visibility.revealed.insert(entry.id) }
     }
 }
 
@@ -260,6 +329,46 @@ struct WindowClosing: NSViewRepresentable {
             }
         }
         isolated deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
+    }
+}
+
+/// The entries of one day, as the list heads them: "Today", "Yesterday", the weekday within a week, then the date.
+struct HistoryDay: Identifiable {
+    let title: String
+    let entries: [HistoryEntry]
+    var id: String { title }
+
+    /// The entries, newest first as the feed is, cut where the day changes.
+    static func group(_ entries: [HistoryEntry], now: Date = Date(), calendar: Calendar = .autoupdatingCurrent) -> [HistoryDay] {
+        var days: [HistoryDay] = []
+        var current: (start: Date, entries: [HistoryEntry])?
+        for entry in entries {
+            let start = calendar.startOfDay(for: entry.timestamp)
+            if current?.start == start { current?.entries.append(entry); continue }
+            if let current { days.append(HistoryDay(title: title(current.start, now: now, calendar: calendar), entries: current.entries)) }
+            current = (start, [entry])
+        }
+        if let current { days.append(HistoryDay(title: title(current.start, now: now, calendar: calendar), entries: current.entries)) }
+        return days
+    }
+
+    static func title(_ day: Date, now: Date = Date(), calendar: Calendar = .autoupdatingCurrent) -> String {
+        if calendar.isDate(day, inSameDayAs: now) { return L10n.text("Today") }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(day, inSameDayAs: yesterday) {
+            return L10n.text("Yesterday")
+        }
+        let style = Date.FormatStyle(locale: L10n.locale, calendar: calendar)
+        if let week = calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: now)), day >= week, day <= now {
+            return day.formatted(style.weekday(.wide))
+        }
+        let date = style.month(.wide).day()
+        return day.formatted(calendar.isDate(day, equalTo: now, toGranularity: .year) ? date : date.year())
+    }
+
+    /// The time of day in the Mac's own clock: "09:41" on a 24-hour clock, "9:41 AM" on a 12-hour one. A format
+    /// style, not a cached formatter, so a change of time zone or clock while Frog runs shows at once.
+    static func time(_ date: Date) -> String {
+        date.formatted(Date.FormatStyle(locale: L10n.locale, timeZone: .autoupdatingCurrent).hour().minute())
     }
 }
 
@@ -336,64 +445,207 @@ private struct NoteProgress: Equatable {
 
 private struct HistoryDetail: View {
     let entry: HistoryEntry
-    @State private var copied: String?
+    /// Opens the page of the feature that made the entry.
+    let openFeature: (FeatureID) -> Void
+    /// The comparison is worked out once per entry, not on every render.
+    @State private var diffs = HistoryDiffMemo()
 
     var body: some View {
-        // Sections are set apart by space and their captions.
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
             if let answer = entry.answer {
                 answerSections(answer)
+            } else if entry.originalText.isEmpty {
+                section("Result") { HistoryLongText(text: entry.processedText, lineSpacing: 4) }
             } else {
-                metadataLine([entry.providerName, entry.model, entry.targetLanguage])
-                textSection("Result", text: entry.processedText)
-                textSection("Original", text: entry.originalText)
+                changes
             }
-        }.padding(.top, 4)
-            .foregroundStyle(FrogStyle.ink).buttonStyle(FrogButtonStyle())
+            details
+        }
+        .foregroundStyle(FrogStyle.ink).buttonStyle(FrogButtonStyle())
     }
 
-    private func metadataLine(_ parts: [String]) -> some View {
-        Text(parts.filter { !$0.isEmpty }.joined(separator: " · "))
-            .font(FrogType.small).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
+    /// What the subtitle has no room for: the feature and rule that made it, with the way to that rule's page, how
+    /// long the texts are, and the whole date.
+    private var details: some View {
+        let feature = HistoryView.feature(entry.kind)
+        return FrogSection("Details") {
+            FrogRow(entry.ruleName, caption: L10n.text(feature.name)) {
+                PluginIconTile(symbol: feature.symbol, tint: feature.tint.color, size: .list)
+            } control: {
+                if let id = FeatureID(rawValue: feature.id) {
+                    Button(String(format: L10n.text("Open %@"), L10n.text(feature.name))) { openFeature(id) }
+                }
+            }
+            if let length = lengthText {
+                FrogRow("Length") { Text(length).font(FrogType.body.monospacedDigit()).foregroundStyle(FrogStyle.muted) }
+            }
+            FrogRow("Saved") {
+                // The day in full, at the time of day the list shows for it.
+                Text(String(format: L10n.text("%@ at %@"), entry.timestamp.formatted(Date.FormatStyle(locale: L10n.locale, timeZone: .autoupdatingCurrent).weekday(.wide).day().month(.wide).year()),
+                            HistoryDay.time(entry.timestamp)))
+                    .font(FrogType.body.monospacedDigit()).foregroundStyle(FrogStyle.muted)
+            }
+        }
+    }
+
+    /// "41 → 43 characters" for a rewrite, the length of the one text otherwise.
+    private var lengthText: String? {
+        func characters(_ count: Int) -> String {
+            count == 1 ? L10n.text("1 character") : String(format: L10n.text("%@ characters"), count.formatted(.number.locale(L10n.locale)))
+        }
+        let original = entry.originalText.count, result = entry.processedText.count
+        if entry.answer == nil, original > 0, result > 0 {
+            return "\(original.formatted(.number.locale(L10n.locale))) → \(characters(result))"
+        }
+        let only = result > 0 ? result : original
+        return only > 0 ? characters(only) : nil
+    }
+
+    /// A rewrite: the original and the result side by side in one card, with what changed marked in both, so the
+    /// two read against each other rather than one under the other.
+    @ViewBuilder private var changes: some View {
+        let diff = diffs.diff(for: entry)
+        FrogSection("Changes") {
+            if let diff { Text(diff.summary).font(FrogType.small.monospacedDigit()) }
+            else if entry.originalText == entry.processedText { Text("No changes") }
+        } content: {
+            HStack(alignment: .top, spacing: FrogStyle.space16 + FrogStyle.space8) {
+                column("Original") {
+                    if let diff { text(diff.original) } else { HistoryLongText(text: entry.originalText, lineSpacing: 4) }
+                }
+                column("Result") {
+                    if let diff { text(diff.result) } else { HistoryLongText(text: entry.processedText, lineSpacing: 4) }
+                }
+            }.padding(.vertical, FrogStyle.space8)
+        }
+    }
+
+    private func column<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: FrogStyle.space6) {
+            SectionCaption(text: title)
+            content()
+        }.frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private func text(_ value: AttributedString) -> some View {
+        Text(value).font(FrogType.lead).lineSpacing(4).textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// An answer: the first answer, its follow-ups, then what was asked about.
     @ViewBuilder
     private func answerSections(_ answer: AnswerRecord) -> some View {
-        metadataLine([answer.application ?? "", entry.providerName, entry.model])
-        textSection("Answer", text: entry.processedText)
+        section("Answer") { HistoryLongText(text: entry.processedText, lineSpacing: 4) }
         if !answer.followUps.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                sectionHeader("Follow-ups", copying: answer.followUps.map { "\($0.question)\n\n\($0.answer)" }.joined(separator: "\n\n"))
-                ForEach(Array(answer.followUps.enumerated()), id: \.offset) { _, turn in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(turn.question).font(FrogType.label).textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                        HistoryLongText(text: turn.answer, lineSpacing: 4)
+            section("Follow-ups") {
+                VStack(alignment: .leading, spacing: FrogStyle.space16) {
+                    ForEach(Array(answer.followUps.enumerated()), id: \.offset) { _, turn in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(turn.question).font(FrogType.bodyMedium).textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                            HistoryLongText(text: turn.answer, lineSpacing: 4)
+                        }
                     }
                 }
             }
         }
-        textSection("Selection", text: entry.originalText)
+        section("Selection") { HistoryLongText(text: entry.originalText, lineSpacing: 4) }
         if let context = answer.context, !context.isEmpty {
-            textSection("Context", text: context)
+            section("Context") { HistoryLongText(text: context, lineSpacing: 4) }
         }
     }
 
-    private func textSection(_ title: String, text: String) -> some View {
-            VStack(alignment: .leading, spacing: 12) {
-                sectionHeader(title, copying: text)
-                HistoryLongText(text: text, lineSpacing: 4)
+    /// A heading and the text in a card under it; copying is the page header's.
+    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        FrogSection(title) { content().padding(.vertical, FrogStyle.space12) }
+    }
+}
+
+/// The last entry's `HistoryDiff`, kept while the same entry is shown.
+@MainActor final class HistoryDiffMemo {
+    private var key: (id: UUID, original: String, result: String)?
+    private var value: HistoryDiff?
+
+    func diff(for entry: HistoryEntry) -> HistoryDiff? {
+        if let key, key.id == entry.id, key.original == entry.originalText, key.result == entry.processedText { return value }
+        key = (entry.id, entry.originalText, entry.processedText)
+        value = HistoryDiff(original: entry.originalText, result: entry.processedText)
+        return value
+    }
+}
+
+/// What a rewrite changed: letters put in marked in the result, letters taken out struck through in the original.
+/// Only for texts short enough to compare at once; longer ones are shown plain, a page at a time.
+struct HistoryDiff {
+    let original: AttributedString
+    let result: AttributedString
+    /// Words replaced, put in and taken out, for the heading's count. They match what is marked.
+    let changedWords: Int
+    let addedWords: Int
+    let removedWords: Int
+
+    static let maxLength = 8_000
+
+    /// "3 words changed", with what was added or removed beyond that ("2 words changed · 1 added").
+    var summary: String { Self.summary(changed: changedWords, added: addedWords, removed: removedWords) }
+
+    /// The same summary from a diff's counts, for the done notice, which needs no marked text.
+    static func summary(changed: Int, added: Int, removed: Int) -> String {
+        func words(_ count: Int) -> String { count == 1 ? L10n.text("1 word") : "\(count) \(L10n.text("words"))" }
+        var parts: [String] = []
+        if changed > 0 { parts.append("\(words(changed)) \(L10n.text("changed"))") }
+        if added > 0 { parts.append(parts.isEmpty ? "\(words(added)) \(L10n.text("added"))" : "\(added) \(L10n.text("added"))") }
+        if removed > 0 { parts.append(parts.isEmpty ? "\(words(removed)) \(L10n.text("removed"))" : "\(removed) \(L10n.text("removed"))") }
+        return parts.isEmpty ? L10n.text("Only spacing changed") : parts.joined(separator: " · ")
+    }
+
+    init?(original: String, result: String) {
+        guard !original.isEmpty, !result.isEmpty, original != result,
+              original.count <= Self.maxLength, result.count <= Self.maxLength else { return nil }
+        let diff = TextDiff(original: original, result: result)
+        changedWords = diff.changedWords
+        addedWords = diff.addedWords
+        removedWords = diff.removedWords
+        self.original = Self.attributed(diff.original, color: FrogStyle.critical, strike: true)
+        self.result = Self.attributed(diff.result, color: FrogStyle.good, strike: false)
+    }
+
+    /// The letters that changed are marked strongly, and the rest of each word they are in lightly, as a code review
+    /// marks a line and the characters in it: a lone changed letter ("i" to "I", an added ".") still reads as part of
+    /// its word instead of a speck of colour.
+    private static func attributed(_ segments: [TextDiff.Segment], color: Color, strike: Bool) -> AttributedString {
+        let characters: [(character: Character, changed: Bool)] = segments.flatMap { segment in segment.text.map { ($0, segment.changed) } }
+        var inChangedWord = [Bool](repeating: false, count: characters.count)
+        var start = 0
+        while start < characters.count {
+            guard !characters[start].character.isWhitespace else { start += 1; continue }
+            var end = start, changed = false
+            while end < characters.count, !characters[end].character.isWhitespace { changed = changed || characters[end].changed; end += 1 }
+            if changed { for index in start..<end { inChangedWord[index] = true } }
+            start = end
+        }
+        var text = AttributedString()
+        var index = 0
+        while index < characters.count {
+            let changed = characters[index].changed, word = inChangedWord[index]
+            var end = index
+            var run = ""
+            while end < characters.count, characters[end].changed == changed, inChangedWord[end] == word {
+                run.append(characters[end].character); end += 1
             }
-    }
-
-    private func sectionHeader(_ title: String, copying text: String) -> some View {
-        HStack {
-            SectionCaption(text: title)
-            Spacer()
-            Button(L10n.text(copied == title ? "Copied" : "Copy"), systemImage: copied == title ? "checkmark" : "doc.on.doc") {
-                ViewActions.copy(text); copied = title
-            }.buttonStyle(.frog(compact: true)).accessibilityLabel("Copy \(title.lowercased())").disabled(text.isEmpty)
+            var part = AttributedString(run)
+            if changed {
+                part.backgroundColor = color.opacity(0.26)
+                // A line under or through the letters too, and taken-out letters in the critical red, so even one
+                // struck "i" reads as removed.
+                if strike { part.swiftUI.strikethroughStyle = Text.LineStyle(pattern: .solid, color: color); part.foregroundColor = color }
+                else { part.swiftUI.underlineStyle = Text.LineStyle(pattern: .solid, color: color) }
+            } else if word {
+                part.backgroundColor = color.opacity(0.1)
+            }
+            text += part
+            index = end
         }
+        return text
     }
 }

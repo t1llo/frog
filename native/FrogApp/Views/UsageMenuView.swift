@@ -1,24 +1,47 @@
 import SwiftUI
 import FrogUsage
 
-/// LLM usage's tab in Frog's menu-bar popup: the provider, its limits and the period's activity.
+/// LLM usage's tab in Frog's menu-bar popup, laid out as the LLM usage popup: the provider, refresh and the way to the
+/// page, then the limits card and the activity card. When the limits were read is the tab's status on the leading
+/// side of Frog's footer (`UsageMenuFooterStatus`), where the Frog and System tabs say theirs.
 struct UsageMenuTab: View {
     @ObservedObject var usage: UsageDashboardModel
     let openPage: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                UsageProviderDropdown(usage: usage)
-                Spacer(minLength: 6)
-                IconAction(title: "Refresh", symbol: "arrow.clockwise") { usage.refresh() }
-                IconAction(title: "Open LLM usage", symbol: "arrow.up.forward.app", action: openPage)
-            }.padding(.bottom, FrogStyle.space8)
-            UsageMenuContent(usage: usage).padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
-                .frogTableSurface()
-            UsageMenuFooter(usage: usage).padding(.horizontal, FrogStyle.space6).padding(.top, FrogStyle.space8)
+        VStack(alignment: .leading, spacing: FrogStyle.panelCardGap) {
+            // The provider leads the row, on the cards' text edge, so it reads as what the cards below are about;
+            // refresh and the way to the page end it, boxed as in the LLM usage popup's header.
+            HStack(spacing: FrogStyle.space6) {
+                // Its name on the cards' text edge; only the hover fill reaches past it.
+                UsageProviderDropdown(usage: usage).padding(.leading, -7)
+                Spacer(minLength: FrogStyle.space6)
+                UsageRefreshAction(usage: usage, bordered: true)
+                IconAction(title: "Open LLM usage", symbol: "arrow.up.forward.app", bordered: true, action: openPage)
+            }.padding(.leading, FrogStyle.cardPadding).padding(.trailing, FrogStyle.space6).padding(.bottom, FrogStyle.space4)
+            UsageMenuCards(usage: usage)
         }
         .background(FeatureVisibility { usage.setPresented($0, for: .menu) })
+    }
+}
+
+/// The two cards the tab and the popup share: the plan limits, then the period's activity.
+private struct UsageMenuCards: View {
+    @ObservedObject var usage: UsageDashboardModel
+    var body: some View {
+        UsageMenuLimitsBlock(usage: usage).padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
+            .frogTableSurface()
+        UsageCompactActivity(usage: usage).padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
+            .frogTableSurface()
+    }
+}
+
+/// Reads the limits and the activity again: one action, beside the provider, on the tab, the popup and the page.
+struct UsageRefreshAction: View {
+    @ObservedObject var usage: UsageDashboardModel
+    var bordered = false
+    var body: some View {
+        IconAction(title: "Refresh", symbol: "arrow.clockwise", bordered: bordered) { usage.refresh() }
     }
 }
 
@@ -26,7 +49,7 @@ struct UsageMenuTab: View {
 /// and a quiet footer, as tall as its content.
 struct UsageStatusPopover: View {
     static let popupName = "LLM usage"
-    static let width: CGFloat = 292
+    static let width: CGFloat = StatusItemPopup.width
     @ObservedObject var usage: UsageDashboardModel
     let openDashboard: () -> Void
     var signIn: () -> Void = {}
@@ -36,43 +59,47 @@ struct UsageStatusPopover: View {
     /// "Sign in to Claude Code for B…", for an account whose own Claude Code login is gone.
     var accountSignIn: (UsageAccountSummary) -> Void = { _ in }
 
+    @ObservedObject private var readiness = UpdateReadiness.shared
+
     var body: some View {
         let provider = usage.preferences.provider
         let accounts = Self.shownAccounts(usage)
+        let setup = accounts.first(where: \.needsLiveSetup)
+        let signInAccount = setup == nil ? accounts.first(where: \.needsSignIn) : nil
+        let claudeSignIn = setup == nil && signInAccount == nil && provider == "Claude" && accounts.isEmpty && usage.needsClaudeSignIn
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: FrogStyle.listInset) {
-                HStack(spacing: FrogStyle.space6) {
-                    Text("LLM usage").font(FrogType.section).fixedSize()
-                    Spacer(minLength: FrogStyle.space6)
-                    UsageProviderDropdown(usage: usage)
-                    IconAction(title: "Refresh", symbol: "arrow.clockwise", bordered: true) { usage.refresh() }
-                }.padding(.horizontal, FrogStyle.panelInset - FrogStyle.panelCardInset).frame(height: 40)
-                UsageMenuLimitsBlock(usage: usage).padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
-                    .frogTableSurface()
-                UsageCompactActivity(usage: usage).padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
-                    .frogTableSurface()
-                VStack(alignment: .leading, spacing: FrogStyle.space2) {
-                    // At most one account is offered live readings or a sign-in: the first that needs one.
-                    if let account = accounts.first(where: \.needsLiveSetup) {
-                        MenuActionRow(title: "Set up live readings for \(account.label)…", symbol: "person.crop.circle.badge.plus", tint: FrogStyle.warning) {
-                            liveSetup(account)
-                        }.help(account.status ?? "")
-                    } else if let account = accounts.first(where: \.needsSignIn) {
-                        MenuActionRow(title: ClaudeSignIn.accountSignInTitle(account), symbol: "person.crop.circle.badge.checkmark", tint: FrogStyle.warning) {
-                            accountSignIn(account)
-                        }.disabled(account.checkingSignIn).help(account.warning ?? account.status ?? "")
-                    } else if provider == "Claude", accounts.isEmpty, usage.needsClaudeSignIn {
-                        MenuActionRow(title: usage.checkingClaudeSignIn ? "Checking Claude Code’s login…" : "Sign in to Claude Code…",
-                                      symbol: "person.crop.circle.badge.checkmark", tint: FrogStyle.warning, action: signIn)
-                            .disabled(usage.checkingClaudeSignIn).help(usage.status(provider: provider))
+            // The header and content keep the panel's inset; the footer band below runs to the panel's edges.
+            VStack(alignment: .leading, spacing: 0) {
+                FrogPopupHeader(symbol: LLMUsagePlugin.info.symbol, tint: LLMUsagePlugin.info.tint, title: "LLM usage") {
+                    // The choice apart from the two actions, so the header reads as a value and a pair of buttons.
+                    UsageProviderDropdown(usage: usage).padding(.trailing, FrogStyle.space6)
+                    UsageRefreshAction(usage: usage, bordered: true)
+                    IconAction(title: "Open LLM usage", symbol: "arrow.up.forward.app", bordered: true, action: openDashboard)
+                }
+                VStack(alignment: .leading, spacing: FrogStyle.panelCardGap) {
+                    UsageMenuCards(usage: usage)
+                    // Only what needs doing: at most one account is offered live readings or a sign-in, the first that needs one.
+                    if setup != nil || signInAccount != nil || claudeSignIn || readiness.version != nil {
+                        VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                            if let account = setup {
+                                MenuActionRow(title: "Set up live readings for \(account.label)…", symbol: "person.crop.circle.badge.plus", tint: FrogStyle.warning) {
+                                    liveSetup(account)
+                                }.help(account.status ?? "")
+                            } else if let account = signInAccount {
+                                MenuActionRow(title: ClaudeSignIn.accountSignInTitle(account), symbol: "person.crop.circle.badge.checkmark", tint: FrogStyle.warning) {
+                                    accountSignIn(account)
+                                }.disabled(account.checkingSignIn).help(account.warning ?? account.status ?? "")
+                            } else if claudeSignIn {
+                                MenuActionRow(title: usage.checkingClaudeSignIn ? "Checking Claude Code’s login…" : "Sign in to Claude Code…",
+                                              symbol: "person.crop.circle.badge.checkmark", tint: FrogStyle.warning, action: signIn)
+                                    .disabled(usage.checkingClaudeSignIn).help(usage.status(provider: provider))
+                            }
+                            UpdateReadyRow(install: installUpdate)
+                        }.padding(FrogStyle.listInset).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
                     }
-                    UpdateReadyRow(install: installUpdate)
-                    MenuActionRow(title: "Open LLM usage", symbol: "arrow.up.forward.app", tint: FrogStyle.accent, action: openDashboard)
-                }.padding(FrogStyle.listInset).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
-            }.padding(FrogStyle.panelCardInset)
-            // The footer sits under a hairline, as in the other popups.
-            UsageMenuFooter(usage: usage).padding(.horizontal, FrogStyle.cardPadding).frame(height: 32).frame(maxWidth: .infinity)
-                .overlay(alignment: .top) { Rectangle().fill(FrogStyle.hairline).frame(height: 1) }
+                }.padding(.bottom, FrogStyle.space8)
+            }.padding([.horizontal, .top], FrogStyle.panelCardInset)
+            FrogPopupFooter { UsageMenuStatus(usage: usage) }
         }
         .frame(width: Self.width).fixedSize(horizontal: false, vertical: true)
         .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
@@ -107,24 +134,10 @@ struct UsageStatusPopover: View {
 struct UsageProviderDropdown: View {
     @ObservedObject var usage: UsageDashboardModel
     var body: some View {
+        // Only as wide as the provider's name, so the gap to the actions beside it is the same for every provider.
         FrogDropdown(selected: usage.preferences.provider, options: usage.providers, width: 92, compact: true, title: { $0 }) {
             usage.selectProvider($0)
-        }.accessibilityLabel("Provider")
-    }
-}
-
-/// The popup's body, shared by the tab and the menu-bar item: the accounts notice, the limits and the activity.
-private struct UsageMenuContent: View {
-    @ObservedObject var usage: UsageDashboardModel
-    var body: some View {
-        let provider = usage.preferences.provider
-        let accounts = UsageStatusPopover.shownAccounts(usage)
-        VStack(alignment: .leading, spacing: 16) {
-            if provider == "Claude", usage.accountsNoticeVisible { UsageAccountsNotice(usage: usage, compact: true) }
-            if accounts.isEmpty { UsageCompactLimits(usage: usage) } else { UsageAccountsLimits(usage: usage, compact: true) }
-            UsageExtraUsageBlock(usage: usage)
-            UsageCompactActivity(usage: usage)
-        }
+        }.fitToContent().accessibilityLabel("Provider")
     }
 }
 
@@ -162,7 +175,7 @@ struct UsageExtraUsageBlock: View {
                     Text("This month")
                     Spacer(minLength: 4)
                     if let limit = extra.limit { Text("of \(limit) limit").monospacedDigit() }
-                }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                }.lineLimit(1)
             }.accessibilityElement(children: .combine)
         }
     }
@@ -206,9 +219,9 @@ private struct UsageCompactActivity: View {
             UsageActivityChart(usage: usage, chart: chart, compact: true)
             if usage.loaded, chart.hasActivity {
                 HStack {
-                    Text("Total tokens").foregroundStyle(FrogStyle.muted)
+                    Text("Total tokens").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                     Spacer()
-                    Text(usage.format(chart.totalTokens, metric: "Input")).monospacedDigit()
+                    Text(usage.format(chart.totalTokens, metric: "Input")).font(FrogType.body).monospacedDigit()
                 }.font(FrogType.small)
             }
             UsageActivityNotes(usage: usage, chart: chart, compact: true)
@@ -216,8 +229,39 @@ private struct UsageCompactActivity: View {
     }
 }
 
-/// When the limits were read and where from; one entry per account while each is shown.
-private struct UsageMenuFooter: View {
+/// The Usage tab's status in Frog's footer: the age of the oldest reading shown ("16m ago"), no longer than Frog's
+/// "Ready", so Settings and Quit keep their words; every account's age and source on hover, and a warning glyph
+/// when one has no current reading.
+struct UsageMenuFooterStatus: View {
+    @ObservedObject var usage: UsageDashboardModel
+    var body: some View {
+        let provider = usage.preferences.provider
+        let accounts = UsageStatusPopover.shownAccounts(usage).filter(\.included)
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            let oldest = accounts.isEmpty ? usage.planUpdatedAt(provider: provider) : accounts.compactMap(\.age).min()
+            let age = oldest.map { UsageStatusPopover.age(of: $0, at: context.date) }
+            let details = accounts.isEmpty
+                ? [age.map { "Updated \($0)" }, usage.planSource(provider: provider), usage.status(provider: provider)].compactMap { $0 }
+                : accounts.map { "\($0.label): \($0.age.map { UsageStatusPopover.age(of: $0, at: context.date) } ?? "no reading")" }
+            let warning = accounts.isEmpty ? usage.planWarning(provider: provider)
+                : accounts.filter(\.stale).map { "\($0.label): \($0.status ?? "no current reading")" }.joined(separator: "\n").nilIfBlank
+            HStack(spacing: FrogStyle.space4) {
+                Text(age ?? L10n.text("No reading yet")).monospacedDigit().accessibilityLabel(age.map { "Updated \($0)" } ?? L10n.text("No reading yet"))
+                if let warning {
+                    Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning).help(warning).accessibilityLabel(warning)
+                }
+            }
+            .lineLimit(1).help(details.joined(separator: "\n"))
+        }
+    }
+}
+
+private extension String {
+    var nilIfBlank: String? { isEmpty ? nil : self }
+}
+
+/// When the limits were read, the source on hover; one entry per account while each is shown.
+struct UsageMenuStatus: View {
     @ObservedObject var usage: UsageDashboardModel
     var body: some View {
         let provider = usage.preferences.provider
@@ -227,15 +271,18 @@ private struct UsageMenuFooter: View {
                 UsageAccountsFooter(accounts: accounts.filter(\.included), now: context.date)
             } else {
                 HStack(spacing: 4) {
-                    Text(usage.planUpdatedAt(provider: provider).map { "Updated \(UsageStatusPopover.age(of: $0, at: context.date))" } ?? "No plan reading yet")
-                        .help(usage.status(provider: provider))
+                    let age = usage.planUpdatedAt(provider: provider).map { UsageStatusPopover.age(of: $0, at: context.date) }
+                    // A clock and the age ("15m ago"), short enough for the menu tab's header row beside the provider.
+                    // "Updated" and the source are in the tooltip.
+                    if let age { Image(systemName: "clock").font(FrogType.caption).accessibilityHidden(true) }
+                    Text(age ?? "No plan reading yet")
+                        .help(([age.map { "Updated \($0)" }, usage.planSource(provider: provider), usage.status(provider: provider)]).compactMap { $0 }.joined(separator: "\n"))
+                        .accessibilityLabel(age.map { "Updated \($0)" } ?? "No plan reading yet")
                     if let warning = usage.planWarning(provider: provider) {
                         Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning)
                             .help(warning).accessibilityLabel(warning)
                     }
-                    Spacer()
-                    if let source = usage.planSource(provider: provider) { Text(source) }
-                }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                }.lineLimit(1)
             }
         }
     }
@@ -301,7 +348,6 @@ private struct UsageAccountsFooter: View {
                 Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning)
                     .help(warning).accessibilityLabel(warning)
             }
-            Spacer()
         }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
     }
 }

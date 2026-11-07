@@ -73,7 +73,7 @@ struct CleanerRestoreView: View {
                 CleanerPutBackSummaryView(summary: summary, roots: roots)
             } else if cleaner.records.isEmpty {
                 FrogEmptyState(symbol: "tray", title: "Nothing moved yet",
-                               message: "Items you move to the Trash with Frog appear here for 30 days.")
+                               message: "Items you move to the Trash with Frog appear here for 30 days.", tint: AppCleanerPlugin.info.tint)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
@@ -120,12 +120,12 @@ struct CleanerRestoreView: View {
                         .font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted).lineLimit(1)
                 }
                 Spacer(minLength: 8)
-                if cleaner.puttingBack == record.id { ProgressView().controlSize(.small) }
+                if cleaner.puttingBack == record.id { FrogSpinner() }
                 Group {
                     if row.needsFinder { Button("Put Back in Finder") { openTrash() } }
                     Button("Put Back") { Task { await cleaner.putBack(record.id) } }
                         .disabled(!row.canPutBack || cleaner.puttingBack != nil)
-                }.buttonStyle(.frog(compact: true))
+                }.buttonStyle(.frog())
                 Button { cleaner.forget(record.id) } label: {
                     Image(systemName: "xmark").font(.system(size: 11, weight: .medium)).foregroundStyle(FrogStyle.muted)
                         .frame(width: FrogStyle.compactHeight, height: FrogStyle.compactHeight).frogHoverRow()
@@ -137,7 +137,7 @@ struct CleanerRestoreView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(record.entries, id: \.original) { entry in
                         HStack(spacing: 8) {
-                            Text(roots.displayPath(URL(fileURLWithPath: entry.original))).font(FrogType.small)
+                            Text(roots.shownPath(URL(fileURLWithPath: entry.original))).font(FrogType.small)
                                 .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                             Spacer(minLength: 8)
                             Text(RecentlyMovedRow.state(of: entry, missing: row.missing.contains(entry.original))).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
@@ -181,13 +181,7 @@ struct CleanerPutBackSummaryView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(Array(summary.failures.enumerated()), id: \.offset) { _, failure in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(roots.displayPath(URL(fileURLWithPath: failure.path))).font(FrogType.body)
-                                    .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
-                                Text(failure.message).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            FrogRow(path: roots.shownPath(URL(fileURLWithPath: failure.path)), caption: failure.message)
                         }
                     }
                 }

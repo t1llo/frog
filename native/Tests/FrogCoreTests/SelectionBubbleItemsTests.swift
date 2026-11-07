@@ -53,12 +53,28 @@ final class SelectionBubbleItemsTests: XCTestCase {
         XCTAssertEqual(titles(result.visible), ["Explain", "Proofread"])
     }
 
+    func testRulesWearTheGlyphTheirNameSays() {
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: Rule.explainPreset), SelectionBubbleItems.answerSymbol)
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: answer("Define")), "book.closed")
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: writing("Translate to German")), "globe.europe.africa")
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: writing("Translate to English")), "globe.americas")
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: writing("Translate")), "translate")
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: writing("Polish email")), "envelope")
+        let presets = Rule.presets.map(SelectionBubbleItems.symbol(for:))
+        XCTAssertEqual(Set(presets).count, presets.count, "every preset, the two translations too, has its own")
+    }
+
+    func testRulesWithoutAKnownNameWearTheirFeaturesGlyph() {
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: answer("Ask Anna")), SelectionBubbleItems.answerSymbol)
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: writing("House style")), SelectionBubbleItems.writingSymbol)
+    }
+
     func testWritingRulesOnlyInEditableFieldsWithWritingOn() {
         var dictation = Rule.dictationPreset
         dictation.enabled = true
         let rules = [writing("Proofread"), Rule.explainPreset, dictation]
         XCTAssertEqual(titles(items(rules).visible), ["Explain", "Proofread"], "only text rules")
-        XCTAssertEqual(items(rules).visible.last?.symbol, SelectionBubbleItems.writingSymbol)
+        XCTAssertEqual(items(rules).visible.last?.symbol, "checkmark.circle")
         XCTAssertEqual(items(rules).visible.last?.answers, false)
         XCTAssertEqual(titles(items(rules, editable: false).visible), ["Explain"])
         XCTAssertEqual(titles(items(rules, writing: false).visible), ["Explain"])

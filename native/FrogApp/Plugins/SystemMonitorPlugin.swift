@@ -91,9 +91,9 @@ final class SystemMonitorPlugin: FrogPlugin, ObservableObject {
 
     var menu: [MenuContribution] {
         guard let monitor else { return [] }
-        return [MenuContribution(id: "system-monitor.tab", placement: .tab(title: "System", symbol: "gauge.medium"), order: 10) {
-            AnyView(SystemMonitorView(monitor: monitor, presenter: .frogMenu))
-        }]
+        return [MenuContribution(id: "system-monitor.tab", placement: .tab(title: "System", symbol: "gauge.medium"), order: 10,
+                                 content: { AnyView(SystemMonitorView(monitor: monitor, presenter: .frogMenu)) },
+                                 status: { AnyView(SystemMonitorLiveStatus(monitor: monitor)) })]
     }
 
     var actions: [PluginAction] {

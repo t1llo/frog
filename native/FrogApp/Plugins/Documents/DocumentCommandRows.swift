@@ -21,13 +21,13 @@ import FrogCore
                                      primary: CommandRowAction(title: "Open") { [weak model] in
                                          model?.documents.selection[.note] = item.id
                                          model?.pluginHost.open(NotesPlugin.info.id)
-                                     })
+                                     }, tint: NotesPlugin.info.tint)
             case .script:
                 guard scripts else { return nil }
                 return CommandBarRow(record: SearchRecord(id: "script:\(item.id)", title: item.title, subtitle: "Run saved script", symbol: "terminal"),
                                      primary: CommandRowAction(title: "Run") { [weak model] in
                                          (model?.pluginHost.running[ScriptsPlugin.info.id] as? ScriptsPlugin)?.runOnPage(item)
-                                     })
+                                     }, tint: ScriptsPlugin.info.tint)
             }
         }
     }
@@ -40,7 +40,7 @@ import FrogCore
             return model.documents.items.first { $0.id == item.id && $0.pastes }
         }
         return CommandBarRow(
-            record: SearchRecord(id: "snippet:\(item.id)", title: item.title, subtitle: "Note · Paste · ⌘↩ Copy", symbol: "text.badge.plus"),
+            record: SearchRecord(id: "snippet:\(item.id)", title: item.title, subtitle: "Pastes into the front app", keywords: "note paste copy", symbol: "text.badge.plus"),
             primary: CommandRowAction(title: "Paste") {
                 guard let note = current() else { return }
                 try await paste.paste(note, into: target, isCurrent: { current() != nil }, waitForRelease: waitForRelease)
@@ -48,6 +48,6 @@ import FrogCore
             secondary: CommandRowAction(title: "Copy") {
                 guard let note = current() else { return }
                 try paste.copy(note)
-            })
+            }, tint: NotesPlugin.info.tint)
     }
 }

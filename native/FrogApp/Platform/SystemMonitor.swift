@@ -82,6 +82,13 @@ final class SystemMonitor: ObservableObject {
         return await sampler.sample(reset: false, full: true)
     }
 
+    /// Starts the graph from readings taken earlier, such as the sample readings of the UI pictures; the next
+    /// reading continues it.
+    func restore(_ samples: [SystemMonitorSample]) {
+        recorded = Array(samples.sorted { $0.time < $1.time }.suffix(Self.historyLimit))
+        if presented { history = recorded }
+    }
+
     func stop() {
         presenters = []
         liveReadout = false

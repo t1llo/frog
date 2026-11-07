@@ -103,4 +103,12 @@ final class MarkdownPreviewTests: XCTestCase {
         XCTAssertEqual(blocks.map { plain($0.text) }, ["First line", "Second <b>line</b>", "<div>kept as typed</div>"])
         XCTAssertTrue(blocks.allSatisfy { $0.kind == .paragraph })
     }
+
+    func testAListPreviewLineLosesItsMarkdownButKeepsItsWords() {
+        XCTAssertEqual(MarkdownPreview.plain("# Standup"), "Standup")
+        XCTAssertEqual(MarkdownPreview.plain("- [ ] **Call** [Anna](https://example.com)"), "Call Anna")
+        XCTAssertEqual(MarkdownPreview.plain("> Use `make` and ~~skip~~ _tests_"), "Use make and skip tests")
+        XCTAssertEqual(MarkdownPreview.plain("snake_case_name stays"), "snake_case_name stays")
+        XCTAssertEqual(MarkdownPreview.plain("#"), "#")
+    }
 }

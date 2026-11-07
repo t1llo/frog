@@ -93,7 +93,8 @@ a:hover { text-decoration: underline; }
 }
 
 /* Buttons are capsules filled like Frog's: secondary on the control layer, the one main action in
-   the accent, quiet ones with no fill until hovered. A press shrinks them slightly. */
+   the accent, quiet ones with no fill until hovered. A press shrinks them slightly. One size everywhere, as
+   Frog's own buttons: 24px tall with 13px medium text, on a page and in a popup alike. */
 button {
   font: 500 13px/16px var(--frog-font);
   color: var(--frog-ink);
@@ -101,7 +102,7 @@ button {
   border: 0;
   border-radius: 999px;
   padding: 0 12px;
-  min-height: var(--frog-control-height);
+  min-height: var(--frog-compact-height);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -188,9 +189,9 @@ tbody tr:hover td { background: var(--frog-hover); }
    the left and a control on the right, and the one line Frog draws between them. */
 .frog-section { display: flex; flex-direction: column; gap: 8px; }
 .frog-section > h3, .frog-section > .frog-caption { margin: 0 0 0 4px; }
-.frog-section > .frog-rows { display: flex; flex-direction: column; background: var(--frog-card); border-radius: var(--frog-radius-card); padding: 0 14px; }
+.frog-section > .frog-rows { display: flex; flex-direction: column; gap: 2px; background: var(--frog-card); border-radius: var(--frog-radius-card); padding: 0 14px; }
 .frog-setting { display: flex; align-items: center; gap: 12px; min-height: var(--frog-row-height); padding: 8px 0; }
-.frog-setting + .frog-setting { border-top: 1px solid var(--frog-line); }
+/* Rows are set apart by their height and a little space, never by a line, as in Frog's own cards. */
 .frog-setting > :first-child { flex: 1; min-width: 0; }
 .frog-setting small, .frog-setting .frog-small { display: block; color: var(--frog-muted); }
 .frog-list > li:has(> .frog-item) { padding: 0; }
@@ -201,7 +202,7 @@ button.frog-item:hover:not(:disabled), a.frog-item:hover { background: var(--fro
 .frog-stat strong { font-size: 20px; line-height: 1.2; font-weight: 600; letter-spacing: -0.3px; font-variant-numeric: tabular-nums; }
 .frog-stat span { font-size: 11px; color: var(--frog-muted); }
 
-.frog-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: var(--frog-radius-small); font-size: 10px; font-weight: 600; line-height: 14px; color: var(--frog-muted); background: var(--frog-control); }
+.frog-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; line-height: 14px; color: var(--frog-muted); background: var(--frog-control); }
 .frog-badge.frog-accent { color: var(--frog-accent); background: color-mix(in srgb, var(--frog-accent) 15%, transparent); }
 
 .frog-segmented { display: inline-flex; gap: 2px; padding: 2px; background: var(--frog-control); border-radius: 999px; }
@@ -210,10 +211,10 @@ button.frog-item:hover:not(:disabled), a.frog-item:hover { background: var(--fro
 .frog-segmented button[aria-pressed="true"] { background: var(--frog-surface); color: var(--frog-ink); box-shadow: 0 0.5px 1.5px rgb(0 0 0 / 0.12); }
 
 /* Frog's switch: <input type="checkbox" class="frog-switch">. */
-input.frog-switch { appearance: none; position: relative; width: 36px; height: 18px; min-height: 0; padding: 0; border-radius: 999px; background: var(--frog-switch-track); transition: background-color 0.18s ease-out; flex: none; }
-input.frog-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 14px; border-radius: 999px; background: #fff; box-shadow: 0 0.5px 1px rgb(0 0 0 / 0.2); transition: transform 0.18s ease-out; }
+input.frog-switch { appearance: none; position: relative; width: 36px; height: 20px; min-height: 0; padding: 0; border-radius: 999px; background: var(--frog-switch-track); transition: background-color 0.18s ease-out; flex: none; }
+input.frog-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 999px; background: #fff; box-shadow: 0 0.5px 1px rgb(0 0 0 / 0.2); transition: transform 0.18s ease-out; }
 input.frog-switch:checked { background: var(--frog-accent); }
-input.frog-switch:checked::after { transform: translateX(12px); }
+input.frog-switch:checked::after { transform: translateX(16px); }
 input.frog-switch:focus { box-shadow: none; }
 @media (prefers-reduced-motion: reduce) { input.frog-switch, input.frog-switch::after { transition: none; } }
 
@@ -233,11 +234,18 @@ input.frog-switch:focus { box-shadow: none; }
 @keyframes frog-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .frog-spinner { animation-duration: 2.4s; } }
 
-/* The popup beneath a plugin's menu-bar item. Frog draws the panel, its corners and the plugin's name
-   above; the page lies on it with no background of its own and 8px from the panel's edge. */
+/* A big figure, the number a page or popup leads with ($3.92, 25:00): semibold, as Frog's own. */
+.frog-figure { font-size: 28px; line-height: 1.15; font-weight: 600; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
+
+/* The popup beneath a plugin's menu-bar item. Frog draws the panel, its corners, the plugin's tile and name
+   above and Close beneath; the page is one card on it, as the content of Frog's own popups is: the card's fill and
+   corners, its content 14px in, and 8px under it, as Frog's own popups keep above their footer. Frog adds this
+   room to the page's frame (PluginPopupLayout), so the manifest's width and height stay the content's own room. */
+/* The card is drawn behind the body, not as its background: WebKit spreads a body's background over the whole
+   view, which laid a second card's shade around the card, as a band above Close. The body itself stays clear. */
 :root[data-frog-surface="popup"], :root[data-frog-surface="popup"] body { background: transparent; }
-:root[data-frog-surface="popup"] body { font-size: 13px; }
-:root[data-frog-surface="popup"] .frog-page { padding: 0 6px 8px; gap: 12px; max-width: none; }
-:root[data-frog-surface="popup"] button { min-height: var(--frog-compact-height); padding: 0 10px; font-size: 12px; }
-:root[data-frog-surface="popup"] .frog-list { background: transparent; padding: 0; }
+:root[data-frog-surface="popup"] body { font-size: 13px; padding: 14px; margin: 0 0 8px; border-radius: var(--frog-radius-card); position: relative; isolation: isolate; }
+:root[data-frog-surface="popup"] body::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--frog-card); border-radius: inherit; pointer-events: none; }
+:root[data-frog-surface="popup"] .frog-page { padding: 0; gap: 12px; max-width: none; }
+:root[data-frog-surface="popup"] .frog-list { background: transparent; padding: 0; margin: 0 -8px; }
 :root[data-frog-surface="popup"] .frog-list > li, :root[data-frog-surface="popup"] .frog-item { padding: 6px 8px; }

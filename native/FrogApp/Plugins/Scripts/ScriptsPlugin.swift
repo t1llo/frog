@@ -157,6 +157,9 @@ struct ScriptsPage: View {
     let run: (UtilityDocument) -> Void
     let setTimeout: (Int) -> Void
     @State private var timeout: Int
+    /// The output panel's state as the person set it with its disclosure; nil follows the script: shut until it has
+    /// run, open once it has printed something.
+    @State private var outputOpen: Bool?
 
     init(documents: LocalDocuments, runner: ScriptRunner, timeout: Int, run: @escaping (UtilityDocument) -> Void, setTimeout: @escaping (Int) -> Void) {
         self.documents = documents; self.runner = runner; self.run = run; self.setTimeout = setTimeout
@@ -164,42 +167,93 @@ struct ScriptsPage: View {
     }
 
     var body: some View {
-        DocumentsPage(documents: documents, kind: .script, title: "Scripts", symbol: "terminal",
+        DocumentsPage(documents: documents, kind: .script, title: "Scripts", subtitle: "Shell scripts that run with zsh in your home folder", symbol: "terminal",
                       emptyMessage: "Each runs with zsh in your home folder, from here, the command bar or a shortcut.") { script in
             if runner.running == script.id {
                 Button("Stop", systemImage: "stop.fill", action: runner.stop)
             } else {
                 Button("Run", systemImage: "play.fill") { run(script) }
-                    .buttonStyle(.frog(.primary, compact: true)).disabled(runner.running != nil)
+                    .buttonStyle(.frog(.primary)).disabled(runner.running != nil)
                     .help(runner.running != nil ? "Another script is running" : "")
             }
-        } content: { script in
-            DocumentTextEditor(text: documents.binding(script.id, \.text), font: FrogType.mono)
-            if runner.resultID == script.id { output }
-        } footer: {
-            FrogSection {
-                FrogRow("Time limit", caption: "Frog stops a script that runs longer.") {
-                    FrogDropdown(selected: timeout, options: ScriptsSettings.timeouts.contains(timeout) ? ScriptsSettings.timeouts : (ScriptsSettings.timeouts + [timeout]).sorted(),
-                                 width: 120, title: Self.duration) { timeout = $0; setTimeout($0) }
+            if runner.resultID == script.id {
+                HStack(spacing: FrogStyle.space6) {
+                    if runner.running == script.id { FrogSpinner() }
+                    Text(runner.status).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
                 }
+            }
+            Spacer(minLength: FrogStyle.space8)
+            if runner.resultID == script.id, !runner.output.isEmpty {
+                CopyAction(title: "Copy output") { ViewActions.copy(runner.output) }
+            }
+        } content: { script in
+            // The script fills the card, as a note does, and its output folds out right under it: no block of
+            // empty space between the code and what it printed.
+            DocumentTextEditor(text: documents.binding(script.id, \.text), font: FrogType.mono)
+                .frame(minHeight: 72, maxHeight: .infinity)
+            output(ran: runner.resultID == script.id, script: script.id)
+        } footer: { script in
+            // For every script: Frog stops one that runs longer.
+            // The label sits right against its value: the dropdown takes only the width its title needs.
+            HStack(spacing: 0) {
+                Text("Time limit").foregroundStyle(FrogStyle.muted).lineLimit(1)
+                FrogDropdown(selected: timeout, options: ScriptsSettings.timeouts.contains(timeout) ? ScriptsSettings.timeouts : (ScriptsSettings.timeouts + [timeout]).sorted(),
+                             width: 120, compact: true, title: Self.duration) { timeout = $0; setTimeout($0) }
+                    .fitToContent()
+                    .help("Frog stops any script that runs longer")
             }
         }
     }
 
-    private var output: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text(runner.status).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                Spacer()
-                if !runner.output.isEmpty { CopyAction(title: "Copy output", labeled: true) { ViewActions.copy(runner.output) } }
+    /// What the last run printed, in an inset panel under the script that folds open and shut under its caption.
+    /// It opens by itself on a run of this script and stays as the person leaves it.
+    private func output(ran: Bool, script: UtilityDocument.ID) -> some View {
+        let open = outputOpen ?? ran
+        return VStack(alignment: .leading, spacing: FrogStyle.space6) {
+            Button {
+                withAnimation(FrogMotion.reveal) { outputOpen = !open }
+            } label: {
+                HStack(spacing: FrogStyle.space6) {
+                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(FrogStyle.muted)
+                        .rotationEffect(.degrees(open ? 90 : 0))
+                    Text("Output").font(FrogType.bodyMedium).foregroundStyle(FrogStyle.ink)
+                    if !open, ran, !runner.output.isEmpty {
+                        Text(Self.firstLine(runner.output)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: FrogStyle.menuRowHeight - FrogStyle.space6, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            if !runner.output.isEmpty {
+            .buttonStyle(.plain)
+            .accessibilityLabel(open ? "Hide output" : "Show output")
+            if open {
                 ScrollView {
-                    Text(runner.output).font(FrogType.mono).textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(8)
-                }.frame(height: 150).background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+                    Group {
+                        if !ran {
+                            Text("Run it to see what it prints").font(FrogType.body).foregroundStyle(FrogStyle.muted)
+                        } else if runner.output.isEmpty {
+                            Text(runner.running != nil ? "Waiting for output…" : "No output").font(FrogType.body).foregroundStyle(FrogStyle.muted)
+                        } else {
+                            Text(runner.output).font(FrogType.mono).textSelection(.enabled)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(FrogStyle.space10)
+                }
+                .minimalScrollbars()
+                .frame(height: ran ? 160 : 44)
+                .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
+        // Every run, a rerun of the same script too, and another script hand the panel back to the script.
+        .onChange(of: runner.running) { _, running in if running != nil { outputOpen = nil } }
+        .onChange(of: script) { _, _ in outputOpen = nil }
+    }
+
+    /// The first line a run printed, shown beside the shut panel's caption.
+    private static func firstLine(_ output: String) -> String {
+        output.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
     }
 
     static func duration(_ seconds: Int) -> String {

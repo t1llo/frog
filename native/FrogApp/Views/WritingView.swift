@@ -11,10 +11,11 @@ struct WritingView: View {
 
     var body: some View {
         FrogPage {
-            FrogPageHeader(title: "Writing") {
-                Button("New rule", systemImage: "plus") {
+            FrogPageHeader(title: "Writing", subtitle: "Select text in any app and press a rule's shortcut to rewrite it or get an answer.") {
+                // The same add button as Add rule on Dictation.
+                FrogAddButton("Add rule") {
                     editing = model.configuration.newRule(category: .text, installed: model.localModels.installed)
-                }.buttonStyle(.frog(.primary)).keyboardShortcut("n", modifiers: .command)
+                }.keyboardShortcut("n", modifiers: .command)
             }
             rules
             WritingBubbleSection(plugin: plugin)
@@ -29,36 +30,59 @@ struct WritingView: View {
     @ViewBuilder private var rules: some View {
         let rules = plugin.rules
         if rules.isEmpty {
-            FrogEmptyState(symbol: "text.cursor", title: "No rules yet", message: "A rule rewrites selected text in any app.")
+            FrogEmptyState(symbol: WritingPlugin.info.symbol, title: "No rules yet", message: "A rule rewrites selected text in any app.",
+                           tint: WritingPlugin.info.tint)
         } else {
-            FrogSection("Rules") {
+            let missing = rules.filter { $0.enabled && !model.ruleHasModel($0) }
+            if !missing.isEmpty {
+                let choices = model.hasModelChoices(speech: false)
+                ProblemNotice(title: missing.count == 1 ? "\(missing[0].name) won't run yet" : "\(missing.count) rules won't run yet",
+                              message: choices ? "Choose a text model for \(missing.count == 1 ? "it" : "each")."
+                                               : "Download a text model or connect a provider first.") {
+                    if choices {
+                        Button("Choose model") { editing = missing[0] }.buttonStyle(.frog(.primary))
+                    } else {
+                        Button("Open Models") { model.toolkit.select(.models) }.buttonStyle(.frog(.primary))
+                    }
+                }
+            }
+            // Two cards, so both are headed: the rules, then the bubble that offers them.
+            FrogSection("Rules", count: rules.count) {
                 ForEach(rules) { rule in row(rule) }
             }
         }
     }
 
-    private func row(_ rule: Rule) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            FrogRow(rule.name, caption: caption(rule)) {
-                HStack(spacing: 8) {
-                    Button("Try") { trying = rule }.buttonStyle(.frog(compact: true))
-                        .disabled(!rule.enabled || model.isProcessing).accessibilityLabel("Try \(rule.name)")
-                    Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: { value in
-                        var updated = rule; updated.enabled = value
-                        do { try model.saveRule(updated) } catch { model.report(error) }
-                    })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
-                    IconAction(title: "Edit \(rule.name)", symbol: "pencil") { editing = rule }
-                }
-            }
-            if let issue = model.hotkeyErrors[rule.id] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
-        }.contentShape(Rectangle()).onTapGesture(count: 2) { editing = rule }
+    private var everyEnabledRuleMissing: Bool {
+        let enabled = plugin.rules.filter(\.enabled)
+        return !enabled.isEmpty && enabled.allSatisfy { !model.ruleHasModel($0) }
     }
 
-    /// What the rule does, its shortcut and its model, in one line.
-    private func caption(_ rule: Rule) -> String {
-        var parts = [rule.textOutput.title]
-        if let hotkey = rule.hotkey { parts.append(HotkeyManager.display(hotkey)) }
-        parts.append(model.ruleModelLabel(rule))
+    private func row(_ rule: Rule) -> some View {
+        WritingRuleRow(rule: rule, caption: caption(rule), markMissing: rule.enabled && !model.ruleHasModel(rule) && !everyEnabledRuleMissing,
+                       canTry: rule.enabled && !model.isProcessing, issue: model.hotkeyErrors[rule.id],
+                       edit: { editing = rule }, tryIt: { trying = rule }, setEnabled: { value in
+                           var updated = rule; updated.enabled = value
+                           do { try model.saveRule(updated) } catch { model.report(error) }
+                       }, setHotkey: { hotkey in
+                           var updated = rule; updated.hotkey = hotkey
+                           do { try model.saveRule(updated) } catch { model.report(error) }
+                       })
+    }
+
+    /// The rule's model, then what it does with the result when that is not the usual replacing ("Llama 3.2 · Copies
+    /// the result"), so each caption says what sets the rule apart. An enabled rule without a model leaves it out, since
+    /// the notice above says so once; one that is off says "No model" itself, as no notice speaks for it.
+    private func caption(_ rule: Rule) -> String? {
+        var parts: [String] = []
+        if model.ruleHasModel(rule) { parts.append(model.ruleModelLabel(rule)) }
+        else if !rule.enabled { parts.append(L10n.text("No model")) }
+        switch rule.textOutput {
+        // Without a model to name, the usual replacing is said too, so every rule keeps a caption and the rows one height.
+        case .replace: if parts.isEmpty { parts.append(L10n.text("Replaces the selection")) }
+        case .copy: parts.append(L10n.text("Copies the result"))
+        case .panel: parts.append(L10n.text("Shows the answer in a panel"))
+        }
         return parts.joined(separator: " · ")
     }
 
@@ -81,8 +105,8 @@ struct WritingBubbleSection: View {
 
     var body: some View {
         FrogSection("Selection bubble") {
-            FrogRow("Show after you select text") {
-                Toggle("Show after you select text", isOn: Binding(get: { bubble.on }, set: { value in
+            FrogRow("Show after selecting text", caption: "Offers your rules beside the selection.") {
+                Toggle("Selection bubble", isOn: Binding(get: { bubble.on }, set: { value in
                     withAnimation(reduceMotion ? nil : FrogMotion.reveal) { update { $0.on = value } }
                 })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
@@ -91,7 +115,7 @@ struct WritingBubbleSection: View {
                     FrogRowNote(text: status, tone: FrogStyle.warning)
                     Button("Open System Settings") {
                         SelectionService.requestAccess(); SelectionService.openAccessibilitySettings()
-                    }.buttonStyle(.frog(compact: true))
+                    }.buttonStyle(.frog())
                 }
             }
             if bubble.on {
@@ -226,15 +250,35 @@ struct WritingRuleEditor: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 16) {
-                TextField("Name your rule", text: $rule.name).textFieldStyle(.plain).font(FrogType.title)
+                FrogTextField(placeholder: "Name your rule", text: $rule.name).textFieldStyle(.plain).font(FrogType.title)
                     .accessibilityLabel("Rule name")
-                Toggle("On", isOn: $rule.enabled).toggleStyle(.frogSwitch).controlSize(.small).font(FrogType.small)
+                // Saving a copy is a second way to save, not a sheet button: an icon beside the name, so the footer
+                // keeps Delete alone on one side and Cancel and Save on the other.
+                if existing {
+                    IconAction(title: "Save as copy", symbol: "plus.square.on.square") { saveCopy() }
+                        .frogDisabled(named ? nil : "Name the rule first")
+                }
+                // The switch alone, as on the Writing page's rows: a label beside it would only say "On" while it is on.
+                Toggle("Rule on", isOn: $rule.enabled).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+                    .help(rule.enabled ? "Turn the rule off" : "Turn the rule on")
             }.padding(FrogStyle.sheetPadding)
-            ScrollView {
+            FrogSheetScroll {
                 VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
                     FrogSection("Instructions") {
-                        TextEditor(text: $rule.instructions).font(FrogType.body).scrollContentBackground(.hidden)
-                            .frame(height: 90).padding(.vertical, 8).accessibilityLabel("Instructions")
+                        // An empty box says what goes in it, on the editor's own text inset. The box grows with the
+                        // instructions, from three lines to about ten, measured by the same text laid out unseen.
+                        ZStack(alignment: .topLeading) {
+                            Text(rule.instructions.isEmpty ? " \n \n " : rule.instructions + "\n ")
+                                .font(FrogType.body).padding(.horizontal, 5).frame(maxWidth: .infinity, alignment: .leading)
+                                .fixedSize(horizontal: false, vertical: true).hidden().accessibilityHidden(true)
+                            TextEditor(text: $rule.instructions).font(FrogType.body).scrollContentBackground(.hidden)
+                                .accessibilityLabel("Instructions")
+                            if rule.instructions.isEmpty {
+                                Text("Tell the model what to do with the selected text, such as “Fix spelling and grammar. Keep my wording.”")
+                                    .font(FrogType.body).foregroundStyle(FrogStyle.placeholder)
+                                    .padding(.leading, 5).allowsHitTesting(false).accessibilityHidden(true)
+                            }
+                        }.frame(minHeight: 54, maxHeight: 180).padding(.vertical, 8)
                     }
                     FrogSection("Starts from") {
                         FrogRow("Shortcut") { HotkeyRecorder(hotkey: $rule.hotkey) }
@@ -249,23 +293,28 @@ struct WritingRuleEditor: View {
                                 rule.action?.textOutput = output == .replace ? nil : output
                             }
                         }
-                        FrogRow("Model") { RuleModelPicker(rule: $rule) }
+                        // Without a model the row says why in a warning caption, the one sign of it in this sheet,
+                        // instead of a bare triangle on the picker.
+                        if model.ruleHasModel(rule) {
+                            FrogRow("Model") { RuleModelPicker(rule: $rule) }
+                        } else {
+                            FrogRow("Model", caption: .attributed(Self.missingModel)) { RuleModelPicker(rule: $rule, marksMissing: false) }
+                        }
                     }
-                }.padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space16).minimalScrollbars()
+                }.padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space4).minimalScrollbars()
             }
             if let issue { InlineIssue(message: issue).padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space10) }
-            HStack(spacing: 8) {
+            FrogSheetButtons {
                 if existing {
-                    Button("Delete", systemImage: "trash", role: .destructive) { deleting = true }.buttonStyle(.frog(.destructive))
-                    Button("Save as copy", systemImage: "square.on.square") { saveCopy() }.buttonStyle(.frog(.ghost)).disabled(!named)
+                    Button("Delete", role: .destructive) { deleting = true }.buttonStyle(.frog(.destructive))
                 }
-                Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Save") {
+            } trailing: {
+                FrogCancelButton { dismiss() }
+                FrogPrimaryButton("Save", disabledReason: named ? nil : "Name the rule first") {
                     do { try model.saveRule(rule); dismiss() } catch { issue = error.localizedDescription }
-                }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction).disabled(!named)
-            }.padding(.horizontal, FrogStyle.sheetPadding).padding(.vertical, FrogStyle.space16)
-        }.frame(width: 540, height: 610)
+                }
+            }
+        }.frame(width: 540)
             .foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas).background(FrogWindowMaterial())
             .tint(FrogStyle.accent).buttonStyle(FrogButtonStyle()).controlSize(.small)
             .onChange(of: model.configuration, initial: true) { reconcileModels() }
@@ -275,6 +324,12 @@ struct WritingRuleEditor: View {
                     do { try model.deleteRule(id: rule.id); dismiss() } catch { issue = error.localizedDescription }
                 }
             }
+    }
+
+    private static var missingModel: AttributedString {
+        var text = AttributedString(L10n.text("The rule cannot run until it has one."))
+        text.swiftUI.foregroundColor = FrogStyle.warning
+        return text
     }
 
     /// Saves the draft as a new rule without a shortcut; the original stays as it was saved.
@@ -291,46 +346,112 @@ struct WritingRuleEditor: View {
 
 // MARK: Try
 
-/// Runs a rule on text typed here, without touching any app or the clipboard.
+/// Runs a rule on text typed here, without touching any app or the clipboard. The rule's model can be chosen here;
+/// that choice is saved to the rule, since the rule runs as saved.
 struct WritingTryView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    let rule: Rule
+    @State private var rule: Rule
     @State private var input = ""
     @State private var result = ""
     @State private var issue: String?
     @State private var run: Task<Void, Never>?
 
+    init(rule: Rule) { _rule = State(initialValue: rule) }
+
+    private var hasModel: Bool { (try? model.resolved(rule)) != nil }
+    private var hasText: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    /// Why Run is not available, or nil when it is.
+    private var runBlocked: String? {
+        if run != nil { return "Running…" }
+        if model.isProcessing { return "Frog is finishing another rule" }
+        if !hasModel { return "Choose a model for this rule first" }
+        if !hasText { return "Type or paste some text first" }
+        return nil
+    }
+    /// Why Run waits, said beside it rather than left to a greyed button.
+    private var waiting: String? {
+        if run != nil { return nil }
+        if !hasModel { return "Choose a model above to run it" }
+        if !hasText { return "Type some text first" }
+        if model.isProcessing { return "Frog is busy with another rule" }
+        return nil
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: FrogStyle.space16) {
             // A sheet is its own window, so its header keeps the title.
-            FrogPageHeader(title: rule.name, subtitle: model.ruleModelLabel(rule)).environment(\.frogToolbarTitle, false)
-            TextEditor(text: $input).font(FrogType.body).scrollContentBackground(.hidden)
-                .padding(8).frame(height: 120).frogControlSurface(height: nil)
-                .accessibilityLabel("Text to try").disabled(run != nil)
-            if let issue { InlineIssue(message: issue) }
-            if !result.isEmpty {
-                ScrollView { Text(result).font(FrogType.body).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
-                    .padding(8).frogControlSurface(height: nil)
-            } else { Spacer(minLength: 0) }
-            HStack {
-                if run != nil {
-                    ProgressView().controlSize(.small)
-                    Button("Cancel") { run?.cancel() }
-                } else if !result.isEmpty {
-                    Button("Copy", systemImage: "doc.on.doc") {
-                        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(result, forType: .string)
+            FrogPageHeader(title: "Try \(rule.name)") {
+                RuleModelPicker(rule: Binding(get: { rule }, set: { choose($0) }))
+            }.environment(\.frogToolbarTitle, false)
+            // Both boxes are the same card surface with their text on the same inset, under the shared heading.
+            VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                FrogSectionHeader("Text")
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: $input).font(FrogType.body).scrollContentBackground(.hidden)
+                        .accessibilityLabel("Text to try").disabled(run != nil)
+                    if input.isEmpty {
+                        // The editor sets its text 5 in from its edge; the placeholder starts there too.
+                        Text("Type or paste text to try the rule on").font(FrogType.body).foregroundStyle(FrogStyle.placeholder)
+                            .padding(.leading, 5).allowsHitTesting(false).accessibilityHidden(true)
                     }
                 }
-                Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+                .padding(.leading, FrogStyle.rowInset - 5).padding(.trailing, FrogStyle.space4).padding(.vertical, FrogStyle.space10)
+                .frame(height: 120).frogTableSurface()
+            }
+            VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                FrogSectionHeader("Result") {
+                    if !result.isEmpty {
+                        CopyAction { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(result, forType: .string) }
+                    }
+                }
+                Group {
+                    if let issue {
+                        InlineIssue(message: issue).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    } else if run != nil {
+                        FrogLoadingNote(text: "Running…")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    } else if result.isEmpty {
+                        Text("The result shows here. Nothing is pasted or copied.").font(FrogType.body)
+                            .foregroundStyle(FrogStyle.placeholder)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    } else {
+                        ScrollView {
+                            Text(result).font(FrogType.body).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                        }.bottomScrollFade(height: FrogStyle.space10)
+                    }
+                }
+                .padding(.horizontal, FrogStyle.rowInset).padding(.vertical, FrogStyle.space10)
+                .frame(height: 120).frogTableSurface()
+            }
+            FrogSheetButtons(padded: false) {
+                // The model menu above carries the mark; this says why Run waits, next to Run.
+                if let waiting {
+                    Text(L10n.text(waiting)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                }
+            } trailing: {
+                if run != nil {
+                    // Escape stops the run first; once it has stopped, Escape closes the sheet.
+                    FrogCancelButton("Stop") { run?.cancel() }
+                } else {
+                    FrogCancelButton("Done") { dismiss() }
+                }
                 Button("Run", systemImage: "play.fill", action: start).buttonStyle(.frog(.primary))
                     .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || run != nil || model.isProcessing)
+                    // frogDisabled's tooltip, with the shortcut while it can run.
+                    .disabled(runBlocked != nil)
+                    .help(runBlocked.map { L10n.text($0) } ?? "Run (⌘↩)")
+                    .accessibilityHint(runBlocked.map { L10n.text($0) } ?? "")
             }
-        }.padding(FrogStyle.sheetPadding).frame(width: 520, height: 460).foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas)
+        }.padding(FrogStyle.sheetPadding).frame(width: 540).foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas)
             .background(FrogWindowMaterial()).buttonStyle(FrogButtonStyle()).tint(FrogStyle.accent)
             .onDisappear { run?.cancel() }
+    }
+
+    /// A model picked here is saved to the rule, which runs as it is saved.
+    private func choose(_ updated: Rule) {
+        rule = updated
+        do { try model.saveRule(updated) } catch { issue = error.localizedDescription }
     }
 
     private func start() {
@@ -345,5 +466,63 @@ struct WritingTryView: View {
             }
             run = nil
         }
+    }
+}
+
+/// One rule: its tile, name and model, its shortcut (recorded in place) and its switch. Clicking the row opens its editor; Try and Edit
+/// appear where the pointer is, so a list of rules reads as names and shortcuts rather than a column of buttons.
+private struct WritingRuleRow: View {
+    let rule: Rule
+    let caption: String?
+    let markMissing: Bool
+    let canTry: Bool
+    let issue: String?
+    let edit: () -> Void
+    let tryIt: () -> Void
+    let setEnabled: (Bool) -> Void
+    let setHotkey: (Hotkey?) -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            FrogRow(rule.name, caption: caption, icon: {
+                // The rule's glyph on the colour of what it does, so rules side by side read apart.
+                RuleIconTile(rule: rule)
+            }) {
+                HStack(spacing: 8) {
+                    // Hover actions lead, so the caps and the switch keep their place whether or not they show.
+                    HStack(spacing: 4) {
+                        Button("Try") { tryIt() }.buttonStyle(.frog())
+                            .disabled(!canTry).accessibilityLabel("Try \(rule.name)")
+                        IconAction(title: "Edit \(rule.name)", symbol: "pencil") { edit() }
+                    }.opacity(hovering ? 1 : 0).animation(hovering ? nil : FrogMotion.hoverOut, value: hovering)
+                    // The notice above names the problem; a row is marked only to single out which rules it means.
+                    if markMissing {
+                        Button { edit() } label: { ProblemMark(help: "No model chosen: click to choose one") }
+                            .buttonStyle(.plain)
+                    }
+                    // Every rule has a shortcut slot: its caps, changed with a click, or a quiet dash that turns into
+                    // the Record shortcut button while the row is pointed at, so a list of rules is no wall of buttons.
+                    HotkeyRecorder(hotkey: Binding(get: { rule.hotkey }, set: setHotkey), showsClearButton: false, unset: .placeholder)
+                    // Cleared in the rule's editor: a clear button here would land on Edit, which shows on hover.
+                    Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: setEnabled))
+                        .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+                }
+            }
+            if let issue { FrogRowNote(text: issue, tone: FrogStyle.warning) }
+        }
+        .padding(.horizontal, FrogStyle.space8)
+        .contentShape(Rectangle())
+        .frogRowHighlight(hovering: hovering)
+        .padding(.horizontal, -FrogStyle.space8)
+        .onHover { hovering = $0 }
+        .frogRevealsRecorder()
+        .onTapGesture { edit() }
+        .contextMenu {
+            Button("Edit…", systemImage: "pencil") { edit() }
+            Button("Try…", systemImage: "play") { tryIt() }.disabled(!canTry)
+        }
+        .accessibilityAction(named: Text("Edit")) { edit() }
+        .accessibilityAction(named: Text("Try")) { if canTry { tryIt() } }
     }
 }

@@ -17,9 +17,9 @@ struct CleanerView: View {
     static let fullDiskAccessNoticeFlag = "fullDiskAccessNoticeDismissed"
 
     var body: some View {
-        FrogPage(width: FrogStyle.wideWidth) {
-            FrogPageHeader(title: "App cleaner", subtitle: cleaner.review == nil && cleaner.outcome == nil ? "Pick an app, or drop one here." : nil) {
-                IconAction(title: "Recently moved", symbol: "clock.arrow.circlepath") {
+        FrogPage {
+            FrogPageHeader(title: stepTitle ?? "App cleaner", subtitle: subtitle) {
+                Button("Recently moved", systemImage: "clock.arrow.circlepath") {
                     cleaner.dismissPutBack(); cleaner.loadRecords(); cleaner.showsRecent = true
                 }
                 .sheet(isPresented: $cleaner.showsRecent, onDismiss: { cleaner.dismissPutBack() }) {
@@ -63,6 +63,22 @@ struct CleanerView: View {
         }
     }
 
+    /// The app under review or being scanned names the toolbar's title, after the "App cleaner ›" breadcrumb.
+    private var stepTitle: String? {
+        guard cleaner.outcome == nil else { return nil }
+        return cleaner.review?.app.name ?? (cleaner.phase == .scanning ? cleaner.scanningApp?.name : nil)
+    }
+
+    /// What the list asks for, or which app is under review: its version and bundle ID, beside Recently moved, so
+    /// no row under the breadcrumb holds only that button.
+    private var subtitle: String? {
+        if cleaner.outcome != nil { return nil }
+        guard let review = cleaner.review else { return "Remove an app and the files it leaves behind." }
+        let app = review.app
+        return ([app.version, app.bundleID, review.removedApp ? L10n.text("In the Trash") : nil] as [String?])
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
     /// The outcome, the review, or the app list.
     @ViewBuilder private var content: some View {
         if let outcome = cleaner.outcome {
@@ -88,8 +104,8 @@ struct CleanerView: View {
                     try cleaner.dependencies.store.setFlag(Self.fullDiskAccessNoticeFlag, true)
                     noticeDismissed = true
                 } catch { model.report(error) }
-            }.buttonStyle(.frog(.ghost))
-        }.padding(.horizontal, 4)
+            }.buttonStyle(.frog())
+        }.padding(.horizontal, FrogStyle.rowInset)
     }
 
     private func measureAppSizes() {

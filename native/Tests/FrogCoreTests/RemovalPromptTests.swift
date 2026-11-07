@@ -74,19 +74,21 @@ final class RemovalPromptTests: XCTestCase {
 
     func testFinderNoteCountsItemsFinderMoves() {
         XCTAssertTrue(prompt(plan(removals: [removal("a", route: .finder)])).notes
-            .contains("Finder moves 1 item. macOS asks once whether Frog may control Finder."))
+            .contains("Finder moves the item. macOS asks once whether Frog may control Finder."))
         XCTAssertTrue(prompt(plan(removals: [bundle, removal("a", route: .finder), removal("b", route: .finder)], removesApp: true)).notes
-            .contains("Finder moves 3 items. macOS asks once whether Frog may control Finder."))
+            .contains("Finder moves all 3 items. macOS asks once whether Frog may control Finder."))
         XCTAssertFalse(prompt(plan()).notes.contains { $0.hasPrefix("Finder moves") })
+        XCTAssertTrue(prompt(plan(removals: [removal("a", route: .finder)] + items(3))).notes
+            .contains("Finder moves 1 of the 4 items. macOS asks once whether Frog may control Finder."))
     }
 
     func testFinderNoteLeavesOutTheQuestionOnceFrogMayControlFinder() {
         let finderItems = [bundle, removal("a", route: .finder)]
         let allowed = prompt(plan(removals: finderItems, removesApp: true), automation: .allowed)
-        XCTAssertTrue(allowed.notes.contains("Finder moves 2 items."))
+        XCTAssertTrue(allowed.notes.contains("Finder moves both items."))
         XCTAssertNil(allowed.finderDenied)
         XCTAssertTrue(prompt(plan(removals: finderItems, removesApp: true), automation: .notDetermined).notes
-            .contains("Finder moves 2 items. macOS asks once whether Frog may control Finder."))
+            .contains("Finder moves both items. macOS asks once whether Frog may control Finder."))
     }
 
     func testDeniedAutomationSaysWhatStaysBeforeAnythingMoves() {
@@ -107,10 +109,10 @@ final class RemovalPromptTests: XCTestCase {
     func testAdministratorNoteSaysFrogNeverSeesThePassword() {
         let one = [removal("a", owner: .administrator, route: .finder)]
         XCTAssertTrue(prompt(plan(removals: one)).notes
-            .contains("1 item belongs to the system. Finder asks for your administrator password; Frog never sees it."))
+            .contains("1 item belongs to the system. Finder asks for your administrator password, which Frog never sees."))
         let two = one + [removal("b", owner: .administrator, route: .finder)]
         XCTAssertTrue(prompt(plan(removals: two)).notes
-            .contains("2 items belong to the system. Finder asks for your administrator password; Frog never sees it."))
+            .contains("2 items belong to the system. Finder asks for your administrator password, which Frog never sees."))
     }
 
     func testRestartNoteCountsDaemonsAndHelperTools() {
@@ -133,23 +135,23 @@ final class RemovalPromptTests: XCTestCase {
     }
 
     func testSpaceNoteSaysAtLeastWhenASizeIsUnknown() {
-        XCTAssertTrue(prompt(plan(total: 1_400)).notes.contains("The space (1400 B) is freed when you empty the Trash."))
+        XCTAssertTrue(prompt(plan(total: 1_400)).notes.contains("Emptying the Trash frees 1400 B."))
         XCTAssertTrue(prompt(plan(total: 1_400, incomplete: true)).notes
-            .contains("The space (at least 1400 B) is freed when you empty the Trash."))
+            .contains("Emptying the Trash frees at least 1400 B."))
     }
 
     func testPutBackNoteNamesFrogForTheUsersOwnItems() {
         XCTAssertEqual(prompt(plan()).notes, [
-            "The space (1400 B) is freed when you empty the Trash.",
-            "You can put items back from Recently moved in Frog, or from the Trash."
+            "Emptying the Trash frees 1400 B.",
+            "You can put them back from Recently moved."
         ])
     }
 
     func testPutBackNoteNamesFinderWhenSystemItemsMove() {
         let notes = prompt(plan(removals: [removal("a", owner: .administrator, route: .finder)])).notes
         XCTAssertEqual(notes.last,
-                       "Put back items that belong to the system with Put Back in Finder's Trash; Frog puts back only your own items.")
-        XCTAssertFalse(notes.contains("You can put items back from Recently moved in Frog, or from the Trash."))
+                       "Frog puts back only your own items. Put back the system's from Finder's Trash.")
+        XCTAssertFalse(notes.contains("You can put them back from Recently moved."))
     }
 
     func testNotesKeepTheirOrder() {
@@ -162,13 +164,13 @@ final class RemovalPromptTests: XCTestCase {
         XCTAssertEqual(notes, [
             "Frog quits Slack and 1 of its helpers first.",
             "Frog stops 2 background services first.",
-            "Finder moves 2 items. macOS asks once whether Frog may control Finder.",
-            "1 item belongs to the system. Finder asks for your administrator password; Frog never sees it.",
+            "Finder moves 2 of the 3 items. macOS asks once whether Frog may control Finder.",
+            "1 item belongs to the system. Finder asks for your administrator password, which Frog never sees.",
             "1 background service stops after you restart your Mac.",
             "Slack's system extension is removed with the app. macOS may ask you to confirm.",
             "Frog leaves out 1 item it may not move.",
-            "The space (at least 99 B) is freed when you empty the Trash.",
-            "Put back items that belong to the system with Put Back in Finder's Trash; Frog puts back only your own items."
+            "Emptying the Trash frees at least 99 B.",
+            "Frog puts back only your own items. Put back the system's from Finder's Trash."
         ])
     }
 }

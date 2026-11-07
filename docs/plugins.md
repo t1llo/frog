@@ -119,7 +119,7 @@ With the `menubar` permission and a `menubar` entry, the plugin gets its own men
 | `symbol` | An SF Symbol for the item. Defaults to the plugin's `symbol`. |
 | `title` | Up to 24 characters beside the symbol, such as a count. The page changes it with `frog.menubar.set`. |
 | `popup` | An HTML file in the folder that opens beneath the item, in Frog's popup style: the plugin's name above, its popup page below. |
-| `width`, `height` | The popup page's size in points: 200 to 480 wide, 80 to 640 high; 320 by 360 by default. `frog.menubar.resize(height)` changes the height while it is open. |
+| `width`, `height` | The room for the popup page's content in points: 200 to 480 wide, 80 to 640 high; 320 by 360 by default. Frog adds its header, Close footer and the margins around the page. `frog.menubar.resize(height)` changes the height while it is open. |
 | `action` | Instead of a popup: the action a click runs, which has no required parameters. |
 
 An item with neither opens the plugin's page. The popup loads when first opened and keeps running while the plugin is on, so it opens at once; it hears `show` and `hide`, and `frog.info.surface` is `"popup"` in it. A click elsewhere or Escape closes it, as `frog.menubar.close()` does.

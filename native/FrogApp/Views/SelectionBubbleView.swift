@@ -20,6 +20,8 @@ struct SelectionBubbleView: View {
     var listScrolls = false
     let select: (BubbleItem) -> Void
     let expand: () -> Void
+    /// Opens Writing, where the rules in the bubble are chosen; nil leaves the list's footer without the action.
+    var editRules: (() -> Void)? = nil
 
     static let space = "selectionBubble"
     /// The list is as wide as its longest row within these bounds.
@@ -30,6 +32,8 @@ struct SelectionBubbleView: View {
     static let barItemHeight: CGFloat = 26
     static let barInset: CGFloat = 5
     static let barItemRadius: CGFloat = FrogStyle.pillRadius - barInset
+    /// The list's footer band, which the scrolling list leaves room for.
+    static let footerHeight: CGFloat = 32
 
     var body: some View {
         Group {
@@ -43,16 +47,14 @@ struct SelectionBubbleView: View {
 
     private var bar: some View {
         HStack(spacing: 2) {
-            ForEach(Array(visible.enumerated()), id: \.element.id) { index, item in
-                if index > 0, visible[index - 1].answers != item.answers { groupGap }
+            // Every item the same distance apart: the tiles' colours already tell answers from replacements.
+            ForEach(visible) { item in
                 Button { select(item) } label: { barLabel(item) }
-
                     .buttonStyle(BubbleButtonStyle(pointer: pointer, radius: Self.barItemRadius))
                     .help(Self.help(item))
                     .accessibilityLabel(Self.accessibilityTitle(item))
             }
             if !more.isEmpty {
-                groupGap
                 Button(action: expand) {
                     Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.muted)
                         .frame(width: 26, height: Self.barItemHeight).contentShape(Rectangle())
@@ -68,18 +70,14 @@ struct SelectionBubbleView: View {
         .accessibilityLabel(L10n.text("Selection bubble"))
     }
 
-    /// Rules that answer and rules that replace the selection are set apart by a little more space, not a line.
-    private var groupGap: some View {
-        Color.clear.frame(width: 6, height: 1).accessibilityHidden(true)
-    }
-
+    /// The rule's tile as the expanded list draws it, so a rule looks the same in the bar and the list; the tile sits
+    /// as far in from the item's edge as from its top, so its corner nests in the item's.
     private func barLabel(_ item: BubbleItem) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: item.symbol).font(.system(size: 11, weight: .medium)).frame(width: 14)
-                .foregroundStyle(FrogStyle.muted)
+        HStack(spacing: FrogStyle.space6) {
+            RuleIconTile(item: item)
             Text(item.title).font(FrogType.label).lineLimit(1).truncationMode(.tail).frame(maxWidth: 140, alignment: .leading)
         }
-        .padding(.horizontal, 9)
+        .padding(.leading, (Self.barItemHeight - PluginIconTile.Size.sidebar.rawValue) / 2).padding(.trailing, 9)
         .frame(height: Self.barItemHeight)
         .fixedSize(horizontal: true, vertical: false)
         .contentShape(Rectangle())
@@ -88,11 +86,20 @@ struct SelectionBubbleView: View {
     // MARK: List
 
     private var list: some View {
-        Group {
+        VStack(spacing: 0) {
             if listScrolls, let listSize {
-                ScrollView { listContent.minimalScrollbars() }.frame(height: listSize.height)
+                ScrollView { listContent.minimalScrollbars() }.frame(height: max(0, listSize.height - Self.footerHeight))
             } else {
                 listContent
+            }
+            // The list holds only the rules chosen for the bubble; the footer says where the rest are chosen.
+            // Named like every panel's footer: the surface and, muted after a `·`, how many rules it shows.
+            FrogFooter {
+                let count = visible.count + more.count
+                Text(verbatim: "\(L10n.text("Selection bubble")) · \(count == 1 ? L10n.text("1 rule") : "\(count) \(L10n.text("rules"))")")
+                    .monospacedDigit()
+            } actions: {
+                if let editRules { FrogFooterHint("Edit rules", keys: "", action: editRules) }
             }
         }
         .frame(width: listSize?.width)
@@ -114,7 +121,8 @@ struct SelectionBubbleView: View {
 
     private func section(_ title: String, _ items: [BubbleItem]) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(L10n.text(title)).font(FrogType.section).foregroundStyle(FrogStyle.muted).accessibilityAddTraits(.isHeader)
+            // The command bar's group caption, so both lists of rules head their groups alike.
+            SectionCaption(text: title).accessibilityAddTraits(.isHeader)
                 .padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 4)
             ForEach(items) { item in
                 Button { select(item) } label: { listRow(item) }
@@ -128,12 +136,14 @@ struct SelectionBubbleView: View {
 
     private func listRow(_ item: BubbleItem) -> some View {
         HStack(spacing: FrogStyle.space8) {
-            PluginIconTile(symbol: item.symbol, tint: item.answers ? FrogStyle.accent : FrogStyle.muted, size: .sidebar)
+            RuleIconTile(item: item)
             Text(item.title).font(FrogType.row).lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 12)
             if let hotkey = item.hotkey {
-                Text(HotkeyManager.display(hotkey)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                    .fixedSize()
+                KeyCaps(hotkey: hotkey)
+            } else {
+                // A rule without keys keeps the column: the same faint dash as an empty shortcut slot elsewhere.
+                Text(verbatim: "–").font(FrogType.body).foregroundStyle(FrogStyle.placeholder).accessibilityHidden(true)
             }
         }
         .padding(.horizontal, 8)

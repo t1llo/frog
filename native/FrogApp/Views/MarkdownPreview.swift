@@ -101,8 +101,9 @@ struct MarkdownPreviewView: View {
     @State private var blocks: [MarkdownBlock] = []
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 9) { ForEach(blocks) { MarkdownBlockView(block: $0) } }
-                .font(FrogType.lead).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(12)
+            LazyVStack(alignment: .leading, spacing: FrogStyle.space8) { ForEach(blocks) { MarkdownBlockView(block: $0) } }
+                // On the page, its text on the title's edge like the editor's.
+                .font(FrogType.lead).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(.top, FrogStyle.space4)
         }
         .task(id: markdown) {
             let text = markdown

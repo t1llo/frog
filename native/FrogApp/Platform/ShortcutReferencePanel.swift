@@ -5,8 +5,9 @@ import FrogCore
 @MainActor
 final class ShortcutReferencePanel {
     typealias Groups = [(group: ShortcutReferenceGroup, items: [ShortcutReferenceItem])]
-    static let width: CGFloat = 380
-    static let maxHeight: CGFloat = 520
+    static let width: CGFloat = 420
+    /// Where the screen is unknown, as in the screenshot harness.
+    static let maxHeight: CGFloat = 640
     private var panel: NSPanel?
     func hide() { panel?.orderOut(nil) }
     func show(groups: Groups) {
@@ -20,7 +21,8 @@ final class ShortcutReferencePanel {
         }
         // The panel is as tall as its rows up to a limit, and scrolls after.
         let measured = NSHostingView(rootView: ShortcutReferenceContent(groups: groups).frame(width: Self.width).environment(\.locale, L10n.locale)).fittingSize.height
-        let height = min(Self.maxHeight, ceil(measured))
+        // Shown while its key is held, so as tall as the display allows: every group is seen without scrolling.
+        let height = min(WindowCheatSheetPanel.maximumHeight(on: NSScreen.main), ceil(measured))
         panel?.title = L10n.text("Frog shortcuts")
         panel?.contentView = NSHostingView(rootView: ShortcutReferenceView(groups: groups, height: height))
         panel?.setContentSize(NSSize(width: Self.width, height: height))
@@ -28,55 +30,163 @@ final class ShortcutReferencePanel {
     }
 }
 
-private struct ShortcutReferenceView: View {
+struct ShortcutReferenceView: View {
     let groups: ShortcutReferencePanel.Groups
     let height: CGFloat
     var body: some View {
         ScrollView { ShortcutReferenceContent(groups: groups) }
             .scrollIndicators(.automatic)
+            // A row cut by the bottom edge fades out, so it reads as more below rather than as clipped.
+            .bottomScrollFade(height: FrogSheetScrollMetrics.fade)
             .frame(width: ShortcutReferencePanel.width, height: height).foregroundStyle(FrogStyle.ink)
             .frogPanel()
             .environment(\.locale, L10n.locale)
     }
 }
 
-/// The same layout as the window cheat sheet: a title, then each group under its caption, every row with its keys.
-private struct ShortcutReferenceContent: View {
+/// The same layout as the window cheat sheet: a title, then one card in which each group starts with its caption,
+/// every row with its keys.
+struct ShortcutReferenceContent: View {
     let groups: ShortcutReferencePanel.Groups
     var body: some View {
-        VStack(alignment: .leading, spacing: FrogStyle.space16) {
-            Text("Frog shortcuts").font(FrogType.toolbarTitle).accessibilityAddTraits(.isHeader)
-            ForEach(groups, id: \.group) { section in
-                VStack(alignment: .leading, spacing: FrogStyle.space8) {
-                    Text(L10n.text(section.group.title)).font(FrogType.section).accessibilityAddTraits(.isHeader)
-                    VStack(spacing: 0) {
-                    ForEach(section.items) { item in
-                        HStack(spacing: 10) {
-                            Text(L10n.text(item.title)).font(FrogType.row).lineLimit(1)
-                            Spacer(minLength: 8)
-                            ShortcutKeyCaps(hotkey: item.hotkey)
-                        }.padding(.horizontal, FrogStyle.cardPadding).frame(minHeight: FrogStyle.rowHeight)
-                            .accessibilityElement(children: .ignore)
-                            .accessibilityLabel(L10n.text(item.title))
-                            .accessibilityValue(HotkeyManager.display(item.hotkey))
+        ShortcutPanelLayout(title: "Frog shortcuts") {
+            if groups.isEmpty {
+                FrogEmptyState(symbol: "command", title: "No shortcuts yet",
+                               message: "Give a Writing or Dictation rule a shortcut, or add one in Shortcuts.", tint: .blue)
+                    .frogTableSurface()
+            } else {
+                ShortcutPanelCard {
+                    ForEach(Array(groups.enumerated()), id: \.element.group) { index, section in
+                        ShortcutPanelCaption(title: section.group.title, first: index == 0)
+                        ForEach(section.items) { item in
+                            // A plugin's action names its plugin, muted, so two plugins' "Refresh" read apart.
+                            let label = Self.label(item)
+                            ShortcutPanelRow(title: label.title, detail: label.plugin, hotkey: item.hotkey) {
+                                // A layout shows its picture; everything else the coloured tile it wears in the
+                                // sidebar, the command bar and the bubble.
+                                if let action = item.windowAction { WindowLayoutGlyph(action: action) }
+                                // A Writing or Explain rule wears its Writing tile, colour and language code.
+                                else if [.writing, .explain].contains(item.group), let symbol = item.symbol {
+                                    RuleIconTile(name: item.title, symbol: symbol, answers: item.group == .explain, size: .sidebar)
+                                } else { PluginIconTile(symbol: item.symbol ?? "command", tint: Self.tint(item), size: .sidebar) }
+                            }
+                                .help(L10n.text(item.title))
+                                .accessibilityLabel(L10n.text(item.title))
+                        }
                     }
-                    }.frogTableSurface()
                 }
             }
-            if groups.isEmpty {
-                Text("No shortcuts yet. Give a Writing or Dictation action a shortcut, or add one in Shortcuts.")
-                    .font(FrogType.row).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
-            }
-        }.padding(FrogStyle.sheetPadding).frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-/// A shortcut in a reference panel: each key as a cap.
-struct ShortcutKeyCaps: View {
-    let hotkey: Hotkey
-    var body: some View {
-        HStack(spacing: 3) {
-            ForEach(Array(HotkeyManager.keys(hotkey).enumerated()), id: \.offset) { KeyCap($0.element) }
         }
     }
 }
+
+/// A shortcut panel (the shortcut reference, the window cheat sheet): its title, then its content, padded as a sheet.
+struct ShortcutPanelLayout<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: FrogStyle.space12) {
+            Text(L10n.text(title)).font(FrogType.title).tracking(-0.4).accessibilityAddTraits(.isHeader)
+            content
+        }
+        .padding(FrogStyle.sheetPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .foregroundStyle(FrogStyle.ink)
+    }
+}
+
+/// The one card of a shortcut panel. Its groups are captions inside it rather than cards of their own, so a group of
+/// one row (Sizes, Displays) weighs no more than its row.
+struct ShortcutPanelCard<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) { content }
+            .padding(.bottom, FrogStyle.space6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frogTableSurface()
+    }
+}
+
+/// A group's caption inside a shortcut panel's card, on the rows' text edge.
+struct ShortcutPanelCaption: View {
+    let title: String
+    var first = false
+    var body: some View {
+        SectionCaption(text: title)
+            .padding(.horizontal, FrogStyle.cardPadding)
+            .padding(.top, first ? FrogStyle.space10 : FrogStyle.space16).padding(.bottom, FrogStyle.space4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// One row of a shortcut panel: an optional glyph, the title, and the keys ending on the card's content edge. Every
+/// cap is one width (`KeyCap`), so the keys of every row end and line up on the same edge.
+struct ShortcutPanelRow<Leading: View>: View {
+    let title: String
+    /// Muted after the title, such as the plugin an action belongs to.
+    var detail: String? = nil
+    let hotkey: Hotkey
+    @ViewBuilder var leading: Leading
+    var body: some View {
+        HStack(spacing: FrogStyle.space10) {
+            if Leading.self != EmptyView.self { leading.frame(width: 22) }
+            Text(title).font(FrogType.row).lineLimit(1)
+            // The detail is short (a plugin's name) and always whole; a long title is the one to shorten.
+            if let detail { Text(detail).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).fixedSize() }
+            Spacer(minLength: FrogStyle.space8)
+            KeyCaps(hotkey: hotkey)
+        }
+        .padding(.horizontal, FrogStyle.cardPadding)
+        .frame(height: FrogStyle.menuRowHeight)
+        .accessibilityElement(children: .ignore)
+        .accessibilityValue(HotkeyManager.display(hotkey))
+    }
+}
+
+/// A row's symbol in a shortcut panel, in the slot a window layout's picture takes, drawn as that picture draws its
+/// mark: in the accent, bold, the height of the picture's display outline. So a list mixing layouts and commands
+/// reads as one family of marks, never thin grey outlines beside filled accent tiles.
+struct ShortcutPanelSymbol: View {
+    let name: String
+    var body: some View {
+        Image(systemName: name).font(.system(size: 12, weight: .semibold)).foregroundStyle(FrogStyle.accent)
+            .frame(width: WindowLayoutGlyph.size.width, height: WindowLayoutGlyph.size.height).accessibilityHidden(true)
+    }
+}
+
+extension ShortcutReferenceContent {
+    /// The colour of the feature a shortcut belongs to: a rule's feature, a plugin's community tint, and Frog's own
+    /// keys their feature's (Command bar indigo, Clipboard orange).
+    static func tint(_ item: ShortcutReferenceItem) -> Color {
+        switch item.group {
+        case .writing: return WritingPlugin.info.tint.color
+        case .explain: return ExplainPlugin.info.tint.color
+        case .dictation: return DictationPlugin.info.tint.color
+        case .shortcuts: return ShortcutsPlugin.info.tint.color
+        case .plugins: return CommunityPlugin.info.tint.color
+        case .windows: return WindowsPlugin.info.tint.color
+        case .frog:
+            let byID: [String: PluginInfo] = [
+                "frog.command-bar": CommandBarPlugin.info, "frog.clipboard": ClipboardPlugin.info,
+                "frog.window-switcher": WindowSwitcherPlugin.info, "frog.menu-bar": HiddenBarPlugin.info,
+                "frog.cancel-recording": DictationPlugin.info, "frog.shortcuts": ShortcutsPlugin.info
+            ]
+            if let info = byID[item.id] { return info.tint.color }
+            // A lone Explain or Dictation rule joins Frog's own keys; it keeps its feature's colour.
+            let features = [ExplainPlugin.info, DictationPlugin.info, WritingPlugin.info]
+            return features.first { $0.symbol == item.symbol }?.tint.color ?? PluginTint.gray.color
+        }
+    }
+
+    /// "Focus timer: Start or pause the focus timer" as the action, "Start or pause the focus timer", and its plugin,
+    /// unless the action already names it.
+    static func label(_ item: ShortcutReferenceItem) -> (title: String, plugin: String?) {
+        let title = L10n.text(item.title)
+        guard item.group == .plugins, let colon = title.range(of: ": ") else { return (title, nil) }
+        let action = String(title[colon.upperBound...])
+        let plugin = String(title[..<colon.lowerBound])
+        return (action.prefix(1).uppercased() + action.dropFirst(),
+                action.localizedCaseInsensitiveContains(plugin) ? nil : plugin)
+    }
+}
+

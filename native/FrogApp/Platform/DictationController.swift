@@ -21,6 +21,8 @@ final class DictationController: ObservableObject {
     @Published private(set) var recoveringHistoryIDs = Set<UUID>()
     let microphoneMeter = MicrophoneMeter()
     @Published private(set) var hint = ""
+    /// How this recording stops, for the popup's footer: the word and the keys beside it, or where it stops instead.
+    @Published private(set) var stopHint = DictationStopHint()
     @Published private(set) var preparationMessage = "Preparing…"
     /// A shortcut press came while this recording was still being finished, and started nothing.
     @Published private(set) var pressedWhileFinishing = false
@@ -156,6 +158,8 @@ final class DictationController: ObservableObject {
         let recordingHint = handoff.map { "Stop in \($0.caller) · Esc to cancel" }
             ?? (rule.hotkey == nil ? "Stop to finish · Esc to cancel" : holding ? "Release \(shortcut) to stop · Esc to cancel" : "\(shortcut) to stop · Esc to cancel")
         hint = "Esc to cancel"
+        let stopHint = DictationStopHint(title: holding ? "Release to stop" : "Stop", keys: handoff == nil ? rule.hotkey.map(HotkeyManager.display) : nil,
+                                         caller: handoff?.caller)
         if self.preferences.showDictationPopup { showPanel() }
         installEscape()
         work = Task { [weak self] in
@@ -207,6 +211,7 @@ final class DictationController: ObservableObject {
                 self.recordingStarted = recordingStarted
                 self.phase = .recording
                 self.hint = recordingHint
+                self.stopHint = stopHint
                 self.ticker = Task { [weak self] in
                     while !Task.isCancelled {
                         do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
@@ -631,6 +636,14 @@ final class DictationController: ObservableObject {
     }
 }
 
+/// How a recording stops, as the dictation popup's footer shows it: "Stop ⌥Space", "Release to stop ⌥Space", or
+/// only Stop while the app that started it (`caller`) stops it.
+struct DictationStopHint: Equatable {
+    var title = "Stop"
+    var keys: String?
+    var caller: String?
+}
+
 /// Geometry is based on rendered text, so a short preview doesn't reserve a large blank area.
 @MainActor
 enum DictationPopupLayout {
@@ -639,12 +652,14 @@ enum DictationPopupLayout {
     /// Presentation only. Keep native glyph layout bounded even for hours of Unicode text.
     /// The controller and delivery pipeline always retain the complete transcript.
     static func displayText(_ text: String) -> String { String(text.suffix(2048)) }
+    /// The recording popup without a transcript: the header, the waveform and the footer band with Stop and Cancel.
+    static let recordingHeight = 118.0
     static func frame(phase: DictationController.Phase, text: String, visibleFrame: NSRect) -> NSRect {
         let recording = phase == .recording, failed = phase == .failed
         let hasTranscript = (recording || failed) && !text.isEmpty
         let width = min(recording || failed ? 360.0 : 300.0, max(1, visibleFrame.width - 32))
         // A failed transcription shows its reason and what to do instead of the waveform and hint.
-        var height = recording ? 108.0 : failed ? 116.0 : 50.0
+        var height = recording ? recordingHeight : failed ? 116.0 : 50.0
         if hasTranscript {
             let paragraph = NSMutableParagraphStyle(); paragraph.lineSpacing = 2
             let bounds = (displayText(text) as NSString).boundingRect(
@@ -660,16 +675,17 @@ enum DictationPopupLayout {
     }
 }
 
-private struct DictationPopup: View {
+struct DictationPopup: View {
     @ObservedObject var controller: DictationController
     @State private var copiedPartial = false
     @State private var closeHovering = false
     var body: some View {
         let failed = controller.phase == .failed
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+            // The microphone chip stands a clear step apart from the status it precedes.
+            HStack(spacing: FrogStyle.space12) {
                 if failed { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(FrogStyle.warning) }
-                else if controller.phase != .recording { ProgressView().controlSize(.mini) }
+                else if controller.phase != .recording { FrogSpinner(size: .mini) }
                 else {
                     Menu {
                         Button { controller.selectMicrophone(nil) } label: {
@@ -680,24 +696,32 @@ private struct DictationPopup: View {
                                 Label(device.name, systemImage: controller.selectedMicrophoneID == device.uid ? "checkmark" : "mic")
                             }
                         }
-                    } label: { Image(systemName: "mic.fill").foregroundStyle(FrogStyle.accent) }
-                    .menuStyle(.borderlessButton).fixedSize()
+                    } label: {
+                        // The microphone and a chevron that reads as a menu, on a compact control surface.
+                        HStack(spacing: FrogStyle.space4) {
+                            Image(systemName: "mic.fill").font(FrogType.label).foregroundStyle(FrogStyle.accent)
+                            Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(FrogStyle.muted)
+                        }.padding(.horizontal, FrogStyle.space8).frame(height: FrogStyle.compactHeight)
+                            .background(FrogStyle.control, in: Capsule())
+                    }
+                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
                     .help("Change microphone").accessibilityLabel("Change microphone")
                     .simultaneousGesture(TapGesture().onEnded { controller.refreshMicrophones() })
                 }
                 Text(L10n.text(controller.statusText)).font(FrogType.section)
                     .lineLimit(1).truncationMode(.tail).help(L10n.text(controller.statusText))
                 Spacer(minLength: 0)
+                // Stop and Cancel are in the footer, each with its keys, as every popup's actions are.
                 if controller.phase == .recording {
                     Text(String(format: "%d:%02d", controller.elapsed / 60, controller.elapsed % 60))
                         .font(FrogType.body).monospacedDigit().foregroundStyle(FrogStyle.muted)
-                    Button { controller.requestStop() } label: { Label("Stop", systemImage: "stop.fill") }
-                        .buttonStyle(.frog(compact: true)).help("Stop recording").accessibilityLabel("Stop recording")
                 }
                 if failed {
                     Button { controller.retryTranscription() } label: { Label("Retry", systemImage: "arrow.clockwise") }
-                        .buttonStyle(.frog(compact: true)).help("Transcribe the recording again").accessibilityLabel("Retry transcription")
+                        .buttonStyle(.frog()).help("Transcribe the recording again").accessibilityLabel("Retry transcription")
                 }
+                // While recording, the footer's Stop and Cancel cover it; elsewhere the × is the only way out.
+                if controller.phase != .recording {
                 // An `IconAction` at the compact height, which keeps its own help text.
                 Button { controller.interrupt() } label: {
                     Image(systemName: "xmark").font(.system(size: 11, weight: .medium))
@@ -706,6 +730,7 @@ private struct DictationPopup: View {
                         .frogRowHighlight(hovering: closeHovering)
                 }.buttonStyle(.plain).onHover { closeHovering = $0 }.help(failed ? "Discard recording" : "Cancel dictation · Esc")
                     .accessibilityLabel(failed ? "Discard recording" : "Cancel dictation")
+                }
             }.frame(height: 26)
             if failed {
                 Text(controller.failure).font(FrogType.small).foregroundStyle(FrogStyle.muted)
@@ -725,9 +750,6 @@ private struct DictationPopup: View {
                 DictationTranscriptView(text: controller.liveText)
                     .frame(minHeight: 0, maxHeight: DictationPopupLayout.maximumTranscriptHeight)
             }
-            if controller.phase == .recording {
-                Text(controller.hint).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
-            }
             if failed {
                 HStack(spacing: 8) {
                     Text("The recording is kept until you retry or discard it.")
@@ -736,17 +758,34 @@ private struct DictationPopup: View {
                     if !controller.liveText.isEmpty {
                         Button(copiedPartial ? "Copied" : "Copy partial text") {
                             controller.copyPartialTranscript(); copiedPartial = true
-                        }.buttonStyle(.frog(.ghost, compact: true))
+                        }.buttonStyle(.frog())
                             .fixedSize().help("Copy the text recognised before the failure")
                     }
                 }.frame(height: 20)
             }
         }.padding(12).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if controller.phase == .recording { recordingFooter }
+            }
             .onChange(of: controller.phase) { copiedPartial = false }
             .clipped()
             .environment(\.locale, L10n.locale)
             .foregroundStyle(FrogStyle.ink)
             .frogPanel()
+            .accessibilityAction(named: Text("Cancel dictation")) { controller.interrupt() }
+    }
+
+    /// The one footer while recording: where the recording stops if another app stops it, then Stop with its keys
+    /// and Cancel with esc, both buttons for the pointer.
+    private var recordingFooter: some View {
+        let stop = controller.stopHint
+        return FrogFooter {
+            if let caller = stop.caller { Text(L10n.text("Stop in \(caller)")) }
+        } actions: {
+            FrogFooterHint(stop.title, keys: stop.keys ?? "") { controller.requestStop() }
+            FrogFooterHint("Cancel", keys: "esc") { controller.interrupt() }
+        }
+        .accessibilityLabel(controller.hint)
     }
 }
 
@@ -842,11 +881,19 @@ private struct MicrophoneWaveform: View {
     var body: some View {
         let levels = meter.levels
         Canvas { context, size in
-            let step = size.width / CGFloat(max(levels.count, 1))
+            let count = max(levels.count, 1)
+            let step = size.width / CGFloat(count)
+            // Thin bars with clear gaps, so each reads as one reading rather than the slats of a block; silence is a
+            // row of dots, not a dashed line.
+            let width = min(3, max(2, step * 0.45))
             for (index, level) in levels.enumerated() {
-                let height = max(2, CGFloat(level) * size.height)
-                let rect = CGRect(x: CGFloat(index) * step, y: (size.height - height) / 2, width: max(2, step - 3), height: height)
-                context.fill(Capsule().path(in: rect), with: .color(FrogStyle.accent.opacity(level > 0.02 ? 0.85 : 0.25)))
+                let height = max(width, CGFloat(level) * size.height)
+                let rect = CGRect(x: CGFloat(index) * step + (step - width) / 2, y: (size.height - height) / 2, width: width, height: height)
+                // Older readings fade towards the leading edge, so the level reads as moving in from the right, where
+                // the newest one stands at full strength.
+                let age = Double(index + 1) / Double(count)
+                let strength = level > 0.02 ? 0.45 + 0.5 * age : 0.3
+                context.fill(Capsule().path(in: rect), with: .color(FrogStyle.accent.opacity(strength)))
             }
         }.accessibilityLabel("Microphone input level")
             .accessibilityValue("\(Int((levels.last ?? 0) * 100)) percent")

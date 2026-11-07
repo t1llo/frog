@@ -14,7 +14,7 @@ struct PhonePage: View {
 
     var body: some View {
         FrogPage {
-            FrogPageHeader(title: "Phone", subtitle: "Clipboard and files, shared with Frog Companion on Android.") {
+            FrogPageHeader(title: "Phone", subtitle: "Clipboard and files, shared with Frog Companion on Android") {
                 if phone.pairing == nil, !phone.phones.isEmpty {
                     Button("Pair a phone", action: pair).buttonStyle(.frog())
                 }
@@ -24,7 +24,8 @@ struct PhonePage: View {
                     .transition(appear)
             }
             phones
-            PhoneSendSection(phone: phone, plugin: plugin)
+            // Nothing to send to before a phone is paired, so the empty Phones card stands alone without a heading.
+            if !phone.phones.isEmpty { PhoneSendSection(phone: phone, plugin: plugin) }
             if !phone.recents.isEmpty { PhoneRecentsSection(phone: phone).transition(appear) }
         }
         .animation(reduceMotion ? nil : FrogMotion.reveal, value: phone.pairing)
@@ -34,9 +35,11 @@ struct PhonePage: View {
     private func pair() { withAnimation(FrogMotion.reveal) { phone.beginPairing() } }
 
     @ViewBuilder private var phones: some View {
-        FrogSection("Phones") {
+        let alone = phone.phones.isEmpty && phone.pairing == nil && phone.recents.isEmpty
+        FrogSection(alone ? nil : "Phones") {
             if phone.phones.isEmpty {
-                FrogEmptyState(symbol: "iphone", title: "No phone paired", message: "Install Frog Companion on your phone, then pair it.") {
+                FrogEmptyState(symbol: PhonePlugin.info.symbol, title: "No phone paired", message: "Install Frog Companion on your phone, then pair it.",
+                               tint: PhonePlugin.info.tint) {
                     if phone.pairing == nil { Button("Pair a phone", action: pair).buttonStyle(.frog(.primary)) }
                 }
             } else {
@@ -69,7 +72,7 @@ private struct PhonePairingSection: View {
                     Image(systemName: "checkmark.circle.fill").font(.system(size: 18)).foregroundStyle(FrogStyle.good)
                         .accessibilityHidden(true)
                 }) {
-                    Button("Done", action: close).buttonStyle(.frog(.primary, compact: true))
+                    Button("Done", action: close).buttonStyle(.frog(.primary))
                 }
             } else {
                 HStack(alignment: .center, spacing: 20) {
@@ -77,11 +80,8 @@ private struct PhonePairingSection: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Scan with Frog Companion").font(FrogType.section).foregroundStyle(FrogStyle.ink)
                         Text("The code works for 10 minutes.").font(FrogType.body).foregroundStyle(FrogStyle.muted)
-                        HStack(spacing: 6) {
-                            ProgressView().controlSize(.small)
-                            Text("Waiting for your phone").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                        }.padding(.top, 6)
-                        Button("Cancel", action: close).buttonStyle(.frog(.ghost, compact: true)).padding(.top, 6)
+                        FrogLoadingNote(text: "Waiting for your phone…")
+                        Button("Cancel", action: close).buttonStyle(.frog()).padding(.top, 6)
                     }
                     Spacer(minLength: 0)
                 }.padding(.vertical, 12)
@@ -126,7 +126,7 @@ private struct PhoneRow: View {
     var body: some View {
         FrogRow(paired.name, icon: { SymbolTile(symbol: "iphone", size: 28) }) {
             HStack(spacing: 8) {
-                FrogBadge(text: connection.label, active: connection != .offline)
+                FrogStatusLabel(connection.label, tone: connection == .offline ? .off : .good)
                 IconAction(title: "Unpair", symbol: "xmark", destructive: true, action: unpair)
             }
         }
@@ -140,17 +140,19 @@ private struct PhoneSendSection: View {
 
     var body: some View {
         FrogSection("Send") {
-            FrogRow("Send copies automatically", caption: "Text and images. Never passwords or keys.") {
-                Toggle("Send copies automatically", isOn: Binding(get: { phone.autoSend }, set: { plugin.setAutoSend($0) }))
-                    .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+            // With no phone paired there is nothing to send to: the switch waits, off, until one is.
+            let paired = !phone.phones.isEmpty
+            FrogRow("Send copies automatically", caption: paired ? "Text and images. Never passwords or keys." : "Pair a phone first.") {
+                Toggle("Send copies automatically", isOn: Binding(get: { paired && phone.autoSend }, set: { plugin.setAutoSend($0) }))
+                    .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small).disabled(!paired)
             }
             // Sending by hand needs a phone to send to.
             if !phone.phones.isEmpty {
                 FrogRow("Clipboard", caption: "Also files copied in Finder") {
-                    Button("Send") { notice = phone.sendClipboard() }.buttonStyle(.frog(compact: true))
+                    Button("Send") { notice = phone.sendClipboard() }.buttonStyle(.frog())
                 }
                 FrogRow("Files", caption: "Up to 200 MB each") {
-                    Button("Choose…", action: chooseFiles).buttonStyle(.frog(compact: true))
+                    Button("Choose…", action: chooseFiles).buttonStyle(.frog())
                 }
             }
             if let notice { FrogRowNote(text: notice) }
@@ -173,7 +175,7 @@ private struct PhoneRecentsSection: View {
 
     var body: some View {
         FrogSection("Recent", accessory: {
-            Button("Clear") { withAnimation(FrogMotion.exit) { phone.clearRecents() } }.buttonStyle(.frog(.ghost, compact: true))
+            Button("Clear") { withAnimation(FrogMotion.exit) { phone.clearRecents() } }.buttonStyle(.frog())
         }) {
             ForEach(phone.recents) { item in PhoneRecentRow(item: item) }
         }
@@ -204,7 +206,7 @@ private struct PhoneRecentRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: item.direction == .sent ? "arrow.up.right" : "arrow.down.left")
-                .font(FrogType.label).foregroundStyle(item.direction == .sent ? FrogStyle.muted : FrogStyle.accent)
+                .font(FrogType.label).foregroundStyle(item.direction == .sent ? FrogStyle.muted : FrogStyle.accentText)
                 .frame(width: 16).accessibilityLabel(item.direction == .sent ? "Sent" : "Received")
             Image(systemName: symbol).font(FrogType.label).foregroundStyle(FrogStyle.muted).frame(width: 16).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
@@ -214,7 +216,7 @@ private struct PhoneRecentRow: View {
             }
             Spacer(minLength: 8)
             if let url = item.fileURL, item.direction == .received {
-                IconAction(title: "Show in Finder", symbol: "folder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                IconAction(title: "Show in Finder", symbol: "arrow.up.forward") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
             }
         }.padding(.vertical, 6).frame(minHeight: FrogStyle.rowHeight)
     }

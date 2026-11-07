@@ -271,9 +271,9 @@ public struct LeftoverMatcher: Sendable {
 
     private func reason(for holder: Holder) -> String {
         switch holder.kind {
-        case .main: "Named after the bundle ID \(holder.id)."
-        case .nested: "Named after \(holder.id), a part of \(app.name)."
-        case .group: "Named after the app group \(holder.id)."
+        case .main: "Named after its bundle ID."
+        case .nested: "Named after a part of \(app.name)."
+        case .group: "Named after one of its app groups."
         }
     }
 

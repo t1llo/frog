@@ -6,6 +6,8 @@ struct RuleModelPicker: View {
     @EnvironmentObject private var model: AppModel
     @Binding var rule: Rule
     var speech = false
+    /// False where the page's `ModelMissingNotice` already says the rule has no model, so the problem is said once.
+    var marksMissing = true
 
     private var selected: RuleModelSelection? {
         if speech, let id = rule.action?.audioModelID { return .init(providerID: rule.action?.audioProviderID, modelID: id, category: .audio) }
@@ -34,7 +36,7 @@ struct RuleModelPicker: View {
         return [descriptor.downloadSize, descriptor.runtimeName, summary].compactMap { $0 }.joined(separator: " · ")
     }
     private func item(_ choice: RuleModelSelection?) -> FrogDropdownItem {
-        guard let choice else { return FrogDropdownItem("No model", symbol: "circle.slash") }
+        guard let choice else { return FrogDropdownItem("No model") }
         let local = choice.providerID == nil
         let recommended = local && model.configuration.localModel(choice.modelID)?.isRecommended == true
         return FrogDropdownItem(name(choice), detail: source(choice), symbol: local ? "cpu" : "cloud",
@@ -42,25 +44,112 @@ struct RuleModelPicker: View {
     }
 
     var body: some View {
-        let local = choices(local: true), external = choices(local: false)
+        // A rule without a model cannot run: the button asks for one, led by a warning mark inside it, instead of
+        // reading like an ordinary value. Where the page's notice already says it, the button's title alone asks.
+        dropdown(local: choices(local: true), external: choices(local: false))
+            .environment(\.frogDropdownOpenTick, openRequest.ruleID == rule.id ? openRequest.tick : 0)
+    }
+    @Environment(\.modelPickerOpenRequest) private var openRequest
+
+    private func dropdown(local: [RuleModelSelection?], external: [RuleModelSelection?]) -> some View {
         FrogDropdown(selected: selected, sections: [
             .init(values: [nil]),
             .init("Downloaded", values: local),
             .init("External", values: external)
         ], searchPrompt: "Find a model", listWidth: 380,
            footnote: local.isEmpty && external.isEmpty ? "Download a model or add a provider in Models to use it here." : nil,
-           item: item) { choice in
+           item: item, choose: { choice in
             if let choice { choice.apply(to: &rule) }
             else if speech { rule.action?.audioModelID = nil; rule.action?.audioProviderID = nil }
             else { rule.providerID = nil; rule.model = ""; rule.action?.localTextModelID = nil }
-        }
+        })
+        .buttonTitle { $0 == nil ? (speech ? "Choose a speech model" : "Choose a model") : item($0).title }
+        .warning(selected == nil && marksMissing ? "This rule cannot run until it has a model" : nil)
         .accessibilityLabel(speech ? "Speech model" : "Text model")
+    }
+}
+
+/// The mark beside a control whose value keeps a feature from working, such as a rule without a model.
+struct ProblemMark: View {
+    let help: String
+    var body: some View {
+        Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 12)).foregroundStyle(FrogStyle.warning)
+            .help(L10n.text(help)).accessibilityLabel(L10n.text(help))
+    }
+}
+
+/// A notice above a page's sections that a feature will not work yet, with the one action that fixes it.
+struct ProblemNotice<Action: View>: View {
+    let title: String
+    let message: String
+    @ViewBuilder var action: Action
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 16)).foregroundStyle(FrogStyle.warning)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L10n.text(title)).font(FrogType.section).foregroundStyle(FrogStyle.ink)
+                Text(L10n.text(message)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            action
+        }
+        .padding(.horizontal, FrogStyle.rowInset).padding(.vertical, FrogStyle.space12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: FrogStyle.cardRadius, style: .continuous).fill(FrogStyle.warning.opacity(0.12)))
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// Asks the `RuleModelPicker` of one rule to open its list, so a notice's "Choose model" lands in the control it
+/// names. Each new request carries a higher `tick`.
+struct ModelPickerOpenRequest: Equatable {
+    var ruleID: Rule.ID?
+    var tick = 0
+    mutating func open(_ id: Rule.ID) { ruleID = id; tick += 1 }
+}
+private struct ModelPickerOpenRequestKey: EnvironmentKey { static let defaultValue = ModelPickerOpenRequest() }
+extension EnvironmentValues {
+    var modelPickerOpenRequest: ModelPickerOpenRequest {
+        get { self[ModelPickerOpenRequestKey.self] }
+        set { self[ModelPickerOpenRequestKey.self] = newValue }
+    }
+}
+
+/// "Explain won't work yet": the one warning of a page, above its sections, always with the button that fixes it:
+/// "Choose model" opens the flagged picker (`choose`), and with nothing to choose from "Open Models" leads there.
+struct ModelMissingNotice: View {
+    @EnvironmentObject private var model: AppModel
+    let feature: String
+    let speech: Bool
+    let choose: () -> Void
+    var body: some View {
+        let choices = model.hasModelChoices(speech: speech)
+        ProblemNotice(title: "\(feature) won't work yet",
+                      message: choices ? "Choose a \(speech ? "speech" : "text") model for it."
+                                       : "Download a \(speech ? "speech" : "text") model or connect a provider first.") {
+            if choices { Button("Choose model", action: choose).buttonStyle(.frog(.primary)) }
+            else { Button("Open Models") { model.toolkit.select(.models) }.buttonStyle(.frog(.primary)) }
+        }
     }
 }
 
 /// What a rule's model is called on its row and in agent answers.
 @MainActor
 extension AppModel {
+    /// Whether the rule has a model it can run with.
+    func ruleHasModel(_ rule: Rule) -> Bool {
+        if rule.category == .application { return true }
+        if rule.category == .audio { return rule.action?.audioModelID != nil }
+        return (try? resolved(rule)) != nil
+    }
+    /// Whether any model of the kind is downloaded or offered by a provider, so a rule can choose one.
+    func hasModelChoices(speech: Bool) -> Bool {
+        let kind: ProviderModel.Category = speech ? .audio : .text
+        return configuration.modelCatalog.contains { $0.kind == (speech ? .audio : .text) && localModels.installed.contains($0.id) }
+            || configuration.providers.contains { $0.models.contains { $0.category == kind } }
+    }
     func localModelLabel(_ id: String) -> String {
         (configuration.localModel(id)?.name ?? id) + (localModels.installed.contains(id) ? "" : " · Not downloaded")
     }

@@ -495,7 +495,7 @@ and isolated defaults.
   "Claude app · Claude-Account-B" and "Claude Code · ~/.claude", age, whether it is
   stale, status, a warning only while the reading is out of date, include switch,
   live-reading and sign-in offers, merged note), the combined
-  windows, the notice, renaming, including, "Add folder…" (kept on this Mac under
+  windows, the notice, renaming, including, "Add folder" (kept on this Mac under
   `claudeAccounts.v1.extraFolders`) and the live-reading command. No summary carries an
   e-mail address.
 
@@ -537,7 +537,7 @@ as before.
   readings…** when it applies and the note for app folders that are one account. The
   login's e-mail address is only in the row's hover help. Below the rows: *Each account
   | Combined*, the menu bar's *Session | Week* (with two included accounts shown each),
-  and **Add folder…** for a Claude app data folder or a Claude Code folder. The limits
+  and **Add folder** for a Claude app data folder or a Claude Code folder. The limits
   show one block per included account, or one combined grid with each bar's breakdown
   and the weighting. The login source menu is hidden while the switch is on.
 - **Live readings.** Both the popup row and the page button explain first ("Set up live

@@ -71,6 +71,20 @@ public enum FuzzyMatch {
         public init() {}
     }
 
+    /// Whether the pattern's characters appear in order, each at the start of a word (or a camelCase or digit
+    /// change) or straight after the one before: "lh" in "Left half", "vsc" in "Visual Studio Code", "scat" in
+    /// "A scattered note". Read greedily, which is enough for the initials people type.
+    public static func matchesAtWordStarts(_ pattern: [UInt32], in text: Text) -> Bool {
+        guard !pattern.isEmpty else { return true }
+        var index = 0, previous = -2
+        for position in text.scalars.indices where text.scalars[position] == pattern[index] {
+            guard Int32(text.bonuses[position]) >= bonusCamel || position == previous + 1 else { continue }
+            previous = position; index += 1
+            if index == pattern.count { return true }
+        }
+        return false
+    }
+
     /// The best score of `pattern` in `text`, or nil when its characters do not all appear in order.
     public static func score(_ pattern: [UInt32], in text: Text, scratch: Scratch = Scratch()) -> Int32? {
         let n = pattern.count, m = text.scalars.count

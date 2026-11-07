@@ -13,20 +13,20 @@ struct PreferencesView: View {
     var body: some View {
         ScrollViewReader { proxy in
         FrogPage {
-            FrogPageHeader(title: "Settings")
+            FrogPageHeader(title: "Settings", subtitle: "Startup, appearance, permissions and what Frog keeps")
             SettingsHero(model: model)
             FrogSection("General") {
                 FrogRow("Start at login") { Toggle("Start at login", isOn: Binding(get: { model.startAtLogin }, set: model.setStartAtLogin)).labelsHidden() }
                 if model.loginNeedsAttention {
                     FrogRow(model.loginStatus) { Button("Open Login Items") { LoginService.openLoginItems() } }
                 }
-                FrogRow("Writing indicator") { Toggle("Writing indicator", isOn: preference(\.showProcessingIndicator)).labelsHidden() }
-                FrogRow("Show rule shortcuts", caption: "Hold to see your rules.") {
+                FrogRow("Writing indicator", caption: "A small pill at the bottom of the screen while a rule runs") { Toggle("Writing indicator", isOn: preference(\.showProcessingIndicator)).labelsHidden() }
+                FrogRow("Shortcut reference", caption: "Every rule and its keys, while you hold it") {
                     HotkeyRecorder(hotkey: Binding(get: { prefs.shortcutPanelHotkey }, set: { value in update { $0.shortcutPanelHotkey = value } }))
                 }
                 if let issue = model.hotkeyErrors[AppModel.shortcutPanelID] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
-                FrogRow("Setup", caption: "Walk through plugins, permissions, models and providers again.") { Button("Run setup again") { model.showSetup() } }
-                FrogRow("Statistics") { Button("View") { model.toolkit.select(.statistics) } }
+                FrogRow("Setup", caption: "Features, permissions, models and providers, step by step") { Button("Run setup again") { model.showSetup() } }
+                FrogRow("Statistics", caption: "What you did with Frog, counted on this Mac") { Button("Show statistics") { model.toolkit.select(.statistics) } }
             }
             AppearanceSettingsView(model: model)
             FrogSection("Permissions") {
@@ -38,20 +38,20 @@ struct PreferencesView: View {
             AgentSettingsView(server: model.agentServer)
             FrogSection("History") {
                 FrogRow("Save history on this Mac") { Toggle("Save history on this Mac", isOn: preference(\.historyEnabled)).labelsHidden() }
-                FrogRow("Hide history text", caption: "Masked until you reveal it.") {
+                FrogRow("Hide history text", caption: "Masked until you reveal it") {
                     Toggle("Hide history text", isOn: preference(\.hideHistoryText)).labelsHidden()
                 }
                 HistoryLimitsView(model: model)
             }
             FrogSection("Settings file") {
-                FrogRow("config.toml", caption: "Changes apply when you save.") {
+                FrogRow("config.toml", caption: "Read again each time you save it") {
                     HStack(spacing: 8) {
                         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.settingsFile.fileURL]) }
-                            .buttonStyle(.frog(.ghost))
+                            .buttonStyle(.frog())
                         Button("Open") { openSettingsFile() }
                     }
                 }
-                FrogRow("Import or export", caption: "API keys stay in Keychain.") {
+                FrogRow("Import or export", caption: "Everything but API keys, which stay in Keychain") {
                     HStack(spacing: 8) {
                         Button("Import…") { chooseConfiguration() }.disabled(model.isProcessing || model.isTestingProvider || model.dictating)
                         Button("Export…") { exportConfiguration() }
@@ -59,11 +59,24 @@ struct PreferencesView: View {
                 }
             }
             FrogSection("Updates") { UpdateSettingsView() }.id("updates")
-            FrogSection("Errors") {
-                FrogRow(model.recentErrors.isEmpty ? "None recorded" : "\(model.recentErrors.count) recorded") {
+            FrogSection("About") {
+                FrogRow("Frog \(Self.version)", caption: "Build \(FrogVersion.build)") {
+                    Link("Source code ↗", destination: URL(string: "https://github.com/t1llo/frog")!)
+                }
+                ForEach(LegalDocument.allCases.filter { $0.url() != nil }) { document in
+                    FrogRow(document.title) { Button("View") { legalDocument = document }.buttonStyle(.frog()) }
+                }
+                FrogRow("Made by Tillo") {
+                    HStack(spacing: 12) {
+                        Link("frog@beffa.xyz", destination: URL(string: "mailto:frog@beffa.xyz")!)
+                        Link("beffa.xyz ↗", destination: URL(string: "https://beffa.xyz")!)
+                    }
+                }
+                // The error log ends About: with nothing recorded it is one row, too little for a card of its own.
+                FrogRow("Errors", caption: model.recentErrors.isEmpty ? "None recorded" : "\(model.recentErrors.count) recorded") {
                     if !model.recentErrors.isEmpty {
                         HStack(spacing: 8) {
-                            Button("Clear") { model.clearRecentErrors() }.buttonStyle(.frog(.ghost))
+                            Button("Clear") { model.clearRecentErrors() }.buttonStyle(.frog())
                             CopyAction(title: "Copy log", labeled: true) {
                                 ViewActions.copy(model.recentErrors.map { "\($0.timestamp.ISO8601Format())  \($0.message)" }.joined(separator: "\n"))
                             }
@@ -74,20 +87,6 @@ struct PreferencesView: View {
                     FrogRow(issue.message, caption: issue.timestamp.formatted(date: .abbreviated, time: .shortened)) {
                         CopyAction(title: "Copy error") { ViewActions.copy("\(issue.timestamp.ISO8601Format())  \(issue.message)") }
                     }.textSelection(.enabled)
-                }
-            }
-            FrogSection("About") {
-                FrogRow("Frog \(Self.version)", caption: "Build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—")") {
-                    Link("Source code ↗", destination: URL(string: "https://github.com/t1llo/frog")!)
-                }
-                ForEach(LegalDocument.allCases.filter { $0.url() != nil }) { document in
-                    FrogRow(document.title) { Button("View") { legalDocument = document }.buttonStyle(.frog(.ghost)) }
-                }
-                FrogRow("Made by Tillo") {
-                    HStack(spacing: 12) {
-                        Link("frog@beffa.xyz", destination: URL(string: "mailto:frog@beffa.xyz")!)
-                        Link("beffa.xyz ↗", destination: URL(string: "https://beffa.xyz")!)
-                    }
                 }
             }.sheet(item: $legalDocument) { LegalDocumentView(document: $0) }
         }.toggleStyle(.frogSwitch).controlSize(.small)
@@ -104,7 +103,7 @@ struct PreferencesView: View {
             } message: { Text("The current settings are backed up. Provider keys may need to be re-entered.") }
         }
     }
-    private static var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0" }
+    private static var version: String { FrogVersion.short }
     /// Opens config.toml, which Frog writes at its first start, in the app the user picked for it, or TextEdit.
     private func openSettingsFile() {
         let url = model.settingsFile.fileURL
@@ -114,8 +113,7 @@ struct PreferencesView: View {
     private func permission(_ title: String, allowed: Bool, action: @escaping () -> Void) -> some View {
         FrogRow(title) {
             HStack(spacing: 10) {
-                Label(allowed ? "Allowed" : "Permission needed", systemImage: allowed ? "checkmark.circle.fill" : "exclamationmark.circle")
-                    .font(FrogType.small).foregroundStyle(allowed ? FrogStyle.accent : FrogStyle.warning)
+                FrogStatusLabel(allowed ? "Allowed" : "Permission needed", tone: allowed ? .good : .warning)
                 Button(allowed ? "Manage…" : "Allow…", action: action)
             }
         }
@@ -141,7 +139,7 @@ private struct SettingsHero: View {
     @ObservedObject var model: AppModel
     @ObservedObject private var updater = UpdateService.shared
     @ObservedObject private var readiness = UpdateReadiness.shared
-    private var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0" }
+    private var version: String { FrogVersion.short }
     private var missing: String? {
         if !model.accessibilityGranted { return "Allow Accessibility" }
         if !DictationController.microphoneGranted { return "Allow Microphone" }
@@ -157,14 +155,17 @@ private struct SettingsHero: View {
                 } else if let ready = readiness.version {
                     Text("Version \(version), \(ready) is ready").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 } else {
-                    Text("Version \(version), up to date").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    Text("Version \(version)").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 }
             }
             Spacer(minLength: FrogStyle.space12)
             if readiness.version != nil {
                 Button("Install and Relaunch…") { updater.check() }.buttonStyle(.frog(.primary))
+            } else if updater.canCheck {
+                Button("Check for Updates") { updater.check() }
             } else {
-                Button("Check for Updates") { updater.check() }.disabled(!updater.canCheck)
+                // While Frog checks, or where it cannot, a dimmed button says less than plain words.
+                FrogStatusLabel("Up to date")
             }
         }
         .padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()

@@ -815,7 +815,7 @@ final class AppModel: ObservableObject {
 
     func saveProvider(_ provider: ProviderConfiguration, apiKey: String?, clearKey: Bool) throws {
         try ConfigurationFile.validate(provider: provider)
-        guard provider.kind.localTool == nil || (apiKey ?? "").isEmpty else { throw FrogError.message("Coding tools use their own login, without a Frog API key.") }
+        guard provider.kind.localTool == nil || (apiKey ?? "").isEmpty else { throw FrogError.message("Coding tools use their own sign-in, without a Frog API key.") }
         var candidate = configuration
         let previousModels = candidate.providers.first(where: { $0.id == provider.id })?.models ?? []
         if let index = candidate.providers.firstIndex(where: { $0.id == provider.id }) { candidate.providers[index] = provider }
@@ -1471,7 +1471,10 @@ final class AppModel: ObservableObject {
     }
     func cancelProcessing() { processingTask?.cancel(); status = "Cancelling…" }
 
-    func showShortcuts() {
+    func showShortcuts() { shortcutPanel.show(groups: shortcutReferenceGroups) }
+
+    /// The keys the shortcut reference panel lists, grouped.
+    var shortcutReferenceGroups: ShortcutReferencePanel.Groups {
         let preferences = configuration.preferences
         // App and Mac command keys are the Shortcuts plugin's bindings now, listed with the other plugins' keys.
         var items = ShortcutReference.items(configuration: configuration,
@@ -1480,9 +1483,10 @@ final class AppModel: ObservableObject {
                                             answersInPanel: \.isExplainRule)
         let listed = Set(items.map(\.hotkey))
         for (id, shortcut) in pluginShortcuts.sorted(by: { $0.value.name < $1.value.name }) where !listed.contains(shortcut.hotkey) {
-            items.append(ShortcutReferenceItem(id: id.uuidString, title: shortcut.name, hotkey: shortcut.hotkey, group: .shortcuts))
+            items.append(ShortcutReferenceItem(id: id.uuidString, title: shortcut.name, hotkey: shortcut.hotkey, group: .plugins,
+                                               symbol: "puzzlepiece.extension"))
         }
-        shortcutPanel.show(groups: ShortcutReference.grouped(items))
+        return ShortcutReference.grouped(items)
     }
 
     func saveWorkflowPreferences(_ value: WorkflowPreferences) throws {
@@ -1591,19 +1595,21 @@ final class AppModel: ObservableObject {
         do { provider = try resolved(rule) }
         catch {
             let ended = outcome(of: error)
-            finish(ended, background: manualText == nil); agentReply?(ended, nil); return nil
+            finish(ended, rule: rule.name, background: manualText == nil); agentReply?(ended, nil); return nil
         }
         isProcessing = true
         processingForAgent = agentReply != nil
         status = "\(rule.name)…"
-        if manualText == nil { showIndicatorWorking() }
+        if manualText == nil { showIndicatorWorking(rule: rule.name) }
         let historyTicket = historyTicket()
         processingTask = Task { [weak self] in
             guard let self else { return }
             var ended = RuleOutcome.done
             var produced: String?
+            /// What the done pill names after the rule: "3 words changed", "Copied".
+            var summary: String?
             defer {
-                self.finish(ended, background: manualText == nil)
+                self.finish(ended, rule: rule.name, summary: summary, background: manualText == nil)
                 agentReply?(ended, produced)
                 self.isProcessing = false; self.processingForAgent = false; self.processingTask = nil
             }
@@ -1634,6 +1640,7 @@ final class AppModel: ObservableObject {
                 if selection != nil, rule.textOutput == .copy {
                     self.writeClipboard(result)
                     self.clipboardHistoryStore.recordCopiedText(result)
+                    summary = L10n.text("Copied")
                 } else if let selection {
                     do { try await selection.replace(with: result) }
                     catch is CancellationError { throw CancellationError() }
@@ -1642,6 +1649,8 @@ final class AppModel: ObservableObject {
                         delivered = false
                         self.report(error); ended = .failed(error.localizedDescription)
                     }
+                    // After the text is in place, and only when the pill will name it.
+                    if delivered, manualText == nil, self.showsProcessingIndicator { summary = await Self.changeSummary(from: text, to: result) }
                     self.clipboardHistoryStore.recordCopiedText(result)
                 } else if agentReply != nil {
                     produced = result
@@ -1675,14 +1684,25 @@ final class AppModel: ObservableObject {
         return .failed(error.localizedDescription)
     }
 
-    /// `background`: a shortcut ran the rule, so the processing indicator shows how it ended.
-    private func finish(_ outcome: RuleOutcome, background: Bool) {
-        ruleOutcome = outcome
-        if background, showsProcessingIndicator { processingIndicator.show(outcome) }
+    /// What the done pill says a rewrite changed ("3 words changed"). The texts are compared off the main actor, as a
+    /// long rewrite takes a moment to compare; texts too long for History's diff get no summary.
+    private static func changeSummary(from text: String, to result: String) async -> String? {
+        guard text != result else { return L10n.text("No changes") }
+        guard text.count <= HistoryDiff.maxLength, result.count <= HistoryDiff.maxLength else { return nil }
+        let diff = await Task.detached(priority: .userInitiated) { TextDiff(original: text, result: result) }.value
+        return HistoryDiff.summary(changed: diff.changedWords, added: diff.addedWords, removed: diff.removedWords)
     }
 
-    private func showIndicatorWorking() {
-        if showsProcessingIndicator { processingIndicator.showWorking() }
+    /// `background`: a shortcut ran the rule, so the processing indicator shows how it ended.
+    /// `rule` names what failed in the status pill ("Proofread failed: …").
+    private func finish(_ outcome: RuleOutcome, rule: String? = nil, summary: String? = nil, background: Bool) {
+        ruleOutcome = outcome
+        if background, showsProcessingIndicator { processingIndicator.show(outcome, rule: rule, summary: summary) }
+    }
+
+    private func showIndicatorWorking(rule: String) {
+        processingIndicator.showDetails = { [weak self] in self?.showSettings() }
+        if showsProcessingIndicator { processingIndicator.showWorking(rule: rule) }
     }
 
     private var showsProcessingIndicator: Bool {

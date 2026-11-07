@@ -9,6 +9,7 @@ struct ExplainView: View {
     @State private var notesFile = ""
     @State private var notesFileIssue: String?
     @FocusState private var editingFile: Bool
+    @State private var pickerRequest = ModelPickerOpenRequest()
 
     private var settings: ExplainConfig { plugin.settings }
     private var bubbleOn: Bool { model.selectionBubble?.settings.on == true }
@@ -17,79 +18,88 @@ struct ExplainView: View {
         FrogPage {
             FrogPageHeader(title: "Explain", subtitle: "Select text, press the shortcut, read the answer.")
             if let rule = plugin.rule {
-                FrogSection("Explain") {
+                if !model.ruleHasModel(rule) {
+                    ModelMissingNotice(feature: "Explain", speech: false) { pickerRequest.open(rule.id) }
+                }
+                // Two cards, both headed: how a question is asked, then who answers it and where answers are kept.
+                FrogSection("Asking") {
                     FrogRow("Shortcut", caption: "Select text in any app, then press it.") { HotkeyRecorder(hotkey: ruleBinding(rule, \.hotkey)) }
                     if let issue = model.hotkeyErrors[rule.id] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
-                    FrogRow("Model", caption: "Writes the answer.") { RuleModelPicker(rule: Binding(get: { rule }, set: save)) }
-                }
-                FrogSection("Answer") {
+                    bubble(rule)
                     FrogRow("Surrounding text", caption: "Also sends the sentence around the selection.") {
                         Toggle("Surrounding text", isOn: setting(\.context)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                     }
                 }
-                bubble(rule)
-                notes
+                FrogSection("Answers") {
+                    // The notice above already says Explain has no model, so the picker asks without a second mark.
+                    FrogRow("Model") {
+                        RuleModelPicker(rule: Binding(get: { rule }, set: save), marksMissing: false)
+                    }
+                    notes
+                }
             } else {
-                FrogEmptyState(symbol: "questionmark.bubble", title: "No Explain rule", message: "Add it back to explain selected text.") {
+                FrogEmptyState(symbol: ExplainPlugin.info.symbol, title: "No Explain rule", message: "Add it back to explain selected text.",
+                               tint: ExplainPlugin.info.tint) {
                     Button("Add Explain") {
                         do { try plugin.addRule() } catch { model.report(error) }
                     }.buttonStyle(.frog(.primary))
                 }
             }
         }
+        .environment(\.modelPickerOpenRequest, pickerRequest)
     }
 
     /// Whether Explain is one of the buttons in the selection bubble. The bubble itself is set up on the Writing page.
     @ViewBuilder private func bubble(_ rule: Rule) -> some View {
-        FrogSection("Selection bubble") {
             if bubbleOn {
-                FrogRow("Show Explain in the bubble", caption: "The bubble appears after you select text by dragging, double-clicking or with Shift and arrow keys. Turn it on, off or limit it on the Writing page.") {
-                    Toggle("Show Explain in the bubble", isOn: ruleBinding(rule, \.showsInBubble)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+                FrogRow("Selection bubble", caption: "Offers Explain beside the selection. Set it up on the Writing page.") {
+                    Toggle("Selection bubble", isOn: ruleBinding(rule, \.showsInBubble)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
             } else {
-                FrogRow("Selection bubble is off", caption: "Turn it on in Writing to offer Explain after you select text. The shortcut works either way.") { EmptyView() }
+                // A notice, not a setting: the bubble is switched on the Writing page.
+                // The button says where it goes; the caption says why the switch is not here.
+                FrogRow("Selection bubble", caption: "Off on the Writing page. The shortcut works either way.") {
+                    Button("Open Writing") { model.toolkit.select(.feature(.writing)) }
+                }
             }
-        }
     }
 
-    private var notes: some View {
-        FrogSection("Notes") {
-            FrogRow("Save to note", caption: "Adds a Save to note button to the answer panel.") {
-                Toggle("Save to note", isOn: Binding(get: { settings.notes.on }, set: { value in
-                    withAnimation(reduceMotion ? nil : FrogMotion.reveal) { update { $0.notes.on = value } }
-                })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
-            }
-            if settings.notes.on {
-                Group {
-                    FrogRow("Folder", caption: settings.notes.folder ?? "No folder chosen yet") {
-                        Button("Choose…") {
-                            Task { do { _ = try await model.chooseAnswerNotesFolder() } catch { model.report(error) } }
-                        }
+    @ViewBuilder private var notes: some View {
+        FrogRow("Save answers to notes", caption: "Adds a Save to note button to the answer panel.") {
+            Toggle("Save answers to notes", isOn: Binding(get: { settings.notes.on }, set: { value in
+                withAnimation(reduceMotion ? nil : FrogMotion.reveal) { update { $0.notes.on = value } }
+            })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+        }
+        if settings.notes.on {
+            Group {
+                FrogRow("Folder", caption: settings.notes.folder ?? "No folder chosen yet") {
+                    Button("Choose…") {
+                        Task { do { _ = try await model.chooseAnswerNotesFolder() } catch { model.report(error) } }
                     }
-                    FrogRow("Save as", caption: settings.notes.mode == .append ? "Each answer is added to the file below." : "Each answer becomes its own note.") {
-                        FrogDropdown(selected: settings.notes.mode, options: ExplainConfig.NotesMode.allCases, width: 180,
-                                     title: { $0 == .perAnswer ? "A note per answer" : "Added to one note" }) { mode in
-                            update { $0.notes.mode = mode }
-                        }
+                }
+                FrogRow("Save as", caption: settings.notes.mode == .append ? "Each answer is added to the file below." : "Each answer becomes its own note.") {
+                    FrogDropdown(selected: settings.notes.mode, options: ExplainConfig.NotesMode.allCases, width: 180,
+                                 title: { $0 == .perAnswer ? "A note per answer" : "Added to one note" }) { mode in
+                        update { $0.notes.mode = mode }
                     }
-                    if settings.notes.mode == .append {
-                        FrogRow("File", caption: notesFileIssue ?? "YYYY, MM and DD become the date.") {
-                            TextField("Daily/YYYY-MM-DD.md", text: $notesFile)
-                                .textFieldStyle(.plain).font(FrogType.body)
-                                .padding(.horizontal, 8).frame(width: 200).frogControlSurface()
-                                .focused($editingFile)
-                                .onSubmit(saveNotesFile)
-                                .onChange(of: editingFile) { _, editing in if !editing { saveNotesFile() } }
-                                .onAppear { notesFile = settings.notes.file }
-                                .onChange(of: settings.notes.file) { _, value in notesFile = value }
-                                .accessibilityLabel("Notes file")
-                        }
+                }
+                if settings.notes.mode == .append {
+                    FrogRow("File", caption: notesFileIssue ?? "YYYY, MM and DD become the date.") {
+                        FrogTextField(placeholder: "Daily/YYYY-MM-DD.md", text: $notesFile)
+                            .textFieldStyle(.plain).font(FrogType.body)
+                            .padding(.horizontal, 8).frame(width: 200).frogControlSurface()
+                            .focused($editingFile)
+                            .onSubmit(saveNotesFile)
+                            .onChange(of: editingFile) { _, editing in if !editing { saveNotesFile() } }
+                            .onAppear { notesFile = settings.notes.file }
+                            .onChange(of: settings.notes.file) { _, value in notesFile = value }
+                            .accessibilityLabel("Notes file")
                     }
-                    FrogRow("Open after saving", caption: "Opens the note in Obsidian when the folder is a vault.") {
-                        Toggle("Open after saving", isOn: setting(\.notes.open)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
-                    }
-                }.transition(.opacity.combined(with: .offset(y: -4)))
-            }
+                }
+                FrogRow("Open after saving", caption: "Opens the note in Obsidian when the folder is a vault.") {
+                    Toggle("Open after saving", isOn: setting(\.notes.open)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+                }
+            }.transition(.opacity.combined(with: .offset(y: -4)))
         }
     }
 

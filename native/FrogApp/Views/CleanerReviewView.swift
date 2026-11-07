@@ -14,33 +14,17 @@ struct CleanerReviewView: View {
 
     var body: some View {
         let app = review.app
-        VStack(alignment: .leading, spacing: 14) {
-            CleanerBackButton(cleaner: cleaner)
-            HStack(alignment: .center, spacing: 12) {
-                ApplicationIcon(path: app.path, size: 40)
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(app.name).font(FrogType.section).lineLimit(1)
-                        if let version = app.version {
-                            Text(version).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                        }
-                        if review.removedApp { FrogBadge(text: "In the Trash") }
-                    }
-                    Group {
-                        Text(app.bundleID)
-                        Text(roots.displayPath(app.url)).lineLimit(1).truncationMode(.middle)
-                    }.font(FrogType.small).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
-                }
-                Spacer(minLength: 12)
-            }
+        // The app's name is the toolbar's title and its version and bundle ID the page's subtitle; its path is the
+        // App row's, so it shows once.
+        VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing - 8) {
             notices
             ForEach(review.groups(showPossible: showPossible)) { group in groupView(group) }
             if review.nothingElseFound(showPossible: showPossible) != nil {
                 Text(review.removedApp ? "No files found." : "No other files found.").font(FrogType.body).foregroundStyle(FrogStyle.muted)
-                    .padding(.horizontal, 4)
             }
             possibleMatchesButton
         }
+        .cleanerStepBack(cleaner)
         .task(id: app.path) { await checkRunning() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await checkRunning() }
@@ -53,7 +37,7 @@ struct CleanerReviewView: View {
         if possible > 0 {
             Button(showPossible ? "Hide possible matches" : "Show \(possible) possible \(possible == 1 ? "match" : "matches")") {
                 setPossibleMatches(!showPossible)
-            }.buttonStyle(.frog(.ghost))
+            }.buttonStyle(.frog())
         }
     }
 
@@ -87,20 +71,14 @@ struct CleanerReviewView: View {
             Text(text).font(FrogType.body).fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             action()
-        }.padding(.horizontal, 4)
+        }.padding(.horizontal, FrogStyle.rowInset)
     }
 
     private func groupView(_ group: CleanerGroup) -> some View {
-        let allTicked = group.items.allSatisfy { review.selected.contains($0.id) }
-        // Headed like a settings section: the group's name, then its list in one card.
+        // Headed like a settings section: the group's name, then its list in one card. Select all is the footer's,
+        // once for the page, rather than repeated on every group.
         return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text(L10n.text("\(group.kind.title) · \(group.items.count)")).font(FrogType.section)
-                    .foregroundStyle(FrogStyle.ink).accessibilityAddTraits(.isHeader)
-                Spacer(minLength: 8)
-                Button(allTicked ? "Untick all" : "Tick all") { cleaner.setGroup(group.kind, selected: !allTicked) }
-                    .buttonStyle(.frog(.ghost, compact: true))
-            }.frame(minHeight: 20)
+            FrogSectionHeader(group.kind.title, count: group.items.count)
             VStack(spacing: 2) {
                 ForEach(group.items) { item in itemRow(item) }
             }.padding(6).frogTableSurface()
@@ -108,31 +86,42 @@ struct CleanerReviewView: View {
     }
 
     private func itemRow(_ item: CleanerItem) -> some View {
-        let path = roots.displayPath(item.url)
+        let path = roots.shownPath(item.url)
+        let parts = roots.shownParts(item.url)
         return HStack(spacing: 10) {
             // The checkbox style draws its label, so the path is the accessibility label only.
             Toggle(isOn: Binding(get: { review.selected.contains(item.id) }, set: { _ in cleaner.toggle(item.id) })) { EmptyView() }
                 .toggleStyle(.frogCheckbox).accessibilityLabel(path)
             // The name and reason tick the item too, not only the checkbox; the controls keep their own click.
             HStack(spacing: 10) {
-                Image(systemName: item.kind.symbol).font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
-                    .frame(width: 18).accessibilityHidden(true)
+                // The app itself shows its own icon; an outlined app symbol beside the checkbox read as a second box.
+                if item.kind == .application {
+                    ApplicationIcon(path: item.url.path, size: 24)
+                } else {
+                    Image(systemName: item.kind.symbol).font(.system(size: 13)).foregroundStyle(FrogStyle.muted)
+                        .frame(width: 24).accessibilityHidden(true)
+                }
+                // The item's name leads; its folder and why it matched follow, so a long path is cut in the folder
+                // rather than through the name.
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(path).font(FrogType.body).lineLimit(1).truncationMode(.middle).help(path)
                     HStack(spacing: 6) {
-                        Text(item.reason).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                        if item.owner == .administrator { FrogBadge(text: "Needs password") }
-                        if review.needsFullDiskAccessToMove(item) { FrogBadge(text: "Needs Full Disk Access") }
+                        Text(parts.name).font(FrogType.body).lineLimit(1).truncationMode(.middle).layoutPriority(1)
+                        if item.owner == .administrator { FrogStatusLabel("Needs password", tone: .warning) }
+                        if review.needsFullDiskAccessToMove(item) { FrogStatusLabel("Needs Full Disk Access", tone: .warning) }
                         if !item.sharedWith.isEmpty {
                             FrogBadge(text: "Also used by \(item.sharedWith.formatted(.list(type: .and)))")
                         }
                     }
-                }
+                    HStack(spacing: 0) {
+                        Text(parts.folder).lineLimit(1).truncationMode(.middle)
+                        Text(" · " + item.reason).lineLimit(1).layoutPriority(1)
+                    }.font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                }.help(path)
                 Spacer(minLength: 8)
                 size(of: item)
             }
             .contentShape(Rectangle()).onTapGesture { cleaner.toggle(item.id) }
-            IconAction(title: "Reveal in Finder", symbol: "magnifyingglass") {
+            IconAction(title: "Show in Finder", symbol: "arrow.up.forward") {
                 NSWorkspace.shared.activateFileViewerSelecting([item.url])
             }
         }
@@ -146,7 +135,7 @@ struct CleanerReviewView: View {
                 .font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted)
         } else if review.sizes.isEmpty, review.measures(item) {
             // Sizes arrive together once the measuring finishes.
-            ProgressView().controlSize(.mini).accessibilityLabel("Measuring")
+            FrogSkeleton(width: 40, height: 14).accessibilityLabel("Measuring")
         } else {
             Text("—").font(FrogType.small).foregroundStyle(FrogStyle.muted).accessibilityLabel("Size unknown")
                 .help(review.measures(item) ? "Frog could not measure this item." : "Frog needs Full Disk Access to measure this item.")
@@ -167,17 +156,27 @@ struct CleanerReviewFooter: View {
 
     var body: some View {
         let count = review.selectedCount
+        let shown = review.groups(showPossible: cleaner.showPossibleMatches).flatMap(\.items)
+        let allTicked = !shown.isEmpty && shown.allSatisfy { review.selected.contains($0.id) }
         HStack(spacing: 12) {
             Text(review.selectionSummary()).font(FrogType.body.monospacedDigit()).foregroundStyle(FrogStyle.muted)
+            Button(allTicked ? "Deselect all" : "Select all") { cleaner.setAll(selected: !allTicked) }
+                .buttonStyle(.frog())
             Spacer()
-            Button("Move to Trash…") { Task { await cleaner.prepareRemoval() } }
-                .buttonStyle(.frog(.destructive))
+            // The page's one main action; the sheet it opens names what moves and holds the confirmation.
+            Button("Move to Trash…", systemImage: "trash") { Task { await cleaner.prepareRemoval() } }
+                .buttonStyle(.frog(.primary))
                 // After a removal that left the app, the review stays open with the phase back at idle.
-                .disabled(count == 0 || ![.reviewing, .idle].contains(cleaner.phase))
+                .frogDisabled(count == 0 ? "Tick the files to move first" : ![.reviewing, .idle].contains(cleaner.phase) ? "Frog is still working" : nil)
         }
-        .padding(.horizontal, 20).padding(.vertical, 10)
-        // The bar sits on the inset fill rather than behind a line; the canvas below keeps the scrolled page from showing through.
-        .background(FrogStyle.card).background(FrogStyle.canvas)
+        // A card in the page's column, lined up with the lists above it, rather than a band across the window.
+        .padding(.horizontal, FrogStyle.rowInset).padding(.vertical, FrogStyle.space10)
+        .frogTableSurface()
+        .frame(maxWidth: FrogStyle.pageWidth, alignment: .leading)
+        .padding(.horizontal, FrogStyle.pagePadding).padding(.vertical, FrogStyle.space10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // The canvas behind the card keeps the scrolled page from showing through around it.
+        .background(FrogStyle.canvas)
     }
 }
 
@@ -186,25 +185,16 @@ struct CleanerScanningView: View {
     @ObservedObject var cleaner: CleanerModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            CleanerBackButton(cleaner: cleaner)
-            HStack(spacing: 10) {
-                ProgressView().controlSize(.small)
-                Text(cleaner.scanningApp.map { "Looking for \($0.name)'s files…" } ?? "Looking for the app's files…")
-                    .font(FrogType.body).foregroundStyle(FrogStyle.muted)
-            }
-        }
+        FrogLoadingNote(text: cleaner.scanningApp.map { "Looking for \($0.name)'s files…" } ?? "Looking for the app's files…")
+            .frame(maxWidth: .infinity).padding(.vertical, 36).frogTableSurface()
+            .cleanerStepBack(cleaner)
     }
 }
 
-/// Returns to the app list, worded like the other pages' way back.
-struct CleanerBackButton: View {
-    @ObservedObject var cleaner: CleanerModel
-
-    var body: some View {
-        Button("Apps", systemImage: "chevron.left") { cleaner.closeReview() }
-            .buttonStyle(.frog(.ghost))
-            .help("Back to apps")
+extension View {
+    /// The toolbar's Back (⌘[) and Escape return from a review or scan to the app list.
+    func cleanerStepBack(_ cleaner: CleanerModel) -> some View {
+        frogPageBack("cleaner-review", parent: "App cleaner", escapes: true) { cleaner.closeReview() }
     }
 }
 
@@ -242,13 +232,7 @@ struct CleanerOutcomeView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     SectionCaption(text: failureTitle)
                     ForEach(Array(outcome.failures.enumerated()), id: \.offset) { _, failure in
-                        HStack(alignment: .top, spacing: 10) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(roots.displayPath(URL(fileURLWithPath: failure.path))).font(FrogType.body)
-                                    .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
-                                Text(failure.message).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        FrogRow(path: roots.shownPath(URL(fileURLWithPath: failure.path)), caption: failure.message) {
                             if let link = RemovalSummary.settingsLink(for: failure.message) {
                                 Button(link.title) { NSWorkspace.shared.open(link.url) }
                             }

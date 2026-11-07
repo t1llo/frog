@@ -176,9 +176,12 @@ import WebKit
     }
 
     /// A PNG of the page. A page no window shows is laid out off screen first, at 800 × 600 points, or a popup at its size.
-    func snapshot() async throws -> Data {
+    /// `onCanvas: false` keeps a popup's page transparent where it draws nothing, for a picture laid into Frog's own
+    /// popup shell, which puts the panel colour under it as the popup does.
+    func snapshot(onCanvas: Bool = true) async throws -> Data {
         if webView.window == nil {
-            let size = surface == .popup ? NSSize(width: manifest.menubar?.popupWidth ?? 320, height: manifest.menubar?.popupHeight ?? 360)
+            // A popup's page is its declared content size and the stylesheet's margin, as `PluginPopupView` lays it out.
+            let size: NSSize = surface == .popup ? PluginPopupLayout.pageSize(manifest.menubar ?? PluginMenuBar())
                 : NSSize(width: 800, height: 600)
             let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -20_000, y: -20_000), size: size), styleMask: [.borderless], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
@@ -200,7 +203,7 @@ import WebKit
         let configuration = WKSnapshotConfiguration()
         configuration.afterScreenUpdates = true
         var image = try await webView.takeSnapshot(configuration: configuration)
-        if surface == .popup {
+        if surface == .popup, onCanvas {
             // The popup's page has no background of its own: the picture puts it on the panel colour it lies on in
             // the appearance it draws in.
             let canvas = NSImage(size: image.size)

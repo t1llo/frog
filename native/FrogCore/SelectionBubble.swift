@@ -428,8 +428,45 @@ public struct BubbleItem: Equatable, Identifiable, Sendable {
 }
 
 public enum SelectionBubbleItems {
+    /// Explain's and Writing's own tile glyphs: the Explain rule wears Explain's, and a rule whose name says nothing
+    /// `symbol(for:)` knows wears its feature's.
     public static let answerSymbol = "questionmark.bubble"
-    public static let writingSymbol = "text.alignleft"
+    public static let writingSymbol = "text.cursor"
+
+    /// What a rule's name says it does, first match wins, so two rules side by side in the bubble, Writing or the
+    /// command bar (Explain and Define, Proofread and Translate) never share a glyph.
+    /// A translation's glyph by the language it names: the globe turned to where that language is spoken most.
+    static let translationSymbols: [(words: [String], symbol: String)] = [
+        (["english", "englisch", "spanish", "spanisch", "portugu"], "globe.americas"),
+        (["german", "deutsch", "french", "französisch", "italian", "italienisch", "dutch", "polish", "swedish", "arabic"],
+         "globe.europe.africa"),
+        (["japanese", "chinese", "korean", "hindi", "thai", "vietnamese", "indonesian"], "globe.asia.australia")
+    ]
+
+    static let namedSymbols: [(words: [String], symbol: String)] = [
+        (["define", "definition", "dictionary", "meaning"], "book.closed"),
+        (["translat", "übersetz"], "translate"),
+        (["email", "e-mail", "mail", "reply"], "envelope"),
+        (["spelling", "typo"], "text.magnifyingglass"),
+        (["proofread", "grammar", "correct", "korrigier"], "checkmark.circle"),
+        (["summar", "tl;dr", "key points"], "list.bullet"),
+        (["shorten", "shorter", "concise", "trim"], "scissors"),
+        (["simplif", "plain language", "eli5"], "lightbulb"),
+        (["code", "regex", "sql", "shell"], "chevron.left.forwardslash.chevron.right"),
+        (["polish", "improve", "rewrite", "rephrase", "tone", "formal", "friendl"], "wand.and.stars")
+    ]
+
+    public static func symbol(for rule: Rule) -> String {
+        if rule.isExplainRule { return answerSymbol }
+        let name = rule.name.lowercased()
+        // Translations side by side (to English, to German) each wear the globe of their language's part of the world.
+        if ["translat", "übersetz"].contains(where: name.contains),
+           let target = translationSymbols.first(where: { entry in entry.words.contains { name.contains($0) } }) {
+            return target.symbol
+        }
+        if let named = namedSymbols.first(where: { entry in entry.words.contains { name.contains($0) } }) { return named.symbol }
+        return rule.answersInPanel ? answerSymbol : writingSymbol
+    }
 
     /// Every rule the bubble can offer, in its order: the Explain rule while Explain is on, then the Writing rules.
     /// The Writing page lists these to choose which ones the bubble shows.
@@ -448,7 +485,7 @@ public enum SelectionBubbleItems {
         let all = candidates(rules: rules, explainEnabled: explainEnabled, writingEnabled: writingEnabled)
             .filter { $0.showsInBubble && ($0.textOutput != .replace || editable) && configured($0) }
             .map { BubbleItem(id: $0.id, title: $0.name.trimmingCharacters(in: .whitespacesAndNewlines),
-                              symbol: $0.answersInPanel ? answerSymbol : writingSymbol, answers: $0.answersInPanel,
+                              symbol: symbol(for: $0), answers: $0.answersInPanel,
                               hotkey: $0.hotkey) }
         guard all.count > visibleLimit else { return (all, []) }
         let shown = max(visibleLimit - 1, 0)

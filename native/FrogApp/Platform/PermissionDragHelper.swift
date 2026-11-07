@@ -50,7 +50,7 @@ final class PermissionDragHelper {
 
     static let shared = PermissionDragHelper()
     private static let settingsBundleID = "com.apple.systempreferences"
-    private static let panelSize = CGSize(width: 308, height: 64)
+    static let panelSize = CGSize(width: 308, height: 64)
 
     private(set) var pane: PrivacyPane?
     private var panel: NSPanel?
@@ -170,7 +170,7 @@ private final class HelperPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-private struct PermissionDragHelperView: View {
+struct PermissionDragHelperView: View {
     let pane: PrivacyPane
     let url: URL
     let image: NSImage
@@ -188,11 +188,8 @@ private struct PermissionDragHelperView: View {
                 .accessibilityAction(named: Text(L10n.text("Open \(pane.title) settings")), open)
                 .help(L10n.text("Drag into the list"))
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(L10n.text("Drag Frog into the list")).font(FrogType.rowMedium).lineLimit(1)
-                    Image(systemName: "arrow.up").font(.system(size: 11, weight: .semibold)).foregroundStyle(FrogStyle.accent)
-                        .accessibilityHidden(true)
-                }
+                // The icon beside it is what to drag; the words say where, with no extra badge to decode.
+                Text(L10n.text("Drag Frog into the list")).font(FrogType.rowMedium).lineLimit(1)
                 Text(L10n.text("Then switch it on.")).font(FrogType.small).foregroundStyle(FrogStyle.muted)
             }
             Spacer(minLength: 0)

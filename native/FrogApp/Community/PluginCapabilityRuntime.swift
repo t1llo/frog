@@ -516,7 +516,7 @@ extension PluginRuntime {
             guard let self, let runtime = self.runtime else { return }
             do {
                 let popup = try await runtime.popupHost(for: self.id)
-                let view = PluginPopupView(name: self.name, symbol: self.defaultSymbol, width: CGFloat(self.menubar.popupWidth), size: self.size,
+                let view = PluginPopupView(name: self.name, symbol: self.defaultSymbol, contentWidth: CGFloat(self.menubar.popupWidth), size: self.size,
                                            host: popup, hasPage: runtime.item(self.id)?.hasPage == true) { [weak self] in
                     guard let self else { return }
                     self.presenter.close()
@@ -543,6 +543,24 @@ extension PluginRuntime {
     }
 }
 
+/// How a plugin's popup is sized. The manifest's `width` and `height` are the room its page's content gets: Frog
+/// adds the panel's inset, the card `frog-plugin.css` draws a popup page in (`body { padding: 14px; margin-bottom: 8px }`,
+/// which puts the content on the header's edge), and its own header and Close footer around that.
+enum PluginPopupLayout {
+    static let pageHorizontalPadding: CGFloat = FrogStyle.cardPadding
+    static let pageVerticalPadding: CGFloat = 2 * FrogStyle.cardPadding + FrogStyle.space8
+
+    /// The whole panel's width for a page `contentWidth` wide.
+    static func panelWidth(contentWidth: CGFloat) -> CGFloat { contentWidth + 2 * pageHorizontalPadding + 2 * FrogStyle.panelCardInset }
+    /// The web view's size for a page whose content is `content` big.
+    static func pageSize(content: CGSize) -> CGSize {
+        CGSize(width: content.width + 2 * pageHorizontalPadding, height: content.height + pageVerticalPadding)
+    }
+    static func pageSize(_ menubar: PluginMenuBar) -> CGSize {
+        pageSize(content: CGSize(width: menubar.popupWidth, height: menubar.popupHeight))
+    }
+}
+
 /// The popup's height, which the page may change while it is open.
 @MainActor final class PluginPopupSize: ObservableObject {
     @Published var height: CGFloat = CGFloat(PluginMenuBar.defaultHeight)
@@ -552,23 +570,48 @@ extension PluginRuntime {
 struct PluginPopupView: View {
     let name: String
     let symbol: String
-    let width: CGFloat
+    /// The manifest's width: the room for the page's content.
+    let contentWidth: CGFloat
     @ObservedObject var size: PluginPopupSize
     let host: PluginWebHost
     let hasPage: Bool
     let openPage: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 7) {
-                PluginIconTile(symbol: PluginSymbol.name(symbol), tint: FrogStyle.accent, size: .sidebar)
-                Text(name).font(FrogType.section).lineLimit(1)
-                Spacer()
-                if hasPage { IconAction(title: "Open \(name)", symbol: "arrow.up.forward.app", bordered: true, action: openPage) }
-            }.padding(.horizontal, FrogStyle.space6).frame(height: 40)
-            PluginWebContainer(host: host).frame(width: width - 2 * FrogStyle.panelCardInset, height: size.height)
+        let page = PluginPopupLayout.pageSize(content: CGSize(width: contentWidth, height: size.height))
+        PluginPopupShell(name: name, symbol: symbol, width: PluginPopupLayout.panelWidth(contentWidth: contentWidth),
+                         hasPage: hasPage, openPage: openPage) {
+            PluginWebContainer(host: host).frame(width: page.width, height: page.height)
         }
-        .padding(FrogStyle.panelCardInset).frame(width: width).fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// The status item popup template around a plugin's page: the plugin's tile and name with a way to its page,
+/// the page, and Close `esc` beneath, as every Frog popup has. The page keeps its content on the header's edge.
+struct PluginPopupShell<Content: View>: View {
+    let name: String
+    let symbol: String
+    let width: CGFloat
+    let hasPage: Bool
+    let openPage: () -> Void
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // The header and page keep the panel's inset; the footer band below runs to the panel's edges.
+            VStack(alignment: .leading, spacing: 0) {
+                FrogPopupHeader(symbol: PluginSymbol.name(symbol), tint: .purple, title: name) {
+                    if hasPage { IconAction(title: "Open \(name)", symbol: "arrow.up.forward.app", bordered: true, action: openPage) }
+                }
+                content
+            }.padding([.horizontal, .top], FrogStyle.panelCardInset)
+            // The status says whose popup this is, as Frog's own popups say what their content is.
+            FrogPopupFooter {
+                Image(systemName: "puzzlepiece.extension").accessibilityHidden(true)
+                Text(L10n.text("Community plugin"))
+            }
+        }
+        .frame(width: width).fixedSize(horizontal: false, vertical: true)
         .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
         .frogPanel()
         .background(MenuWindowSizing())

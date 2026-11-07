@@ -455,8 +455,11 @@ extension ClaudeAccountsCombination.Combined: Identifiable {
         }
         return windows
     }
+    /// The status while Frog reads no limits and has none to show: short, one clause.
+    public static let notReading = "Not reading limits now"
     public func status(provider: String) -> String {
-        if !active { return "Not reading limits right now." }
+        // Over limits already shown, the reading's own status; "not reading" only where there is nothing to show.
+        if !active, windows(provider: provider).isEmpty { return Self.notReading }
         if provider == Provider.claude.rawValue { return primary.status }
         if let error = tokens.liveError { return error }
         if tokens.checkingLive { return "Refreshing plan limits…" }

@@ -61,8 +61,18 @@ extension Configuration {
         modelsRemoved(unavailable, installed: installed)
     }
 
+    /// The dictation preset was called "Dictate"; every other place says "Dictation", so the preset still under its
+    /// old name follows. A rule the user named, or a hand-made rule called "Dictate", keeps its name. Runs every
+    /// launch, since configurations that already adopted explicit rule settings were saved under the old name.
+    public mutating func adoptDictationPresetName() {
+        for index in rules.indices where rules[index].preset && rules[index].category == .audio && rules[index].name == Rule.legacyDictationPresetName {
+            rules[index].name = Rule.dictationPreset.name
+        }
+    }
+
     /// Materialize legacy defaults once. Later additions never reroute an existing selection.
     public mutating func adoptExplicitRuleSettings(installed: Set<String>) {
+        adoptDictationPresetName()
         guard explicitRuleModels != true else { return }
         let workflow = preferences.workflowSettings
         for index in rules.indices {
@@ -80,7 +90,7 @@ extension Configuration {
                 action.showRecordingPopup = action.showRecordingPopup ?? workflow.showDictationPopup
                 action.transcriptionLanguage = action.transcriptionLanguage ?? workflow.transcriptionLanguage
                 rules[index].action = action
-                if rules[index].preset, rules[index].name == "Dictate", rules[index].hotkey == nil,
+                if rules[index].preset, rules[index].name == Rule.dictationPreset.name, rules[index].hotkey == nil,
                    !rules.contains(where: { $0.enabled && $0.hotkey == Rule.dictationPreset.hotkey }) {
                     rules[index].hotkey = Rule.dictationPreset.hotkey
                 }

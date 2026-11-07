@@ -10,11 +10,14 @@ struct UsageDashboardView: View {
     var body: some View {
         let provider = usage.preferences.provider
         FrogPage {
-            FrogPageHeader(title: "LLM usage") {
-                FrogDropdown(selected: provider, options: usage.providers, width: 120, title: { $0 }) { usage.selectProvider($0) }
-                    .accessibilityLabel("Provider")
-                IconAction(title: "Refresh", symbol: "arrow.clockwise") { usage.refresh() }
+            FrogPageHeader(title: "LLM usage", subtitle: "Plan limits and token use of your coding tools") {
+                Button("Refresh", systemImage: "arrow.clockwise") { usage.refresh() }
+                    .help("Read the plan limits and logs again")
             }
+            // Which service the page shows, as tabs leading the first row under the toolbar: both names in sight,
+            // so the choice explains itself.
+            CompactSegments(values: usage.providers, selected: provider, title: { $0 }) { usage.selectProvider($0) }
+                .accessibilityLabel("Provider")
             if provider == "Claude", usage.accountsNoticeVisible { UsageAccountsNotice(usage: usage) }
             if UsageStatusPopover.shownAccounts(usage).isEmpty { UsageLimitsSection(usage: usage) }
             else { FrogSection("Limits") { UsageAccountsLimits(usage: usage).padding(.vertical, 10) } }
@@ -45,8 +48,8 @@ struct UsageAccountsNotice: View {
             Text(usage.accountsNoticeText).font(FrogType.body).lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
-                Button(usage.accountsNoticeAction) { usage.showAllAccounts() }.buttonStyle(.frog(.primary, compact: compact))
-                Button("Not now") { usage.dismissAccountsNotice() }.buttonStyle(.frog(compact: compact))
+                Button(usage.accountsNoticeAction) { usage.showAllAccounts() }.buttonStyle(.frog(.primary))
+                Button("Not now") { usage.dismissAccountsNotice() }.buttonStyle(.frog())
             }
         }.padding(compact ? 8 : 14).frame(maxWidth: .infinity, alignment: .leading)
             .background(FrogStyle.card, in: RoundedRectangle(cornerRadius: compact ? FrogStyle.controlRadius : FrogStyle.cardRadius))
@@ -79,12 +82,14 @@ private struct UsageLimitsSection: View {
                     // One line: why there is no reading, or that there is none.
                     FrogRowNote(text: normal ? "No current reading" : status).textSelection(.enabled)
                 } else {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: windows.count == 1 ? 1 : 2),
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: FrogStyle.space16 * 2, alignment: .leading), count: windows.count == 1 ? 1 : 2),
                               alignment: .leading, spacing: 18) {
                         ForEach(windows) { UsageLimitView(window: $0, now: context.date) }
                     }.padding(.vertical, 10)
                 }
-                if !normal, !windows.isEmpty { FrogRowNote(text: status).textSelection(.enabled) }
+                if !normal, !windows.isEmpty, status != UsageDashboardModel.notReading {
+                    FrogRowNote(text: status).textSelection(.enabled)
+                }
                 if provider == "Claude", usage.needsClaudeSignIn {
                     FrogRow("Claude Code login") {
                         Button(usage.checkingClaudeSignIn ? "Checking…" : "Sign in…") { ClaudeSignIn.start(usage) }
@@ -136,7 +141,7 @@ struct UsageAccountsLimits: View {
         if windows.isEmpty {
             Text("No current reading").font(FrogType.bodyMedium)
         } else {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: compact || windows.count == 1 ? 1 : 2),
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: FrogStyle.space16 * 2, alignment: .leading), count: compact || windows.count == 1 ? 1 : 2),
                       alignment: .leading, spacing: compact ? 14 : 18) {
                 ForEach(compact ? Array(windows.prefix(4)) : windows) { entry in
                     VStack(alignment: .leading, spacing: 4) {
@@ -176,7 +181,7 @@ private struct UsageAccountLimits: View {
                 Text(account.status ?? "No current reading").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: account.windows.count == 1 ? 1 : 2),
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: FrogStyle.space16 * 2, alignment: .leading), count: account.windows.count == 1 ? 1 : 2),
                           alignment: .leading, spacing: 18) {
                     ForEach(account.windows) { UsageLimitView(window: $0, now: now) }
                 }.opacity(account.stale ? 0.55 : 1).help(account.status ?? "")
@@ -196,20 +201,20 @@ struct UsageLimitView: View {
     let now: Date
     var compact = false
     private var fraction: Double { window.percentage.isFinite ? min(1, max(0, window.percentage / 100)) : 0 }
-    /// Nearly used is critical whatever the pace; otherwise the bar says how the window is going.
+    /// The meters' one family (`FrogStyle.level`): the accent while all is well, on pace or under it, orange ahead
+    /// of pace, red nearly used whatever the pace. A window without a pace stays the accent until it runs low.
     private var meterColor: Color {
         if fraction >= 0.95 { return FrogStyle.critical }
         switch window.pace(at: now) {
         case "Ahead of pace": return FrogStyle.warning
-        case "Under pace": return FrogStyle.good
         case nil: return FrogStyle.level(fraction, warning: 0.8, critical: 0.95)
         default: return FrogStyle.accent
         }
     }
+    /// Only a pace that needs attention is coloured, in its bar's colour; on or under pace is plain muted text.
     private func paceColor(_ pace: String) -> Color {
         switch pace {
         case "Ahead of pace": FrogStyle.warning
-        case "Under pace": FrogStyle.good
         case "Limit reached": FrogStyle.critical
         default: FrogStyle.muted
         }
@@ -227,11 +232,12 @@ struct UsageLimitView: View {
             }
             FrogMeter(fraction: fraction, tint: meterColor, size: compact ? .compact : .regular, tick: elapsed)
                 .help("The tick marks the time gone in this window.")
-            HStack(spacing: 4) {
+            // No spacing: the pace brings its own " · ", so the dot sits evenly between the two.
+            HStack(spacing: 0) {
                 Text(window.leftText ?? "No reading since it renewed")
-                // A week's pace says something; a session's changes too fast to.
-                if (window.duration ?? 0) >= 604800 || !compact, let pace = window.pace(at: now) {
-                    Text("· \(pace)").foregroundStyle(paceColor(pace))
+                // Every bar names its pace, in the bar's colour, so the colours explain themselves.
+                if let pace = window.pace(at: now) {
+                    Text(" · \(pace)").foregroundStyle(paceColor(pace))
                         .help(elapsed.map { "\(Int(fraction * 100))% used with \(Int($0 * 100))% of the window gone" } ?? "")
                 }
                 Spacer(minLength: 4)
@@ -240,7 +246,7 @@ struct UsageLimitView: View {
                         .help(reset.formatted(date: .abbreviated, time: .shortened))
                 }
             }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
-        }.padding(.trailing, compact ? 0 : 8).accessibilityElement(children: .combine)
+        }.accessibilityElement(children: .combine)
     }
 }
 
@@ -253,17 +259,22 @@ private struct UsageActivitySection: View {
         let settings = usage.preferences
         let chart = usage.chart(provider: settings.provider, range: settings.range, metric: settings.metric)
         FrogSection("Activity") {
-            UsageMetricDropdown(usage: usage)
-            UsageRangeDropdown(usage: usage, compact: true)
-        } content: {
             VStack(alignment: .leading, spacing: 12) {
-                UsageActivityTotal(usage: usage, chart: chart, page: true)
+                // The figure leads; the period is a segmented choice level with it, each value named. The metric is
+                // chosen from the totals under the chart, so the card has no unlabelled dropdowns.
+                HStack(alignment: .top) {
+                    UsageActivityTotal(usage: usage, chart: chart, page: true)
+                    Spacer(minLength: FrogStyle.space12)
+                    CompactSegments(values: usage.ranges, selected: settings.range, title: { Self.rangeTitle($0) }) { range in
+                        var next = usage.preferences; next.range = range; usage.updatePreferences(next)
+                    }.accessibilityLabel("Activity period")
+                }
                 UsageActivityChart(usage: usage, chart: chart, compact: false)
             }.padding(.vertical, 10)
             if usage.loaded, chart.hasActivity { UsageTokenTotals(usage: usage, chart: chart).padding(.bottom, 10) }
             UsageActivityNotes(usage: usage, chart: chart, compact: false)
             if settings.provider == "OpenAI", !usage.hasAccountActivity {
-                FrogRowNote(text: "Account activity is unavailable; showing this Mac’s logs.")
+                FrogRowNote(text: "Showing this Mac’s logs. Account activity is unavailable.")
             }
         }
         if usage.loaded, chart.hasActivity, !chart.models.isEmpty {
@@ -283,10 +294,17 @@ private struct UsageActivitySection: View {
     }
 }
 
+extension UsageActivitySection {
+    /// "24 hours", "7 days", "30 days": short enough for segments, plain enough to need no key.
+    static func rangeTitle(_ range: String) -> String {
+        switch range { case "24h": "24 hours"; case "30d": "30 days"; default: "7 days" }
+    }
+}
+
 struct UsageMetricDropdown: View {
     @ObservedObject var usage: UsageDashboardModel
     var body: some View {
-        FrogDropdown(selected: usage.preferences.metric, options: usage.metrics, width: 120, compact: true,
+        FrogDropdown(selected: usage.preferences.metric, options: usage.metrics, width: 104, compact: true,
                      title: { $0 == "Input" ? "Uncached input" : $0 }) { metric in
             var next = usage.preferences; next.metric = metric; usage.updatePreferences(next)
         }.buttonTitle { $0 }.accessibilityLabel("Activity metric")
@@ -297,7 +315,7 @@ struct UsageRangeDropdown: View {
     @ObservedObject var usage: UsageDashboardModel
     var compact = false
     var body: some View {
-        FrogDropdown(selected: usage.preferences.range, options: usage.ranges, width: compact ? 70 : 150, compact: true,
+        FrogDropdown(selected: usage.preferences.range, options: usage.ranges, width: compact ? 60 : 150, compact: true,
                      title: Self.title) { range in
             var next = usage.preferences; next.range = range; usage.updatePreferences(next)
         }.buttonTitle { compact ? $0 : Self.title($0) }.accessibilityLabel("Activity period")
@@ -336,10 +354,7 @@ struct UsageActivityChart: View {
     var body: some View {
         let settings = usage.preferences
         if !usage.loaded {
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Reading token activity…").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-            }.frame(maxWidth: .infinity, minHeight: compact ? 64 : 150)
+            FrogLoadingNote(text: "Reading token activity…").frame(maxWidth: .infinity, minHeight: compact ? 64 : 150)
         } else if !chart.hasActivity {
             FrogChartPlaceholder(height: compact ? 64 : 150) {
                 VStack(spacing: 6) {
@@ -351,6 +366,8 @@ struct UsageActivityChart: View {
             UsageTrendChart(steps: UsageTrend(chart.points.map { ($0.date, $0.value) }).steps, compact: compact,
                             hourly: chart.range == "24h", timeZone: chart.account ? TimeZone(secondsFromGMT: 0)! : .current) {
                 usage.format($0, metric: settings.metric)
+            } axisFormat: {
+                usage.axisLabel($0, metric: settings.metric)
             }.id("\(settings.provider) \(settings.range)")
         }
     }
@@ -367,7 +384,7 @@ struct UsageActivityNotes: View {
         }
         if usage.loaded, usage.readingOlderActivity {
             HStack(spacing: 6) {
-                ProgressView().controlSize(.small)
+                FrogSpinner()
                 Text("Reading older logs…")
             }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).padding(.vertical, compact ? 0 : 6)
                 .help("The newest calls are counted first; the rest of the month follows.")
@@ -386,31 +403,51 @@ private struct UsageTokenTotals: View {
     let chart: UsageChart
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Total tokens").foregroundStyle(FrogStyle.muted)
-                Spacer()
-                Text(usage.format(chart.totalTokens, metric: "Input")).monospacedDigit()
-            }.font(FrogType.body)
-                .help("Uncached input, cache reads, cache writes and output.")
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+            // Every total is the same stat: its name over its figure. Total tokens leads; the chart's own metric is the
+            // figure above the chart, and choosing any other makes it the chart's. A plain grid on the card, the names
+            // on the card's text edge; the hover fill reaches past it.
+            // One row, a column each, so the totals never leave a hole the way a grid of three does with five.
+            HStack(spacing: FrogStyle.space4) {
+                UsageTokenTotal(title: "Total tokens", value: usage.format(chart.totalTokens, metric: "Input"), choosable: false)
+                    .help("Uncached input, cache reads, cache writes and output.")
+                // Every metric is here, the chart's own one marked as chosen, so this row is the chart's metric choice.
                 ForEach(chart.totals) { total in
-                    let selected = total.name == usage.preferences.metric
+                    let chosen = total.name == usage.preferences.metric
                     Button {
                         var next = usage.preferences; next.metric = total.name; usage.updatePreferences(next)
                     } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(total.label == "API cost" ? "API estimate" : total.label)
-                                .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                            Text(usage.format(total.value, metric: total.name)).font(GraphStyle.figure).monospacedDigit()
-                        }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(selected ? AnyShapeStyle(FrogStyle.selection) : AnyShapeStyle(FrogStyle.card),
-                                        in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-                            .contentShape(Rectangle())
+                        UsageTokenTotal(title: total.label == "API cost" ? "API estimate" : total.label,
+                                        value: usage.format(total.value, metric: total.name), chosen: chosen)
                     }.buttonStyle(.plain)
-                        .accessibilityAddTraits(selected ? .isSelected : [])
+                        .help(chosen ? "" : "Show \(total.label == "API cost" ? "the API estimate" : total.label.lowercased()) in the chart")
+                        .accessibilityAddTraits(chosen ? .isSelected : [])
                 }
-            }
+            }.padding(.horizontal, -FrogStyle.rowPadding)
         }
+    }
+}
+
+/// One total in the grid under the chart: its name and figure on the card itself, a hover fill only under the pointer,
+/// since choosing it makes it the chart's metric.
+private struct UsageTokenTotal: View {
+    let title: String
+    let value: String
+    var choosable = true
+    /// The chart's metric: filled like a chosen row, its name in the series colour beside the legend dot.
+    var chosen = false
+    @State private var hovering = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: FrogStyle.space2) {
+            HStack(spacing: 5) {
+                if chosen { Circle().fill(FrogStyle.series).frame(width: 6, height: 6) }
+                Text(L10n.text(title)).font(FrogType.small).foregroundStyle(chosen ? FrogStyle.ink : FrogStyle.muted).lineLimit(1)
+            }
+            Text(value).font(GraphStyle.figure).monospacedDigit().lineLimit(1)
+        }.padding(.horizontal, FrogStyle.rowPadding).padding(.vertical, FrogStyle.space6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .frogRowHighlight(hovering: hovering && choosable && !chosen, selected: chosen)
+            .onHover { hovering = $0 }
     }
 }
 
@@ -471,7 +508,7 @@ private struct UsageClaudeSection: View {
         let accounts = usage.claudeAccountsEnabled ? usage.accounts() : []
         FrogSection("Claude") {
             if usage.claudeAccountsEnabled {
-                Button("Add folder…") { addFolder() }.buttonStyle(.frog(compact: true))
+                FrogAddButton("Add folder") { addFolder() }
                     .help("A Claude app data folder or a Claude Code folder Frog did not find")
             }
         } content: {
@@ -591,11 +628,11 @@ private struct UsageAccountSettingsRow: View {
                     .font(FrogType.caption).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             }
             if account.needsLiveSetup {
-                Button("Set up live readings…", action: setUpLiveReadings).buttonStyle(.frog(compact: true))
+                Button("Set up live readings…", action: setUpLiveReadings).buttonStyle(.frog())
                     .help("Signs Claude Code in as \(account.label), so Frog can check its limits with Anthropic")
             } else if account.needsSignIn {
                 Button(account.checkingSignIn ? "Checking the login…" : "Sign in to Claude Code…") { ClaudeSignIn.start(usage, account: account.id) }
-                    .buttonStyle(.frog(compact: true)).disabled(account.checkingSignIn)
+                    .buttonStyle(.frog()).disabled(account.checkingSignIn)
                     .help("Opens Terminal to sign in to Claude Code as \(account.label), in this account’s own Claude Code folder")
             }
         }.help(usage.accountLogin(for: account.id) ?? "")
@@ -615,7 +652,7 @@ private struct UsageAccountLabelField: View {
     @State private var text = ""
     @FocusState private var focused: Bool
     var body: some View {
-        TextField("Label", text: $text)
+        FrogTextField(placeholder: "Label", text: $text)
             .textFieldStyle(.plain).font(FrogType.label)
             .padding(.horizontal, 8).frame(width: 120)
             .frogControlSurface(height: FrogStyle.compactHeight)
@@ -705,7 +742,9 @@ struct UsageTrend {
     }
 }
 
-/// The running total as a line over each bucket's amount as a thin bar.
+/// A period's activity. On the page each bucket is a bar on a labelled scale, so days read as a series against one
+/// baseline; the running total, which the figure above already states, is in the chip under the pointer. A popup's
+/// small chart keeps to the running total's line.
 struct UsageTrendChart: View {
     let steps: [UsageTrend.Step]
     let compact: Bool
@@ -713,31 +752,32 @@ struct UsageTrendChart: View {
     /// Account buckets are UTC days; local ones follow this Mac's time zone.
     let timeZone: TimeZone
     let format: (Double) -> String
+    /// The scale's labels, which drop a whole figure's cents ("$100"); `format` when nil.
+    var axisFormat: ((Double) -> String)? = nil
     @State private var selectedDate: Date?
 
     var body: some View {
+        if compact { line } else {
+            UsageBucketChart(steps: steps, hourly: hourly, timeZone: timeZone, format: format, axisFormat: axisFormat ?? format)
+        }
+    }
+
+    private var line: some View {
         let selected = selectedDate.flatMap { date in
             steps.min { abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date)) }
         }
-        VStack(spacing: 4) {
+        return VStack(spacing: 4) {
             Chart {
-                FrogChartGrid(values: compact ? [0.5] : [0, 0.5, 1])
+                FrogChartGrid(values: [0.5])
                 ForEach(steps) { step in
                     AreaMark(x: .value("Date", step.date), y: .value("Total", step.line))
                         .interpolationMethod(.monotone).foregroundStyle(FrogChart.areaFill(FrogStyle.series))
                         .accessibilityHidden(true)
                 }
                 ForEach(steps) { step in
-                    BarMark(x: .value("Date", step.date), y: .value("Amount", step.bar), width: .fixed(compact ? 2 : 4))
-                        .cornerRadius(FrogStyle.smallRadius)
-                        .foregroundStyle(FrogStyle.series.opacity(selected == nil ? 0.32 : selected?.id == step.id ? 0.9 : 0.18))
-                        .accessibilityLabel(label(step.date, long: true))
-                        .accessibilityValue(format(step.amount))
-                }
-                ForEach(steps) { step in
                     LineMark(x: .value("Date", step.date), y: .value("Total", step.line))
                         .interpolationMethod(.monotone).lineStyle(FrogChart.line).foregroundStyle(FrogStyle.series)
-                        .accessibilityLabel("Total by \(label(step.date, long: true))")
+                        .accessibilityLabel("Total by \(UsageBucketChart.label(step.date, hourly: hourly, long: true, timeZone: timeZone))")
                         .accessibilityValue(format(step.total))
                 }
                 if let last = steps.last {
@@ -752,18 +792,19 @@ struct UsageTrendChart: View {
             .chartYScale(domain: 0...1, range: .plotDimension(startPadding: 6, endPadding: FrogChart.endInset))
             .chartXAxis(.hidden).chartYAxis(.hidden).chartLegend(.hidden)
             .chartXSelection(value: $selectedDate)
-            .frogChartPlot(compact: compact)
-            .frame(height: compact ? 64 : 150)
+            .frogChartPlot(compact: true)
+            .frame(height: 64)
             .overlay(alignment: FrogChart.chipAlignment(pointerAt: pointer(selected))) {
                 if let selected {
                     FrogChartChip {
-                        Text("\(label(selected.date, long: true)) · \(format(selected.amount)) · \(format(selected.total)) total")
+                        Text("\(UsageBucketChart.label(selected.date, hourly: hourly, long: true, timeZone: timeZone)) · \(format(selected.amount)) · \(format(selected.total)) total")
                     }
                 }
             }
-            .help("The line is the running total for the period. The bars are each \(hourly ? "hour" : "day")’s amount.")
+            .help("The line is the running total for the period.")
             if let first = steps.first, let last = steps.last {
-                GraphAxis(leading: label(first.date, long: false), trailing: label(last.date, long: false))
+                GraphAxis(leading: UsageBucketChart.label(first.date, hourly: hourly, long: false, timeZone: timeZone),
+                          trailing: UsageBucketChart.label(last.date, hourly: hourly, long: false, timeZone: timeZone))
             }
         }
     }
@@ -778,8 +819,100 @@ struct UsageTrendChart: View {
         let first = steps.first?.date ?? .now, last = steps.last?.date ?? first
         return last > first ? first...last : first.addingTimeInterval(-3600)...first.addingTimeInterval(3600)
     }
+}
 
-    private func label(_ date: Date, long: Bool) -> String {
+/// The page's activity chart: one rounded bar per day (or hour) in the accent, on a scale whose top is a round
+/// figure, labelled in a column left of the plot at 0, half and the top, as Stocks and Screen Time label theirs. A
+/// day with a little activity keeps a short visible stub, so no bar shrinks to a stray dot; a day with none has no bar.
+struct UsageBucketChart: View {
+    let steps: [UsageTrend.Step]
+    let hourly: Bool
+    let timeZone: TimeZone
+    let format: (Double) -> String
+    let axisFormat: (Double) -> String
+    @State private var selectedKey: String?
+
+    static let plotHeight: CGFloat = 150
+    /// The share of the scale a bucket with any activity is drawn at least, so it shows as a bar.
+    static let minimumShare = 0.025
+
+    var body: some View {
+        let top = Self.niceCeiling(steps.map(\.amount).max() ?? 0, floor: Self.smallestTop(axisFormat))
+        let zeroLabel = axisFormat(0), topLabel = axisFormat(top)
+        let selected = selectedKey.flatMap(Int.init).flatMap { steps.indices.contains($0) ? steps[$0] : nil }
+        let stride = max(1, Int((Double(steps.count) / 7).rounded(.up)))
+        Chart {
+            ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                if step.amount > 0 {
+                    BarMark(x: .value("Bucket", String(index)), y: .value("Amount", max(step.amount, top * Self.minimumShare)),
+                            width: .ratio(steps.count > 14 ? 0.7 : 0.56))
+                        .clipShape(UnevenRoundedRectangle(topLeadingRadius: FrogStyle.smallRadius, topTrailingRadius: FrogStyle.smallRadius, style: .continuous))
+                        .foregroundStyle(FrogStyle.series.opacity(selected == nil || selected?.id == step.id ? 0.9 : 0.35))
+                        .accessibilityLabel(Self.label(step.date, hourly: hourly, long: true, timeZone: timeZone))
+                        .accessibilityValue(format(step.amount))
+                } else {
+                    // An empty bucket keeps its place on the axis without a mark.
+                    BarMark(x: .value("Bucket", String(index)), y: .value("Amount", 0)).foregroundStyle(.clear)
+                        .accessibilityLabel(Self.label(step.date, hourly: hourly, long: true, timeZone: timeZone))
+                        .accessibilityValue(format(0))
+                }
+            }
+        }
+        .chartYScale(domain: 0...max(top, .leastNonzeroMagnitude))
+        .chartYAxis {
+            AxisMarks(position: .leading, values: [0, top / 2, top]) { value in
+                AxisGridLine(stroke: FrogChart.gridLine).foregroundStyle(FrogStyle.hairline)
+                AxisValueLabel {
+                    // A middle that rounds to the same words as 0 or the top is left out rather than said twice.
+                    if let amount = value.as(Double.self),
+                       amount == 0 || amount == top || ![zeroLabel, topLabel].contains(axisFormat(amount)) {
+                        Text(amount == 0 ? "0" : axisFormat(amount)).font(FrogType.small).monospacedDigit().foregroundStyle(FrogStyle.muted)
+                    }
+                }
+            }
+        }
+        .chartXAxis {
+            // A label under every bar for a week, and every few for a month or a day, counted back from the newest.
+            AxisMarks(values: steps.indices.filter { (steps.count - 1 - $0) % stride == 0 }.map(String.init)) { value in
+                AxisValueLabel(centered: true, collisionResolution: .disabled) {
+                    if let key = value.as(String.self), let index = Int(key), steps.indices.contains(index) {
+                        Text(Self.label(steps[index].date, hourly: hourly, long: false, timeZone: timeZone))
+                            .font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize()
+                    }
+                }
+            }
+        }
+        .chartLegend(.hidden)
+        .chartXSelection(value: $selectedKey)
+        .frame(height: Self.plotHeight + 20)
+        .overlay(alignment: FrogChart.chipAlignment(pointerAt: selected.flatMap { step in
+            steps.firstIndex { $0.id == step.id }.map { Double($0) / Double(max(1, steps.count - 1)) }
+        } ?? 0)) {
+            if let selected {
+                FrogChartChip {
+                    Text("\(Self.label(selected.date, hourly: hourly, long: true, timeZone: timeZone)) · \(format(selected.amount)) · \(format(selected.total)) so far")
+                }.padding(.leading, 48)
+            }
+        }
+        .help(L10n.text(hourly ? "Each bar is one hour’s amount." : "Each bar is one day’s amount."))
+    }
+
+    /// The smallest round figure (1, 2, 2.5 or 5 times a power of ten) at or above the busiest bucket, so the scale's
+    /// top and middle read as plain numbers.
+    static func niceCeiling(_ value: Double, floor minimum: Double = 0) -> Double {
+        guard value.isFinite, value > 0 else { return max(1, minimum) }
+        guard value > minimum else { return minimum }
+        let power = pow(10, floor(log10(value)))
+        return ([1, 2, 2.5, 5, 10].map { $0 * power }.first { $0 >= value * 0.9999 }) ?? 10 * power
+    }
+
+    /// The smallest top whose half the labels can still write: two cents for an amount in cents ($0.02 over $0.01),
+    /// none for a count.
+    static func smallestTop(_ format: (Double) -> String) -> Double {
+        format(0.01) == format(0) ? 0 : 0.02
+    }
+
+    static func label(_ date: Date, hourly: Bool, long: Bool, timeZone: TimeZone) -> String {
         var style = hourly ? (long ? Date.FormatStyle(date: .abbreviated, time: .shortened) : .dateTime.hour())
             : .dateTime.month(.abbreviated).day()
         style.timeZone = timeZone

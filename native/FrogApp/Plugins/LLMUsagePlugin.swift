@@ -152,9 +152,10 @@ final class LLMUsagePlugin: FrogPlugin, ObservableObject {
 
     var menu: [MenuContribution] {
         guard let usage else { return [] }
-        return [MenuContribution(id: "llm-usage.tab", placement: .tab(title: "Usage", symbol: "chart.bar.xaxis"), order: 20) { [weak self] in
-            AnyView(UsageMenuTab(usage: usage) { self?.context.openPage() })
-        }]
+        return [MenuContribution(id: "llm-usage.tab", placement: .tab(title: "Usage", symbol: "chart.bar.xaxis"), order: 20,
+                                 content: { [weak self] in AnyView(UsageMenuTab(usage: usage) { self?.context.openPage() }) },
+                                 // When the limits were read, on the footer's leading side like the other tabs' status.
+                                 status: { AnyView(UsageMenuFooterStatus(usage: usage)) })]
     }
 
     var actions: [PluginAction] {

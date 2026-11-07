@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import FrogCore
 
@@ -13,35 +14,67 @@ struct LocalToolProvidersView: View {
     @State private var modelError: String?
 
     var body: some View {
-        FrogSection("Coding tools", footer: nil, accessory: {
-            HStack(spacing: 8) {
-                if refreshing { ProgressView().controlSize(.small) }
-                Button("Refresh") { Task { await refresh() } }.buttonStyle(.frog(compact: true)).disabled(refreshing)
+        VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
+            FrogSection("On this Mac", accessory: {
+                // While it looks, a spinner and the word for it take the button's place, so it never spins unexplained.
+                if refreshing {
+                    HStack(spacing: FrogStyle.space6) {
+                        FrogSpinner(size: .mini, label: "Looking for coding tools")
+                        Text("Looking…")
+                    }.accessibilityElement(children: .combine)
+                }
+                else { Button("Refresh") { Task { await refresh() } }.buttonStyle(.frog()) }
+            }) {
+                ForEach(statuses) { status in
+                    // The tool's own tile, its state as the caption's first words, and one control at the row's end:
+                    // Connected once it is signed in, the sign-in command while it is not, Install while it is missing.
+                    // Which tool the rules use is chosen in the card below.
+                    FrogRow(status.kind.title, caption: .attributed(Self.caption(status)), icon: {
+                        PluginIconTile(mark: .tool(status.kind))
+                    }) {
+                        if status.installed, status.authentication == .signedIn, status.supportsTextTransforms {
+                            FrogStatePill(text: "Connected", on: true)
+                        } else if status.installed, status.authentication == .signedOut, let command = status.kind.commands.first {
+                            CopyAction(title: "Copy command", labeled: true) { ViewActions.copy(command) }
+                                .help("Copies \(command)")
+                        } else if status.installed {
+                            FrogStatePill(text: "Installed", on: false)
+                        } else {
+                            Button("Install") { NSWorkspace.shared.open(status.kind.website) }.buttonStyle(.frog())
+                                .help("Opens \(status.kind.title)'s website")
+                        }
+                    }.help(status.detail)
+                }
+                if statuses.isEmpty, refreshing { FrogLoadingNote(text: "Looking for coding tools…") }
             }
-        }) {
-            ForEach(statuses) { status in
-                FrogRow(status.kind.title, caption: status.detail, icon: {
-                    Image(systemName: status.installed ? "checkmark.circle.fill" : "circle.dashed")
-                        .foregroundStyle(status.installed ? FrogStyle.accent : FrogStyle.muted).frame(width: 20)
-                }, control: { EmptyView() })
+            // Which tool and model Frog's rules use; the tool is named here so the model below is clearly its.
+            FrogSection("Use with Frog's rules",
+                        footer: "Coding tools use their own sign-in. Change accounts in the tool itself.") {
+                FrogRow("Tool") {
+                    FrogDropdown(selection: $selected, options: LocalToolKind.allCases, title: { $0.title })
+                }
+                // The suggestions and a typed ID are one choice in two rows, so neither control is squeezed.
+                FrogRow("Model") {
+                    FrogDropdown(selection: $model, options: [""] + models.map(\.id),
+                                 searchPrompt: models.count > 8 ? "Find a model" : nil, placeholder: "Other model",
+                                 title: { id in id.isEmpty ? "\(selected.title)'s default" : models.first { $0.id == id }?.name ?? id })
+                }
+                // What the field is for sits in its placeholder, so the row is the height of the two above it.
+                FrogRow("Model ID") {
+                    FrogTextField(placeholder: "Any model not in the list", text: $model)
+                        .textFieldStyle(.plain).font(FrogType.body).padding(.horizontal, FrogStyle.space10).frame(width: 220).frogControlSurface()
+                        .accessibilityLabel("\(selected.title) model ID")
+                }
+                if let modelError { FrogRowNote(text: modelError) }
+                if selected == .opencode {
+                    FrogRowNote(text: "OpenCode keeps its own CLI history, independently of Frog's history setting.")
+                }
+                FrogRow("Add \(selected.title) as a provider", caption: selectReason) {
+                    Button("Add") { onSelect(selected, model.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                        .buttonStyle(.frog()).frogDisabled(canSelect ? nil : selectReason)
+                        .accessibilityLabel("Add \(selected.title) as a provider")
+                }
             }
-            FrogRow("Tool") {
-                FrogDropdown(selection: $selected, options: LocalToolKind.allCases, title: { $0.title })
-            }
-            HStack(spacing: FrogStyle.space8) {
-                TextField("Tool default, or model ID", text: $model)
-                    .textFieldStyle(.plain).font(FrogType.body).padding(.horizontal, 8).frogControlSurface()
-                    .accessibilityLabel("Coding-tool model")
-                FrogDropdown(selection: $model, options: models.map(\.id), width: 105, searchPrompt: "Find a model",
-                             title: { id in models.first { $0.id == id }?.name ?? id }).buttonTitle { _ in "Models" }
-                Button("Use model") { onSelect(selected, model.trimmingCharacters(in: .whitespacesAndNewlines)) }
-                    .buttonStyle(.frog(.primary)).disabled(!canSelect)
-            }.padding(.vertical, FrogStyle.space10)
-            if let modelError { FrogRowNote(text: modelError) }
-            if selected == .opencode {
-                FrogRowNote(text: "OpenCode keeps its own CLI history, independently of Frog's history setting.")
-            }
-            FrogRowNote(text: "Uses your CLI login and your plan's limits. Claude Desktop alone has no supported headless interface; sign in or change accounts in the tool itself.")
         }
         .task { await refresh() }
         .task(id: selected) {
@@ -50,6 +83,50 @@ struct LocalToolProvidersView: View {
             catch is CancellationError { }
             catch { modelError = error.localizedDescription }
         }
+        // Start on a tool that is installed, rather than on the first one in the list.
+        .onChange(of: statuses.map(\.installed)) { _, _ in
+            if statuses.first(where: { $0.kind == selected })?.installed != true,
+               let installed = statuses.first(where: { $0.installed && $0.supportsTextTransforms }) { selected = installed.kind }
+        }
+    }
+
+    /// One line under the tool's name: its state first, in the warning colour when it needs a step, then that step
+    /// with its command in the code font ("Not signed in · Run `claude auth login` in Terminal"). The whole status is
+    /// the row's tooltip.
+    static func caption(_ status: LocalToolStatus) -> AttributedString {
+        let state: String
+        var step: String?
+        var warns = false
+        if !status.installed {
+            state = "Not installed"
+        } else if !status.supportsTextTransforms {
+            state = "Needs an update"; warns = true
+            step = "This version cannot rewrite text"
+        } else {
+            switch status.authentication {
+            case .signedIn: state = "Signed in"; step = "Uses your plan's limits"
+            case .signedOut:
+                state = "Not signed in"; warns = true
+                step = status.kind == .opencode ? "Connect a provider with `/connect` in OpenCode"
+                    : status.kind.commands.first.map { "Run `\($0)` in Terminal" } ?? "Sign in to \(status.kind.title)"
+            case .unknown: state = "Installed"; step = "Sign-in could not be checked"
+            case .notChecked: state = "Installed"; step = "Checking the sign-in…"
+            }
+        }
+        var head = AttributedString(L10n.text(state))
+        if warns { head.foregroundColor = FrogStyle.warning }
+        guard let step else { return head }
+        return head + AttributedString(" · ") + InlineCode.attributed(L10n.text(step))
+    }
+
+    /// Why Use is not available yet, or what it does.
+    private var selectReason: String {
+        guard let status = statuses.first(where: { $0.kind == selected }) else { return "Checking \(selected.title)…" }
+        if !status.installed { return "\(selected.title) is not installed on this Mac." }
+        if !status.supportsTextTransforms { return "This version of \(selected.title) cannot rewrite text." }
+        if status.authentication == .signedOut { return "Sign in to \(selected.title) first." }
+        if !LocalToolRequest.isValidModel(model.trimmingCharacters(in: .whitespacesAndNewlines)) { return "Check the model ID." }
+        return "Rules can then choose its models."
     }
 
     private var canSelect: Bool {

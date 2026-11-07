@@ -206,7 +206,7 @@ public enum ConfigurationFile {
         }
         if provider.kind.localTool != nil {
             guard provider.endpoint.isEmpty, provider.models.allSatisfy({ LocalToolRequest.isValidModel($0.id) && $0.category == .text }) else {
-                throw FrogError.message("Coding tools use their existing login and text models, without an API endpoint.")
+                throw FrogError.message("Coding tools use their own sign-in and text models, without an API endpoint.")
             }
         } else { try validateEndpoint(provider) }
     }

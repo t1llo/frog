@@ -1,7 +1,9 @@
+import AppKit
 import SwiftUI
 import FrogCore
 
-/// The Window switcher page: its shortcut, and what stops it when something does.
+/// The Window switcher page: its shortcut, what stops it when something does, how the panel looks and the keys
+/// it answers to while it is open.
 struct WindowSwitcherView: View {
     @EnvironmentObject private var model: AppModel
     let plugin: WindowSwitcherPlugin
@@ -9,8 +11,9 @@ struct WindowSwitcherView: View {
     var body: some View {
         FrogPage {
             FrogPageHeader(title: "Window switcher", subtitle: "Every window, not every app. Type to search.")
-            FrogSection {
-                FrogRow("Shortcut", caption: "Hold to keep switching, add Shift to go back") {
+            // The shortcut heads the keys it answers to, so no card holds one row.
+            FrogSection("Keys") {
+                FrogRow("Shortcut", caption: "Hold it to keep switching.") {
                     HotkeyRecorder(hotkey: Binding(get: { plugin.settings.shortcut.hotkey }, set: { value in
                         guard let value else { return }
                         do { try plugin.setShortcut(value) } catch { model.report(error) }
@@ -23,7 +26,77 @@ struct WindowSwitcherView: View {
                 } else if plugin.status.isIssue {
                     FrogRowNote(text: plugin.status.text, tone: FrogStyle.warning)
                 }
+                // The keys the open panel answers to, two to a line as a cheat sheet sets them: six full rows read
+                // as six settings, and none of them can be changed.
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: FrogStyle.space16 + FrogStyle.space8), GridItem(.flexible())],
+                          alignment: .leading, spacing: 0) {
+                    ForEach(WindowSwitcherKey.all) { key in
+                        HStack(spacing: FrogStyle.space8) {
+                            Text(L10n.text(key.title)).font(FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
+                            Spacer(minLength: FrogStyle.space8)
+                            KeyCaps(key.keys)
+                        }
+                        .frame(height: FrogStyle.menuRowHeight + FrogStyle.space4)
+                        .accessibilityElement(children: .combine)
+                    }
+                }.padding(.vertical, FrogStyle.space6)
+            }
+            VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                FrogSectionHeader("Preview")
+                WindowSwitcherPreview()
             }
         }
+    }
+}
+
+/// One key the open panel answers to, as the page lists them.
+struct WindowSwitcherKey: Identifiable {
+    let title: String
+    let keys: [String]
+    var id: String { title }
+
+    static let all = [
+        WindowSwitcherKey(title: "Next or previous window", keys: ["↑", "↓"]),
+        WindowSwitcherKey(title: "Go back one window", keys: ["⇧"]),
+        WindowSwitcherKey(title: "Search windows", keys: ["A–Z"]),
+        WindowSwitcherKey(title: "Delete a typed letter", keys: ["⌫"]),
+        WindowSwitcherKey(title: "Switch to the window", keys: ["↩"]),
+        WindowSwitcherKey(title: "Close without switching", keys: ["esc"]),
+    ]
+}
+
+/// The real panel with a few sample windows of apps every Mac has, drawn as it opens over other apps.
+/// It only shows what the switcher looks like; it takes no clicks.
+struct WindowSwitcherPreview: View {
+    @StateObject private var display = Self.sample()
+
+    var body: some View {
+        WindowSwitcherOverlay(model: display, choose: { _ in }, hover: { _ in })
+            .frame(height: WindowSwitcherLayout.size(windowCount: display.windows.count).height)
+            .allowsHitTesting(false)
+            .padding(.vertical, FrogStyle.space16 + FrogStyle.space8)
+            .frame(maxWidth: .infinity)
+            .frogTableSurface()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(L10n.text("Preview of the window switcher"))
+    }
+
+    private static func sample() -> WindowSwitcherDisplay {
+        let display = WindowSwitcherDisplay()
+        let apps: [(pid: pid_t, name: String, title: String, path: String, minimized: Bool)] = [
+            (1, "Notes", "Weekend plans", "/System/Applications/Notes.app", false),
+            (2, "Maps", "Lisbon", "/System/Applications/Maps.app", false),
+            (3, "Finder", "Downloads", "/System/Library/CoreServices/Finder.app", false),
+            (4, "Terminal", "~ — zsh", "/System/Applications/Utilities/Terminal.app", true),
+        ]
+        display.windows = apps.map {
+            SwitcherWindow(id: UUID(), pid: $0.pid, appName: $0.name, title: $0.title, minimized: $0.minimized, hidden: false)
+        }
+        // Resolved like ApplicationIcon, so a symlinked app never shows Finder's alias arrow.
+        display.icons = Dictionary(uniqueKeysWithValues: apps.compactMap { app in
+            FileManager.default.fileExists(atPath: app.path) ? (app.pid, NSWorkspace.shared.icon(forFile: URL(fileURLWithPath: app.path).resolvingSymlinksInPath().path)) : nil
+        })
+        display.selected = display.windows.dropFirst().first?.id
+        return display
     }
 }

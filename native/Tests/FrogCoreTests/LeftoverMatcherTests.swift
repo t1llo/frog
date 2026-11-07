@@ -15,7 +15,7 @@ final class LeftoverMatcherTests: XCTestCase {
                      "COM.Example.App.plist"] {
             let match = matcher.match(name: name, location: .preferences)
             XCTAssertEqual(match?.confidence, .certain, name)
-            XCTAssertEqual(match?.reason, "Named after the bundle ID com.example.app.", name)
+            XCTAssertEqual(match?.reason, "Named after its bundle ID.", name)
             XCTAssertEqual(match?.sharedWith, [], name)
         }
     }
@@ -46,10 +46,10 @@ final class LeftoverMatcherTests: XCTestCase {
         let matcher = LeftoverMatcher(app: example, otherApps: [])
         let helper = matcher.match(name: "com.example.app.helper.plist", location: .preferences)
         XCTAssertEqual(helper?.confidence, .certain)
-        XCTAssertEqual(helper?.reason, "Named after com.example.app.helper, a part of Example.")
+        XCTAssertEqual(helper?.reason, "Named after a part of Example.")
         let group = matcher.match(name: "9ABCDE.com.example", location: .groupContainers)
         XCTAssertEqual(group?.confidence, .certain)
-        XCTAssertEqual(group?.reason, "Named after the app group 9ABCDE.com.example.")
+        XCTAssertEqual(group?.reason, "Named after one of its app groups.")
     }
 
     func testAnExactDistinctiveNameIsLikelyButGenericOrShortNamesAreNot() {

@@ -1,38 +1,15 @@
 import Foundation
 
 /// What the layout picker lists and which tile is selected: the layouts that place the window,
-/// grouped as the cheat sheet groups them, five tiles to a row, filtered by the typed text.
+/// grouped as the cheat sheet groups them, four tiles to a row in every section, filtered by the typed text.
 public struct LayoutPickerModel: Equatable, Sendable {
     public struct Tile: Equatable, Sendable, Identifiable {
         public var action: WindowAction
         public var hotkey: Hotkey?
-        /// The full name, for VoiceOver and help. The filter matches it and `name`.
+        /// The layout's one name (`WindowAction.title`), as every other surface names it. The filter matches it,
+        /// its earlier names (`WindowAction.searchKeywords`) and the tile's groups.
         public var title: String { action.title }
-        /// The name under its section's heading, one short line: "Left" under Halves, "50%" under Sizes.
-        public var name: String {
-            switch action {
-            case .leftHalf, .leftThird: "Left"
-            case .rightHalf, .rightThird: "Right"
-            case .topHalf: "Top"
-            case .bottomHalf: "Bottom"
-            case .topLeft: "Top left"
-            case .topRight: "Top right"
-            case .bottomLeft: "Bottom left"
-            case .bottomRight: "Bottom right"
-            case .centerThird, .center: "Center"
-            case .leftTwoThirds: "Left ⅔"
-            case .rightTwoThirds: "Right ⅔"
-            case .maximize: "Maximize"
-            case .centeredSmall: "50%"
-            case .centeredMedium: "70%"
-            case .centeredLarge: "90%"
-            case .nextDisplay: "Next"
-            case .previousDisplay: "Previous"
-            case .restore: "Restore"
-            case .minimize: "Minimize"
-            case .toggleFullScreen: "Full screen"
-            }
-        }
+        public var name: String { action.title }
         public var id: String { action.rawValue }
         public init(action: WindowAction, hotkey: Hotkey?) { self.action = action; self.hotkey = hotkey }
     }
@@ -41,18 +18,33 @@ public struct LayoutPickerModel: Equatable, Sendable {
         public var title: String
         public var tiles: [Tile]
         public var id: String { title }
-        /// The tiles in rows of `LayoutPickerModel.columns`.
+        /// How many tiles one of its rows holds: four in every section, so tiles are one width and their columns
+        /// line up from section to section.
+        public var columns: Int { LayoutPickerModel.columns }
+        /// The tiles in rows of `columns`. The two-thirds start a row of their own under the three thirds.
         public var rows: [[Tile]] {
-            stride(from: 0, to: tiles.count, by: LayoutPickerModel.columns).map { Array(tiles[$0..<min($0 + LayoutPickerModel.columns, tiles.count)]) }
+            var rows: [[Tile]] = []
+            for tile in tiles {
+                let startsRow = tile.action == .leftTwoThirds || (tile.action == .rightTwoThirds && !tiles.contains { $0.action == .leftTwoThirds })
+                if rows.isEmpty || rows[rows.count - 1].count == columns || (startsRow && !rows[rows.count - 1].isEmpty) { rows.append([]) }
+                rows[rows.count - 1].append(tile)
+            }
+            return rows
         }
         public init(title: String, tiles: [Tile]) { self.title = title; self.tiles = tiles }
     }
 
     public enum Direction: Sendable { case left, right, up, down }
 
-    public static let columns = 5
-    /// The section titles in order; the cheat sheet's, without its commands.
-    public static let sectionTitles = ["Halves", "Quarters", "Thirds", "Sizes", "Displays", "Undo"]
+    public static let columns = 4
+    /// The section titles in order: the cheat sheet's, without its commands, and with its two short groups,
+    /// Displays and Undo, in one row of their own. Center, which keeps the window's size, joins them, so Sizes and
+    /// More are four tiles each.
+    public static let sectionTitles = ["Halves", "Quarters", "Thirds", "Sizes", "More"]
+    static func group(for action: WindowAction) -> String {
+        let group = WindowCheatSheet.group(for: action)
+        return group == "Displays" || group == "Undo" || action == .center ? "More" : group
+    }
     /// Minimize and full screen leave nothing to place, so the picker does not offer them.
     public static let offered = WindowAction.allCases.filter { $0 != .minimize && $0 != .toggleFullScreen }
 
@@ -104,10 +96,12 @@ public struct LayoutPickerModel: Equatable, Sendable {
     static func sections(query: String, hotkeys: [WindowAction: Hotkey]) -> [Section] {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return sectionTitles.compactMap { title in
-            let tiles = offered.filter { WindowCheatSheet.group(for: $0) == title }
+            let tiles = offered.filter { group(for: $0) == title }
                 .map { Tile(action: $0, hotkey: hotkeys[$0]) }
                 .filter { tile in
-                    text.isEmpty || [tile.title, tile.name, title].contains { $0.localizedCaseInsensitiveContains(text) }
+                    // The cheat sheet's own group too, which More folds in: "undo" still finds Restore.
+                    text.isEmpty || [tile.title, tile.action.searchKeywords, title, WindowCheatSheet.group(for: tile.action)]
+                        .contains { $0.localizedCaseInsensitiveContains(text) }
                 }
             return tiles.isEmpty ? nil : Section(title: title, tiles: tiles)
         }

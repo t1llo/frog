@@ -15,23 +15,46 @@ struct ShortcutsSettingsView: View {
         FrogPage {
             FrogPageHeader(title: "Shortcuts", subtitle: "Keys that open apps and run actions from anywhere")
             if let unreadable = plugin.unreadable { FrogRowNote(text: unreadable, tone: FrogStyle.warning) }
-            FrogSection("Apps", accessory: { addApp }) {
-                if apps.isEmpty { FrogRowNote(text: catalog.scanned ? "Add an app, then record its keys." : "Looking for apps…") }
-                ForEach(apps, id: \.self) { index in
-                    row(index) {
-                        if let app = bindings[index].app, let url = ShortcutsPlugin.applicationURL(app, path: bindings[index].with["path"]) {
-                            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 20, height: 20)
-                        } else {
-                            Image(systemName: "questionmark.app").frame(width: 20, height: 20).foregroundStyle(FrogStyle.muted)
+            if apps.isEmpty, actions.isEmpty, catalog.scanned {
+                // Nothing yet: one quiet card with both ways to start, not two empty sections.
+                FrogEmptyState(symbol: ShortcutsPlugin.info.symbol, title: "No shortcuts yet",
+                               message: "Give any app or action keys of its own, such as these.",
+                               tint: ShortcutsPlugin.info.tint) {
+                    VStack(spacing: FrogStyle.space16) {
+                        ShortcutExamples()
+                        HStack(spacing: FrogStyle.space8) {
+                            // One primary, as every empty state has: apps are what most people start with.
+                            ShortcutAddButton(title: "Add app", list: appList, primary: true)
+                            ShortcutAddButton(title: "Add action", list: actionList, primary: false)
+                        }
+                    }
+                }.frogTableSurface()
+            } else {
+                FrogSection("Apps", accessory: { addApp }) {
+                    if apps.isEmpty, catalog.scanned {
+                        FrogRow("No app shortcuts yet", caption: "Open any app with keys of your own.")
+                    } else if apps.isEmpty {
+                        FrogLoadingNote(text: "Looking for apps…")
+                            .frame(maxWidth: .infinity, minHeight: FrogStyle.rowHeight, alignment: .leading)
+                    }
+                    ForEach(apps, id: \.self) { index in
+                        row(index) {
+                            if let app = bindings[index].app, let url = ShortcutsPlugin.applicationURL(app, path: bindings[index].with["path"]) {
+                                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 20, height: 20)
+                            } else {
+                                Image(systemName: "questionmark.app").frame(width: 20, height: 20).foregroundStyle(FrogStyle.muted)
+                            }
                         }
                     }
                 }
-            }
-            FrogSection("Actions", accessory: { addAction }) {
-                if actions.isEmpty { FrogRowNote(text: "Add an action, such as Lock screen or Open the command bar.") }
-                ForEach(actions, id: \.self) { index in
-                    row(index) {
-                        Image(systemName: symbol(of: bindings[index])).frame(width: 20, height: 20).foregroundStyle(FrogStyle.muted)
+                FrogSection("Actions", accessory: { addAction }) {
+                    if actions.isEmpty {
+                        FrogRow("No action shortcuts yet", caption: "Lock the screen, open the command bar or run any Frog action.")
+                    }
+                    ForEach(actions, id: \.self) { index in
+                        row(index) {
+                            Image(systemName: symbol(of: bindings[index])).frame(width: 20, height: 20).foregroundStyle(FrogStyle.muted)
+                        }
                     }
                 }
             }
@@ -46,12 +69,13 @@ struct ShortcutsSettingsView: View {
             HStack(spacing: 6) {
                 HotkeyRecorder(hotkey: Binding(get: { binding.key?.hotkey }, set: { hotkey in
                     do { try plugin.setKey(hotkey.flatMap { try? Shortcut($0) }, at: index) } catch { model.report(error) }
-                }), showsClearButton: false)
-                Button { save(plugin.bindings.enumerated().filter { $0.offset != index }.map(\.element)) } label: {
-                    Image(systemName: "minus")
-                }.buttonStyle(.frog(.ghost)).help("Remove").accessibilityLabel("Remove \(plugin.title(of: binding))")
+                }), showsClearButton: false, unset: .placeholder)
+                IconAction(title: "Remove \(plugin.title(of: binding))", symbol: "xmark") {
+                    save(plugin.bindings.enumerated().filter { $0.offset != index }.map(\.element))
+                }.help("Remove")
             }
         }
+        .frogRevealsRecorder()
     }
 
     private func caption(of binding: ShortcutBinding) -> String? {
@@ -71,12 +95,16 @@ struct ShortcutsSettingsView: View {
 
     // MARK: Adding
 
-    private var addApp: some View {
+    private var addApp: some View { ShortcutAddButton(title: "Add app", list: appList, primary: false) }
+
+    private var addAction: some View { ShortcutAddButton(title: "Add action", list: actionList, primary: false) }
+
+    /// Installed apps, by name.
+    private var appList: ShortcutChoices {
         let byPath = Dictionary(catalog.installed.compactMap { rule in rule.action?.applicationPath.map { ($0, rule) } }, uniquingKeysWith: { first, _ in first })
-        return FrogDropdown(selected: String?.none, sections: [FrogDropdownSection(values: catalog.installed.compactMap(\.action?.applicationPath))],
-                            width: 120, compact: true, searchPrompt: "Search apps", placeholder: "Add app",
-                            emptyMessage: "Looking for apps…",
-                            item: { path in FrogDropdownItem(path.flatMap { byPath[$0]?.name } ?? "") }) { path in
+        return ShortcutChoices(sections: [FrogDropdownSection(values: catalog.installed.compactMap(\.action?.applicationPath))],
+                               searchPrompt: "Search apps", emptyMessage: "Looking for apps…",
+                               item: { path in FrogDropdownItem(path.flatMap { byPath[$0]?.name } ?? "") }) { path in
             guard let path, let rule = byPath[path] else { return }
             // The path tells apart copies that share a bundle ID, such as Xcode and Xcode-beta.
             let with = rule.action?.applicationBundleID.map { ["app": $0, "path": path] } ?? ["app": path]
@@ -85,7 +113,7 @@ struct ShortcutsSettingsView: View {
     }
 
     /// Actions that run with nothing typed, by plugin, then the Mac commands.
-    private var addAction: some View {
+    private var actionList: ShortcutChoices {
         let host = model.pluginHost
         let runnable = host.actions.filter { $0.surfaces.contains(.shortcut) && !$0.parameters.contains(where: \.required) }
         let byPlugin = Dictionary(grouping: runnable, by: \.pluginID)
@@ -93,9 +121,7 @@ struct ShortcutsSettingsView: View {
             guard let actions = byPlugin[descriptor.id], !actions.isEmpty else { return nil }
             return FrogDropdownSection(descriptor.info.name, values: actions.map { Optional($0.id) })
         } + [FrogDropdownSection("Mac", values: SystemAction.allCases.map { Optional("system:\($0.rawValue)") })]
-        return FrogDropdown(selected: String?.none, sections: sections, width: 120, compact: true, searchPrompt: "Search actions",
-                            placeholder: "Add action",
-                            item: { value in
+        return ShortcutChoices(sections: sections, searchPrompt: "Search actions", item: { value in
             guard let value else { return FrogDropdownItem("") }
             if value.hasPrefix("system:"), let command = SystemAction(rawValue: String(value.dropFirst(7))) {
                 return FrogDropdownItem(command.title, detail: command.scope, symbol: command.symbol)
@@ -109,5 +135,54 @@ struct ShortcutsSettingsView: View {
                 : ShortcutBinding(key: nil, action: value)
             save(plugin.bindings + [binding])
         }
+    }
+}
+
+/// What a shortcut can be, under the empty page's message: a few made-up ones, each its name and its caps as plain
+/// text on the card, so the page shows the result before anything is added without the examples reading as buttons.
+private struct ShortcutExamples: View {
+    private static let examples: [(title: String, keys: String)] = [
+        ("Open Safari", "⌥S"), ("Open Terminal", "⌥T"), ("Lock screen", "⌃⌥L"),
+    ]
+    var body: some View {
+        HStack(spacing: FrogStyle.space16 + FrogStyle.space8) {
+            ForEach(Self.examples, id: \.title) { example in
+                HStack(spacing: FrogStyle.space6) {
+                    Text(L10n.text(example.title)).font(FrogType.body).foregroundStyle(FrogStyle.muted)
+                    KeyCaps(example.keys)
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// What an add list offers: drawn by the header's dropdown, or by the empty state's button.
+private struct ShortcutChoices {
+    let sections: [FrogDropdownSection<String?>]
+    var searchPrompt: String? = nil
+    var emptyMessage = "Nothing to choose from."
+    let item: (String?) -> FrogDropdownItem
+    let choose: (String?) -> Void
+}
+
+/// The add button of a section or of the empty page (both secondary; primary stays available): `FrogAddButton`'s pill with a chevron,
+/// opening a searchable list, since apps and actions are too many for a menu.
+private struct ShortcutAddButton: View {
+    let title: String
+    let list: ShortcutChoices
+    var primary = true
+    @State private var showing = false
+    var body: some View {
+        Button { showing.toggle() } label: { FrogAddLabel(title: title, menu: true) }
+            .buttonStyle(.frog(primary ? .primary : .secondary)).accessibilityLabel(L10n.text(title))
+            .popover(isPresented: $showing, arrowEdge: .bottom) {
+                FrogDropdownList(sections: list.sections, selected: nil, item: list.item, searchPrompt: list.searchPrompt,
+                                 emptyMessage: list.emptyMessage, width: 320) { value in
+                    showing = false
+                    list.choose(value)
+                } dismiss: { showing = false }
+            }
     }
 }

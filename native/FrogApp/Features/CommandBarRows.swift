@@ -46,6 +46,10 @@ struct CommandBarRow {
     var secondary: CommandRowAction? = nil
     /// The file whose icon the row shows (an application's path, or an icon key), instead of its symbol.
     var iconPath: String? = nil
+    /// The colour of the row's icon tile: the feature's own colour, so a feature looks the same here as in the sidebar.
+    var tint: PluginTint? = nil
+    /// The rule a row runs, drawn with its own tile (`RuleIconTile`) as in Writing and the selection bubble.
+    var rule: Rule? = nil
 }
 
 /// A source of command bar rows. The bar asks every provider in its list, in order, and plugins add theirs
@@ -77,7 +81,7 @@ final class CalculationRows: CommandBarRowProviding {
     func queryRows(for query: String, in context: CommandBarContext) -> [CommandBarRow] {
         guard let answer = QuickCalculation.result(query) else { return [] }
         let copy = context.copy
-        return [CommandBarRow(record: SearchRecord(id: "calculation:\(query)", title: answer, subtitle: "Calculation · Copy result", symbol: "equal.circle"),
+        return [CommandBarRow(record: SearchRecord(id: "calculation:\(query)", title: answer, subtitle: query.trimmingCharacters(in: .whitespacesAndNewlines), symbol: "equal"),
                               placement: .leading, primary: CommandRowAction(title: "Copy result") { copy(answer) })]
     }
 }
@@ -92,7 +96,7 @@ final class EmojiRows: CommandBarRowProviding {
     func rows(in context: CommandBarContext) -> [CommandBarRow] {
         let copy = context.copy
         return Self.table.map { symbol, words in
-            CommandBarRow(record: SearchRecord(id: "emoji:\(symbol)", title: "\(symbol)  \(words.capitalized)", subtitle: "Emoji · Copy", keywords: "emoji \(words)", symbol: "face.smiling"),
+            CommandBarRow(record: SearchRecord(id: "emoji:\(symbol)", title: "\(symbol)  \(words.capitalized)", keywords: "emoji \(words)", symbol: "face.smiling"),
                           primary: CommandRowAction(title: "Copy") { copy(symbol) })
         }
     }
