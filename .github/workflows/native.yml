@@ -1,8 +1,13 @@
 name: Native macOS
-# A run takes about 25 macOS minutes, so pushes to main don't start it: every change is tested locally first
-# (AGENTS.md). Run it with `gh workflow run native.yml` before a release, or open a pull request.
+# Builds, tests and packages the app on GitHub's macOS runner (free for this public repository).
+# A run takes about 25 minutes: three release compiles (tests, the universal app, the Xcode project).
+# Pushes to main run it too, so a change that breaks the build or a test shows up the same day.
 on:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
   pull_request:
+    paths-ignore: ['docs/**', '**/*.md']
   workflow_dispatch:
 permissions:
   contents: read
@@ -13,10 +18,24 @@ concurrency:
 jobs:
   verify:
     runs-on: xcode-27
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Verify toolchain
         run: swift --version
+      # Only downloaded package sources and binaries are cached, never build products,
+      # so a stale cache can make a run slower but never change what it builds.
+      - name: Restore package downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build/repositories
+            .build/checkouts
+            .build/artifacts
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
       - name: Install Metal compiler
         run: |
           xcodebuild -downloadComponent MetalToolchain

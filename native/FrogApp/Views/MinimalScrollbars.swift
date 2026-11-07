@@ -13,9 +13,11 @@ private struct ScrollAppearance: NSViewRepresentable {
     final class Probe: NSView {
         private weak var configured: NSScrollView?
         private var styleObservation: NSKeyValueObservation?
+        private var insetsObservation: NSKeyValueObservation?
+        private static let insets = NSEdgeInsets(top: 6, left: 0, bottom: 6, right: 2)
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            if window == nil { styleObservation = nil; configured = nil }
+            if window == nil { styleObservation = nil; insetsObservation = nil; configured = nil }
             else { configure() }
         }
         override func viewDidMoveToSuperview() { super.viewDidMoveToSuperview(); configure() }
@@ -38,7 +40,13 @@ private struct ScrollAppearance: NSViewRepresentable {
             scroll.drawsBackground = false
             scroll.verticalScroller?.controlSize = .small
             scroll.horizontalScroller?.controlSize = .small
-            scroll.scrollerInsets = NSEdgeInsets(top: 6, left: 0, bottom: 6, right: 2)
+            // macOS 27 resets the scroller insets after mounting a page whose content fits or nearly fits.
+            insetsObservation = scroll.observe(\.scrollerInsets) { [weak scroll] _, _ in
+                MainActor.assumeIsolated {
+                    if let scroll, !NSEdgeInsetsEqual(scroll.scrollerInsets, Self.insets) { scroll.scrollerInsets = Self.insets }
+                }
+            }
+            scroll.scrollerInsets = Self.insets
         }
     }
 }
