@@ -35,6 +35,25 @@ final class MenuBarMeterTests: XCTestCase {
         }
     }
 
+    /// A step is lit or empty, never half lit: the reading rounds to the nearest step, and any load lights one.
+    func testStepsAreLitWholeOrNotAtAll() {
+        XCTAssertEqual([nil, 0, 0.01, 0.24, 0.42, 0.5, 0.78, 0.95, 1].map(MenuBarMeter.litSteps), [0, 0, 1, 1, 2, 3, 4, 5, 5])
+    }
+
+    /// Three readings stand side by side rather than in three rows too thin for a readable label, so they are wider
+    /// than two and every style stays one menu-bar height.
+    func testThreeReadingsStandSideBySide() {
+        let two = [MenuBarMeterRow(label: "CPU", fraction: 0.4), MenuBarMeterRow(label: "GPU", fraction: 0.7)]
+        let three = two + [MenuBarMeterRow(label: "MEM", fraction: 0.6)]
+        for style in MenuBarMeterStyle.allCases {
+            let narrow = MenuBarMeter.image(.init(rows: two, style: style, palette: .clean))
+            let wide = MenuBarMeter.image(.init(rows: three, style: style, palette: .clean))
+            XCTAssertGreaterThan(wide.size.width, narrow.size.width, style.rawValue)
+            XCTAssertEqual(wide.size.height, MenuBarMeter.height, style.rawValue)
+        }
+        XCTAssertGreaterThanOrEqual(MenuBarMeter.captionSize, 9)
+    }
+
     func testAGPUWithoutALoadReadingLeavesCPUAlone() {
         let settings = SystemMonitorSettings()
         let both = SystemMonitorStatusItemController.face(.init(cpu: .value(0.3), gpu: .value(0.6)), settings: settings, dark: false)

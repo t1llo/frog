@@ -3,14 +3,17 @@ import SwiftUI
 import FrogCore
 
 /// One card per design, each drawn as the menu bar will show it with its name under it; the chosen one has the
-/// accent ring and its name in ink. The cards share a row's width evenly, up to four across, and more than four
-/// split into rows of equal count, so a group never leaves one card alone on a row or a gap at a row's end.
+/// accent ring and its name in ink. The cards stand on a grid of equal columns: by default all of them up to four
+/// across, and more than four split into rows of equal count, so a group never leaves one card alone on a row.
+/// Groups shown one above the other pass the same `columns`, so their cards share one width and one set of edges.
 struct MenuBarDesignTiles<Choice: Hashable>: View {
     let choices: [Choice]
     let selected: Choice
     let title: (Choice) -> String
     /// The design's image for a dark (true) or light menu bar.
     let image: (Choice, Bool) -> NSImage
+    /// The grid's column count; nil fits the choices by `perRow`.
+    var columns: Int? = nil
     let choose: (Choice) -> Void
     @Environment(\.colorScheme) private var scheme
 
@@ -22,17 +25,12 @@ struct MenuBarDesignTiles<Choice: Hashable>: View {
     }
 
     var body: some View {
-        let perRow = Self.perRow(choices.count)
-        let rows = stride(from: 0, to: choices.count, by: perRow).map { Array(choices[$0..<min($0 + perRow, choices.count)]) }
-        Grid(alignment: .top, horizontalSpacing: FrogStyle.space10, verticalSpacing: FrogStyle.space10) {
-            ForEach(rows.indices, id: \.self) { index in
-                GridRow {
-                    ForEach(rows[index], id: \.self) { choice in
-                        MenuBarDesignTile(title: L10n.text(title(choice)), image: image(choice, scheme == .dark),
-                                          chosen: choice == selected) { choose(choice) }
-                            .frame(maxWidth: .infinity)
-                    }
-                }
+        let count = max(1, columns ?? Self.perRow(choices.count))
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: FrogStyle.space10, alignment: .top), count: count),
+                  alignment: .leading, spacing: FrogStyle.space10) {
+            ForEach(choices, id: \.self) { choice in
+                MenuBarDesignTile(title: L10n.text(title(choice)), image: image(choice, scheme == .dark),
+                                  chosen: choice == selected) { choose(choice) }
             }
         }
     }
@@ -72,16 +70,19 @@ struct MenuBarStyleGallery: View {
     let choosePalette: (MenuBarMeterPalette) -> Void
 
     @MainActor private static var cache: [String: NSImage] = [:]
+    /// Styles and colours share one grid: as many columns as the longer group, so every card is one width and the
+    /// shorter group ends early on the same edges rather than stretching its cards.
+    static let columns = max(MenuBarMeterStyle.allCases.count, MenuBarMeterPalette.allCases.count)
 
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.space12) {
             group("Style") {
                 MenuBarDesignTiles(choices: MenuBarMeterStyle.allCases, selected: style, title: \.title,
-                                   image: { cached($0, palette, $1) }, choose: chooseStyle)
+                                   image: { cached($0, palette, $1) }, columns: Self.columns, choose: chooseStyle)
             }
             group("Colors") {
                 MenuBarDesignTiles(choices: MenuBarMeterPalette.allCases, selected: palette, title: \.title,
-                                   image: { cached(style, $0, $1) }, choose: choosePalette)
+                                   image: { cached(style, $0, $1) }, columns: Self.columns, choose: choosePalette)
             }
         }.padding(.vertical, FrogStyle.space8)
     }
@@ -103,8 +104,8 @@ struct MenuBarStyleGallery: View {
 }
 
 /// A strip of menu bar with one item on it, at the menu bar's own size and in its light or dark look: the bar's
-/// 24-point band, the item at its real size on it, over a hint of the desktop below, so
-/// a preview reads as the menu bar it will be seen in rather than as a button.
+/// 24-point band with the item at its real size on it, so a preview reads as the menu bar it will be seen in
+/// rather than as a button. Nothing else is drawn on it.
 struct MenuBarPreviewStrip: View {
     let image: NSImage
     var radius: CGFloat = FrogStyle.smallRadius
@@ -114,18 +115,11 @@ struct MenuBarPreviewStrip: View {
     var body: some View {
         let dark = scheme == .dark
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        VStack(spacing: 0) {
-            Image(nsImage: image).renderingMode(image.isTemplate ? .template : .original)
-                .foregroundStyle(dark ? Color.white : Color.black)
-                .frame(maxWidth: .infinity).frame(height: Self.barHeight)
-                .background(dark ? Color(white: 0.14) : Color(white: 0.95))
-            // The desktop under the bar, a quiet band of the accent.
-            LinearGradient(colors: [FrogStyle.accent.opacity(dark ? 0.32 : 0.22), FrogStyle.accent.opacity(dark ? 0.16 : 0.1)],
-                           startPoint: .top, endPoint: .bottom)
-                .frame(height: FrogStyle.space10)
-        }
-        .clipShape(shape)
-        .overlay(shape.strokeBorder(FrogStyle.hairline, lineWidth: 0.5))
-        .accessibilityHidden(true)
+        Image(nsImage: image).renderingMode(image.isTemplate ? .template : .original)
+            .foregroundStyle(dark ? Color.white : Color.black)
+            .frame(maxWidth: .infinity).frame(height: Self.barHeight)
+            .background(dark ? Color(white: 0.14) : Color(white: 0.95), in: shape)
+            .overlay(shape.strokeBorder(FrogStyle.hairline, lineWidth: 0.5))
+            .accessibilityHidden(true)
     }
 }
