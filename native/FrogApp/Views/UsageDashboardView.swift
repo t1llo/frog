@@ -84,7 +84,10 @@ private struct UsageLimitsSection: View {
                         ForEach(windows) { UsageLimitView(window: $0, now: context.date) }
                     }.padding(.vertical, 10)
                 }
-                if !normal, !windows.isEmpty { FrogRowNote(text: status).textSelection(.enabled) }
+                // Over a reading, "not reading right now" adds nothing the header's source and age do not already say.
+                if !normal, !windows.isEmpty, status != "Not reading limits right now." {
+                    FrogRowNote(text: status).textSelection(.enabled)
+                }
                 if provider == "Claude", usage.needsClaudeSignIn {
                     FrogRow("Claude Code login") {
                         Button(usage.checkingClaudeSignIn ? "Checking…" : "Sign in…") { ClaudeSignIn.start(usage) }
@@ -265,7 +268,7 @@ private struct UsageActivitySection: View {
             if usage.loaded, chart.hasActivity { UsageTokenTotals(usage: usage, chart: chart).padding(.bottom, 10) }
             UsageActivityNotes(usage: usage, chart: chart, compact: false)
             if settings.provider == "OpenAI", !usage.hasAccountActivity {
-                FrogRowNote(text: "Account activity is unavailable; showing this Mac’s logs.")
+                FrogRowNote(text: "Showing this Mac’s logs. Account activity is unavailable.")
             }
         }
         if usage.loaded, chart.hasActivity, !chart.models.isEmpty {
@@ -388,8 +391,8 @@ private struct UsageTokenTotals: View {
             // Every total is the same stat: its name over its figure. Total tokens leads; the chart's own metric is the
             // figure above the chart, and choosing any other makes it the chart's. A plain grid on the card, the names
             // on the card's text edge; the hover fill reaches past it.
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: FrogStyle.space4), GridItem(.flexible(), spacing: FrogStyle.space4),
-                                GridItem(.flexible())], spacing: FrogStyle.space2) {
+            // One row, a column each, so the totals never leave a hole the way a grid of three does with five.
+            HStack(spacing: FrogStyle.space4) {
                 UsageTokenTotal(title: "Total tokens", value: usage.format(chart.totalTokens, metric: "Input"), choosable: false)
                     .help("Uncached input, cache reads, cache writes and output.")
                 ForEach(chart.totals.filter { $0.name != usage.preferences.metric }) { total in
@@ -737,15 +740,6 @@ struct UsageTrendChart: View {
                         .interpolationMethod(.monotone).foregroundStyle(FrogChart.areaFill(FrogStyle.series))
                         .accessibilityHidden(true)
                 }
-                // Daily amounts on the page; a popup's small chart keeps to the line. One lone bar (all the activity
-                // in the last bucket) reads as a stray mark under the end point, so bars need two buckets with activity.
-                ForEach(showsBars ? steps : []) { step in
-                    BarMark(x: .value("Date", step.date), y: .value("Amount", step.bar), width: .fixed(compact ? 2 : 4))
-                        .cornerRadius(FrogStyle.smallRadius)
-                        .foregroundStyle(FrogStyle.series.opacity(selected == nil ? 0.32 : selected?.id == step.id ? 0.9 : 0.18))
-                        .accessibilityLabel(label(step.date, long: true))
-                        .accessibilityValue(format(step.amount))
-                }
                 ForEach(steps) { step in
                     LineMark(x: .value("Date", step.date), y: .value("Total", step.line))
                         .interpolationMethod(.monotone).lineStyle(FrogChart.line).foregroundStyle(FrogStyle.series)
@@ -765,7 +759,7 @@ struct UsageTrendChart: View {
             .chartXAxis(.hidden).chartYAxis(.hidden).chartLegend(.hidden)
             .chartXSelection(value: $selectedDate)
             .frogChartPlot(compact: compact)
-            .frame(height: compact ? 64 : 150)
+            .frame(height: compact ? 64 : showsBars ? 120 : 150)
             .overlay(alignment: FrogChart.chipAlignment(pointerAt: pointer(selected))) {
                 if let selected {
                     FrogChartChip {
@@ -773,7 +767,29 @@ struct UsageTrendChart: View {
                     }
                 }
             }
-            .help(showsBars ? "The line is the running total for the period. The bars are each \(hourly ? "hour" : "day")’s amount." : "The line is the running total for the period.")
+            .help("The line is the running total for the period.")
+            // Daily amounts on the page, in their own strip under the line so they never cross its fill; a popup's
+            // small chart keeps to the line. One lone bar (all the activity in the last bucket) reads as a stray mark,
+            // so bars need two buckets with activity.
+            if showsBars {
+                Chart {
+                    ForEach(steps) { step in
+                        BarMark(x: .value("Date", step.date), y: .value("Amount", step.bar), width: .fixed(4))
+                            .cornerRadius(FrogStyle.smallRadius)
+                            .foregroundStyle(FrogStyle.series.opacity(selected == nil ? 0.45 : selected?.id == step.id ? 0.9 : 0.2))
+                            .accessibilityLabel(label(step.date, long: true))
+                            .accessibilityValue(format(step.amount))
+                    }
+                    if let selected { FrogChartRule(x: .value("Date", selected.date)) }
+                }
+                .chartXScale(domain: domain(steps), range: .plotDimension(startPadding: FrogChart.endInset, endPadding: FrogChart.endInset))
+                // Scaled to the busiest bucket, so the strip's own height carries the difference between days.
+                .chartYScale(domain: 0...max(steps.map(\.bar).max() ?? 1, .leastNonzeroMagnitude))
+                .chartXAxis(.hidden).chartYAxis(.hidden).chartLegend(.hidden)
+                .chartXSelection(value: $selectedDate)
+                .frame(height: 30)
+                .help("Each bar is one \(hourly ? "hour" : "day")’s amount.")
+            }
             if let first = steps.first, let last = steps.last {
                 GraphAxis(leading: label(first.date, long: false), trailing: label(last.date, long: false))
             }
