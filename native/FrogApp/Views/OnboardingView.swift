@@ -53,17 +53,20 @@ struct OnboardingView: View {
                 welcome.transition(stepTransition)
             } else {
                 VStack(spacing: 0) {
-                    // The header stays put on every step, so only the step below it changes.
-                    header.padding(.top, FrogStyle.pagePadding + 4).padding(.horizontal, FrogStyle.pagePadding + 4)
-                        .padding(.bottom, FrogStyle.space16)
+                    // The header and the step as one block, centred in the room above the footer, so a short step
+                    // leaves no empty band under it; a long one starts at the top and scrolls.
                     OnboardingScroll(step: step) {
-                        VStack(alignment: .leading, spacing: FrogStyle.space16) {
-                            page
-                            if let issue { InlineIssue(message: issue) }
+                        VStack(spacing: FrogStyle.space16) {
+                            header
+                            VStack(alignment: .leading, spacing: FrogStyle.space16) {
+                                page
+                                if let issue { InlineIssue(message: issue) }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .id(step).transition(stepTransition)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .id(step).transition(stepTransition)
-                        .padding(.horizontal, FrogStyle.pagePadding + 4).padding(.vertical, FrogStyle.space4)
+                        .padding(.horizontal, FrogStyle.pagePadding + 4).padding(.top, FrogStyle.pagePadding + 4)
+                        .padding(.bottom, FrogStyle.space16)
                     }
                     footer
                 }
@@ -110,8 +113,12 @@ struct OnboardingView: View {
                 if let issue { InlineIssue(message: issue) }
             }.padding(.top, 36)
             Spacer(minLength: 0)
-            Spacer(minLength: 0).frame(maxHeight: 40)
-        }.padding(.horizontal, FrogStyle.pagePadding + 4).padding(.vertical, FrogStyle.pagePadding + 4)
+            // The progress dots where every later step shows them, so the cover reads as the first of six.
+            Color.clear.frame(height: FrogStyle.compactHeight)
+                .overlay { OnboardingProgress(step: Step.welcome.rawValue, count: Step.allCases.count) }
+                .padding(.top, FrogStyle.space12)
+        }.padding(.horizontal, FrogStyle.pagePadding + 4).padding(.top, FrogStyle.pagePadding + 4)
+        .padding(.bottom, FrogStyle.pagePadding + 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -158,7 +165,7 @@ struct OnboardingView: View {
             if step != .done { Button("Skip") { advance() }.buttonStyle(.frog(.ghost)) }
             Button(step == .done ? "Done" : "Continue") { advance() }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
         }
-        .overlay { OnboardingProgress(step: step.rawValue - 1, count: Step.allCases.count - 1) }
+        .overlay { OnboardingProgress(step: step.rawValue, count: Step.allCases.count) }
         // Escape steps back too; on the welcome step it does nothing, since leaving is an explicit choice.
         .frogEscapeBack { back() }
         .padding([.horizontal, .bottom], FrogStyle.pagePadding + 4).padding(.top, FrogStyle.space12)
@@ -210,29 +217,34 @@ struct OnboardingView: View {
     }
 }
 
-/// A step's content under the fixed header. A step taller than the window scrolls, and its bottom edge fades while
-/// more of it lies below, so a cut-off row reads as more to come without a button laid over the content.
+/// A step's header and content above the footer. A step shorter than the room is centred in it, a little above the
+/// middle, so its block sits at the optical centre with even room round it; a taller one starts at the top and
+/// scrolls, its bottom edge fading while more of it lies below, so a cut-off row reads as more to come.
 private struct OnboardingScroll<Content: View>: View {
     let step: OnboardingView.Step
     @ViewBuilder var content: Content
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(spacing: 0) {
-                    Color.clear.frame(height: 0).id("start")
-                    content
+        GeometryReader { geometry in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        Color.clear.frame(height: 0).id("start")
+                        content
+                        // A little more room below than above lifts a centred block to the optical centre.
+                        Color.clear.frame(height: FrogStyle.space16)
+                    }
+                    .frame(minHeight: geometry.size.height, alignment: .center)
                 }
+                .scrollIndicators(.never)
+                .bottomScrollFade(height: 32)
+                .onChange(of: step) { _, _ in proxy.scrollTo("start", anchor: .top) }
             }
-            .scrollIndicators(.never)
-            .bottomScrollFade(height: 32)
-            .onChange(of: step) { _, _ in proxy.scrollTo("start", anchor: .top) }
         }
     }
 }
 
-/// A dot per step of setup. The welcome is the cover, not a step, and has no footer, so five dots count the five
-/// steps after it.
+/// A dot per step of setup, the welcome included, at the same place on every step.
 private struct OnboardingProgress: View {
     let step: Int
     let count: Int
@@ -286,18 +298,23 @@ private struct OnboardingDone: View {
         }
     }
 
-    /// A step and its state; one Frog needs (`required`) offers Allow as the step's main action, the rest Set up.
+    /// A step and its state. Done is a filled green tick, open a hollow ring, so the two read apart at a glance in
+    /// every theme. Each open step offers Set up (Allow for the one Frog needs) as a secondary button: Done in the
+    /// footer stays the step's one primary.
     private func row(_ title: String, _ detail: String, done: Bool, required: Bool = false, step: OnboardingView.Step) -> some View {
         FrogRow(title, caption: detail, icon: {
-            Image(systemName: done ? "checkmark.circle.fill" : "circle.dashed").font(.system(size: 18))
+            Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 20, weight: done ? .regular : .light))
                 .symbolRenderingMode(.palette)
-                .foregroundStyle(done ? FrogStyle.onAccent : FrogStyle.muted, done ? FrogStyle.accent : FrogStyle.muted)
+                .foregroundStyle(done ? Color.white : (required ? FrogStyle.warning : FrogStyle.muted),
+                                 done ? FrogStyle.good : (required ? FrogStyle.warning : FrogStyle.muted))
                 .frame(width: 28, height: 28)
                 .accessibilityHidden(true)
         }, control: {
-            if required { Button("Allow") { jump(step) }.buttonStyle(.frog(.primary)) }
+            if required { Button("Allow") { jump(step) }.buttonStyle(.frog(.secondary)) }
             else if !done { Button("Set up") { jump(step) }.buttonStyle(.frog(.secondary)) }
         })
+        .accessibilityValue(Text(L10n.text(done ? "Done" : "Not set up")))
     }
 }
 
@@ -307,20 +324,9 @@ private struct OnboardingDone: View {
 private struct OnboardingPlugins: View {
     @EnvironmentObject private var model: AppModel
     @State private var pending = Set<String>()
-    /// At most three tiles a row, spread evenly over the rows (four as two and two, five as three and two), so no
-    /// group ends on a lone tile beside empty space.
-    static func rows<T>(_ items: [T], perRow limit: Int = 3) -> [[T]] {
-        guard !items.isEmpty else { return [] }
-        let count = (items.count + limit - 1) / limit
-        let base = items.count / count, extra = items.count % count
-        var rows: [[T]] = [], start = 0
-        for index in 0..<count {
-            let size = base + (index < extra ? 1 : 0)
-            rows.append(Array(items[start..<start + size]))
-            start += size
-        }
-        return rows
-    }
+    /// One grid for every group: three equal columns, so a tile is the same width in every row and every group, and a
+    /// short last row leaves its space empty rather than stretching its tiles.
+    private static let columns = Array(repeating: GridItem(.flexible(), spacing: FrogStyle.space6), count: 3)
 
     var body: some View {
         let host = model.pluginHost
@@ -330,14 +336,10 @@ private struct OnboardingPlugins: View {
                 if !plugins.isEmpty {
                     VStack(alignment: .leading, spacing: FrogStyle.space8) {
                         FrogSectionHeader(category.title)
-                        VStack(spacing: FrogStyle.space6) {
-                            ForEach(Array(Self.rows(plugins).enumerated()), id: \.offset) { _, row in
-                                HStack(spacing: FrogStyle.space6) {
-                                    ForEach(row) { plugin in
-                                        OnboardingPluginTile(plugin: plugin, on: host.enabled(plugin.id), busy: pending.contains(plugin.id)) {
-                                            toggle(plugin.id, to: !host.enabled(plugin.id))
-                                        }
-                                    }
+                        LazyVGrid(columns: Self.columns, alignment: .leading, spacing: FrogStyle.space6) {
+                            ForEach(plugins) { plugin in
+                                OnboardingPluginTile(plugin: plugin, on: host.enabled(plugin.id), busy: pending.contains(plugin.id)) {
+                                    toggle(plugin.id, to: !host.enabled(plugin.id))
                                 }
                             }
                         }
@@ -364,14 +366,14 @@ private struct OnboardingWelcomeFeatures: View {
     var body: some View {
         let infos = model.pluginHost.descriptors.map(\.info)
         let shown = Self.ids.compactMap { id in infos.first { $0.id == id } }
-        HStack(alignment: .top, spacing: FrogStyle.space16) {
+        HStack(alignment: .top, spacing: FrogStyle.space4) {
             ForEach(shown) { plugin in
-                VStack(spacing: FrogStyle.space6) {
+                VStack(spacing: FrogStyle.space8) {
                     PluginIconTile(symbol: plugin.symbol, tint: plugin.tint.color, size: .header)
-                    Text(L10n.text(plugin.name)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    Text(L10n.text(plugin.name)).font(FrogType.bodyMedium).foregroundStyle(FrogStyle.ink)
                         .lineLimit(1).fixedSize()
                 }
-                .frame(width: 72).help(L10n.text(plugin.summary))
+                .frame(width: 88).help(L10n.text(plugin.summary))
             }
         }
         .accessibilityElement(children: .combine)
@@ -457,9 +459,9 @@ private struct OnboardingModels: View {
     /// What running a model on the Mac gives, three short points side by side.
     private var benefits: some View {
         let points: [(symbol: String, tint: PluginTint, title: String, caption: String)] = [
-            ("lock.fill", .green, "Private", "Your text and voice stay on this Mac"),
-            ("wifi.slash", .blue, "Offline", "Works without an internet connection"),
-            (symbol: "gift.fill", tint: .orange, title: "Free", caption: "No API key, account or usage limits"),
+            ("lock.fill", .green, "Private", "Stays on this Mac"),
+            ("wifi.slash", .blue, "Offline", "No internet needed"),
+            (symbol: "gift.fill", tint: .orange, title: "Free", caption: "No key or limits"),
         ]
         return VStack(alignment: .leading, spacing: FrogStyle.space8) {
             FrogSectionHeader("Why on your Mac")
@@ -468,9 +470,9 @@ private struct OnboardingModels: View {
                     VStack(alignment: .leading, spacing: FrogStyle.space8) {
                         PluginIconTile(symbol: point.symbol, tint: point.tint.color)
                         VStack(alignment: .leading, spacing: FrogStyle.space2) {
-                            Text(L10n.text(point.title)).font(FrogType.row)
-                            Text(L10n.text(point.caption)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                                .fixedSize(horizontal: false, vertical: true)
+                            Text(L10n.text(point.title)).font(FrogType.section)
+                            Text(L10n.text(point.caption)).font(FrogType.lead).foregroundStyle(FrogStyle.muted)
+                                .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     .padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -492,9 +494,7 @@ private struct OnboardingProviders: View {
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing - 6) {
             // Coding tools all sign in the same way, so it is said once under the list rather than on every row.
-            FrogSection("Found on this Mac", footer: found?.contains { $0.kind.localTool != nil } == true ? "Coding tools use their own sign-in, so no API key is needed." : nil, accessory: {
-                Button("Add with an API key…") { editing = ProviderConfiguration() }.buttonStyle(.frog())
-            }) {
+            FrogSection("Found on this Mac", footer: found?.contains { $0.kind.localTool != nil } == true ? "Coding tools use their own sign-in, so no API key is needed." : nil) {
                 if let found {
                     if found.isEmpty { FrogRow("Nothing found", caption: "Claude Code, Codex, OpenCode, Ollama or LM Studio show here once installed.") }
                     ForEach(found) { item in
@@ -511,6 +511,13 @@ private struct OnboardingProviders: View {
                 } else {
                     FrogLoadingNote(text: "Looking for coding tools and model servers…")
                 }
+                // A cloud service is the way in when nothing is found, so it ends the list as a row of its own rather
+                // than a header button competing with the rows above.
+                FrogRow("Cloud provider", caption: "OpenAI, Anthropic, Gemini or another, with an API key", icon: {
+                    PluginIconTile(symbol: "key.fill", tint: PluginTint.gray.color, size: .list)
+                }, control: {
+                    Button("Add…") { editing = ProviderConfiguration() }.buttonStyle(.frog(.secondary))
+                })
             }
             OnboardingAgents()
         }
