@@ -177,6 +177,8 @@ struct PhoneMenuRow: View {
 struct StayAwakeMenuRow: View {
     @ObservedObject var power: StayAwakeController
     let choose: (StayAwakeController.DurationChoice) -> Void
+    /// A length typed in under the choices, in minutes.
+    let chooseCustom: (Int) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.space2) {
@@ -192,10 +194,13 @@ struct StayAwakeMenuRow: View {
                             .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
                             .frame(height: FrogStyle.compactHeight - FrogStyle.space4, alignment: .leading)
                     } else {
-                        FrogDropdown(selected: power.duration, options: StayAwakeController.DurationChoice.allCases, width: 96, compact: true,
-                                     title: { L10n.text($0 == .untilTime ? "Until \(StayAwakePage.title(of: power.untilTime))" : $0.title) },
+                        FrogDropdown(selected: power.duration, options: StayAwakePage.durationOptions(power.duration), width: 96, compact: true,
+                                     title: { StayAwakePage.title(of: $0, until: power.untilTime, minutes: power.customMinutes, short: true) },
                                      choose: choose)
                             .fitToContent()
+                            .accessory { close in
+                                StayAwakeCustomDuration(current: power.customMinutes) { minutes in close(); chooseCustom(minutes) }
+                            }
                             .accessibilityLabel("Stay-awake duration")
                             // The value starts on the title's edge; only the hover fill reaches past it.
                             .padding(.leading, -7)

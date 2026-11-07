@@ -54,6 +54,8 @@ struct FrogDropdown<Value: Hashable>: View {
     var warning: String? = nil
     /// The button takes only the width its value needs, so a label can sit right against it.
     var fitsContent = false
+    /// A control under the list, such as a field for a value of one's own. It is handed a way to close the list.
+    var accessory: ((@escaping () -> Void) -> AnyView)? = nil
 
     @State private var showing = false
     @Environment(\.frogDropdownOpenTick) private var openTick
@@ -76,7 +78,7 @@ struct FrogDropdown<Value: Hashable>: View {
         .onChange(of: openTick) { _, tick in if tick > 0 { showing = true } }
         .popover(isPresented: $showing, arrowEdge: .bottom) {
             FrogDropdownList(sections: sections, selected: selected, item: item, searchPrompt: searchPrompt,
-                             emptyMessage: emptyMessage, footnote: footnote,
+                             emptyMessage: emptyMessage, footnote: footnote, accessory: accessory?({ showing = false }),
                              width: listWidth ?? max(width, searchPrompt == nil ? 240 : 320)) { value in
                 showing = false
                 choose(value)
@@ -143,6 +145,11 @@ extension FrogDropdown {
     func fitToContent() -> Self {
         var copy = self; copy.fitsContent = true; return copy
     }
+
+    /// A control under the list's rows, such as a field for a custom value; `close` closes the list.
+    func accessory<Content: View>(@ViewBuilder _ content: @escaping (_ close: @escaping () -> Void) -> Content) -> Self {
+        var copy = self; copy.accessory = { AnyView(content($0)) }; return copy
+    }
 }
 
 /// The dropdown's button: the shared control surface, darker while pressed or open.
@@ -194,6 +201,7 @@ struct FrogDropdownList<Value: Hashable>: View {
     var searchPrompt: String? = nil
     var emptyMessage = "Nothing to choose from."
     var footnote: String? = nil
+    var accessory: AnyView? = nil
     var width: CGFloat = 240
     let choose: (Value) -> Void
     var dismiss: () -> Void = {}
@@ -220,37 +228,63 @@ struct FrogDropdownList<Value: Hashable>: View {
         let navigation = FrogDropdownNavigation(values: sections.flatMap(\.values).filter { !item($0).disabled })
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
-                if let searchPrompt {
-                    SearchBox(placeholder: searchPrompt, text: $query, focus: $fieldFocused)
-                        .padding([.horizontal, .top], 6).padding(.bottom, 2)
-                        .onSubmit { if let highlighted { choose(highlighted) } }
-                        .onChange(of: query) { _, _ in highlighted = visible.flatMap(\.values).first { !item($0).disabled } }
-                }
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 1) {
-                        ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
-                            if let title = section.title {
-                                Text(L10n.text(title)).font(FrogType.label).foregroundStyle(FrogStyle.muted)
-                                    .padding(.horizontal, 8).padding(.top, index == 0 ? 2 : 8).padding(.bottom, 2)
-                                    .accessibilityAddTraits(.isHeader)
-                            }
-                            ForEach(section.values, id: \.self) { value in
-                                FrogDropdownRow(item: item(value), chosen: value == selected, highlighted: value == highlighted) {
-                                    choose(value)
+                // The keys the list takes stay with the search field and the rows, so a field in `accessory` keeps its own.
+                VStack(spacing: 0) {
+                    if let searchPrompt {
+                        SearchBox(placeholder: searchPrompt, text: $query, focus: $fieldFocused)
+                            .padding([.horizontal, .top], 6).padding(.bottom, 2)
+                            .onSubmit { if let highlighted { choose(highlighted) } }
+                            .onChange(of: query) { _, _ in highlighted = visible.flatMap(\.values).first { !item($0).disabled } }
+                    }
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 1) {
+                            ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
+                                if let title = section.title {
+                                    Text(L10n.text(title)).font(FrogType.label).foregroundStyle(FrogStyle.muted)
+                                        .padding(.horizontal, 8).padding(.top, index == 0 ? 2 : 8).padding(.bottom, 2)
+                                        .accessibilityAddTraits(.isHeader)
                                 }
-                                .id(value)
-                                .onHover { inside in if inside, !item(value).disabled { highlighted = value } }
+                                ForEach(section.values, id: \.self) { value in
+                                    FrogDropdownRow(item: item(value), chosen: value == selected, highlighted: value == highlighted) {
+                                        choose(value)
+                                    }
+                                    .id(value)
+                                    .onHover { inside in if inside, !item(value).disabled { highlighted = value } }
+                                }
                             }
-                        }
-                        if sections.isEmpty {
-                            Text(L10n.text(self.sections.allSatisfy(\.values.isEmpty) ? emptyMessage : "No matches."))
-                                .font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: .infinity, alignment: .leading).padding(10)
-                        }
-                    }.padding(6)
+                            if sections.isEmpty {
+                                Text(L10n.text(self.sections.allSatisfy(\.values.isEmpty) ? emptyMessage : "No matches."))
+                                    .font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                            }
+                        }.padding(6)
+                    }
+                    .frame(maxHeight: 300).fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxHeight: 300).fixedSize(horizontal: false, vertical: true)
+                // Without a search field the list itself takes the keys.
+                .focusable(searchPrompt == nil)
+                .focused($listFocused)
+                .focusEffectDisabled()
+                .onKeyPress(.downArrow) { move(navigation, by: 1, proxy); return .handled }
+                .onKeyPress(.upArrow) { move(navigation, by: -1, proxy); return .handled }
+                .onKeyPress(.return) {
+                    // The search field chooses through its own submit.
+                    guard searchPrompt == nil, let highlighted else { return .ignored }
+                    choose(highlighted); return .handled
+                }
+                .onKeyPress(.escape) { dismiss(); return .handled }
+                .onAppear {
+                    // It opens on the chosen row, as a menu does.
+                    if navigation.values.contains(selected) {
+                        highlighted = selected
+                        if navigation.values.count > 8 { proxy.scrollTo(selected, anchor: .center) }
+                    }
+                    if searchPrompt == nil { listFocused = true } else { fieldFocused = true }
+                }
+                if let accessory {
+                    accessory.padding([.horizontal, .bottom], 6).padding(.top, -2)
+                }
                 if let footnote {
                     Text(L10n.text(footnote)).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -259,26 +293,6 @@ struct FrogDropdownList<Value: Hashable>: View {
             }
             .frame(width: width)
             .foregroundStyle(FrogStyle.ink)
-            // Without a search field the list itself takes the keys.
-            .focusable(searchPrompt == nil)
-            .focused($listFocused)
-            .focusEffectDisabled()
-            .onKeyPress(.downArrow) { move(navigation, by: 1, proxy); return .handled }
-            .onKeyPress(.upArrow) { move(navigation, by: -1, proxy); return .handled }
-            .onKeyPress(.return) {
-                // The search field chooses through its own submit.
-                guard searchPrompt == nil, let highlighted else { return .ignored }
-                choose(highlighted); return .handled
-            }
-            .onKeyPress(.escape) { dismiss(); return .handled }
-            .onAppear {
-                // It opens on the chosen row, as a menu does.
-                if navigation.values.contains(selected) {
-                    highlighted = selected
-                    if navigation.values.count > 8 { proxy.scrollTo(selected, anchor: .center) }
-                }
-                if searchPrompt == nil { listFocused = true } else { fieldFocused = true }
-            }
         }
         .frogSurface(.popover)
         // Arrow keys move the highlight many times a second: it moves at once, without hover fades.

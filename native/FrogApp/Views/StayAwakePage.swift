@@ -16,8 +16,14 @@ struct StayAwakePage: View {
             FrogSection("Session") {
                 // Duration sets up the next session as well as the running one, so it stays fully available.
                 FrogRow("Duration") {
-                    FrogDropdown(selected: settings.duration, options: StayAwakeController.DurationChoice.allCases, title: { $0.title }) { choice in
+                    FrogDropdown(selected: settings.duration, options: Self.durationOptions(settings.duration),
+                                 title: { Self.title(of: $0, until: settings.until, minutes: settings.customMinutes, short: false) }) { choice in
                         change(reveal: true) { settings in settings.duration = choice }
+                    }
+                    .accessory { close in
+                        StayAwakeCustomDuration(current: settings.customMinutes) { minutes in
+                            close(); change(reveal: true) { settings in settings.duration = .custom; settings.customMinutes = minutes }
+                        }
                     }
                 }
                 if settings.duration == .untilTime {
@@ -64,6 +70,20 @@ struct StayAwakePage: View {
         var times = (0..<48).map { String(format: "%02d:%02d", $0 / 2, $0 % 2 * 30) }
         if !times.contains(current) { times.append(current); times.sort() }
         return times
+    }
+
+    /// The fixed choices, and the custom length while it is the one in use, so the list shows its checkmark.
+    static func durationOptions(_ selected: StayAwakeController.DurationChoice) -> [StayAwakeController.DurationChoice] {
+        StayAwakeController.DurationChoice.presets + (selected == .custom ? [.custom] : [])
+    }
+
+    /// A choice as the list and its button say it: a custom one by its length, and in the popup "Until 18:00".
+    static func title(of choice: StayAwakeController.DurationChoice, until: String, minutes: Int, short: Bool) -> String {
+        switch choice {
+        case .custom: StayAwakeController.title(minutes: minutes)
+        case .untilTime where short: "Until \(title(of: until))"
+        default: L10n.text(choice.title)
+        }
     }
 
     static func title(of time: String) -> String {

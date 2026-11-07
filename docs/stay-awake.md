@@ -6,7 +6,7 @@ Stay awake keeps the Mac, and by default its screen, awake. Switch it on in Frog
 
 A session holds the same power assertions as `caffeinate -d -i`: the Mac does not go to idle sleep, and with **Keep the screen on** (the default) the display stays on, so the screen does not dim or lock while you are away. `pmset -g assertions` lists them under Frog. Nothing on the Mac is changed, so there is no permission to set up, and the assertions end with the session, when Frog quits, and when Frog stops in any other way.
 
-A session lasts **until turned off** (the default), **1 hour**, **3 hours**, or **until a time** you pick. The popup offers the same choices while Stay awake is off and shows when the session ends while it is on. Changing the duration during a session counts it again from now. A timed session ends on its own, also when the Mac slept in between.
+A session lasts **until turned off** (the default), **1 hour**, **3 hours**, **until a time** you pick, or a **custom** length: under the choices, type a number, pick **min** or **h** and press Return (up to a week). The popup offers the same choices while Stay awake is off and shows when the session ends while it is on. Changing the duration during a session counts it again from now. A timed session ends on its own, also when the Mac slept in between.
 
 ## With the lid closed
 
@@ -50,8 +50,9 @@ It validates sudoers afterwards and leaves the empty file in place. The main sud
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `duration` | `until-off` | `until-off`, `1h`, `3h` or `until-time` |
+| `duration` | `until-off` | `until-off`, `1h`, `3h`, `until-time` or `custom` |
 | `until` | `18:00` | When `until-time` ends, as `HH:MM` |
+| `custom-minutes` | `90` | How long a `custom` session lasts, in minutes (1 to 10080) |
 | `keep-screen-on` | `true` | Keep the display on too |
 | `lid-closed` | `false` | Also stay awake with the lid closed; needs the setup above |
 | `menu-bar-item` | `false` | A cup in the menu bar while a session runs |
