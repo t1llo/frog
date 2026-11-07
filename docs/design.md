@@ -189,7 +189,7 @@ Frog moves little: a press answers, a hover leaves softly, a choice slides, and 
 | --- | --- | --- |
 | `press` | strong ease-out, 0.14 s | `FrogButtonStyle`: scale 0.97 and the `pressed` fill on the down event; no scale under Reduce Motion or on keyboard surfaces |
 | `hoverOut` | ease 0.15 s | A hover fill leaving (`frogRowHighlight`, control surfaces, buttons). Hover in is instant |
-| `slide` | spring, response 0.28, no bounce | The thumb of `CompactSegments` |
+| `slide` | ease-out (0.25, 1, 0.5, 1), 0.18 s | The thumb of `CompactSegments` and a switch's knob. It is the only thing that moves: the segments' labels are drawn once on the track and once in `onAccent` clipped to the thumb, so they never fade colour on their own and a label is light exactly where the thumb covers it. A popup whose tabs are segments (the Frog menu) swaps its content and height at once, never animated |
 | `reveal` | strong ease-out (0.23, 1, 0.32, 1), 0.2 s | Occasional arrivals: the error banner, a copy confirmation, scrolling to a section |
 | `exit` | strong ease-out, 0.15 s | The same leaving, faster than it came |
 | `check` | strong ease-out, 0.15 s | `FrogCheckbox`: the mark grows in from 0.8 as the box fills |
