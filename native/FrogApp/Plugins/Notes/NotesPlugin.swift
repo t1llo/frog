@@ -152,8 +152,12 @@ struct NotesPage: View {
                 NoteTextEditor(text: documents.binding(note.id, \.text), fillsTokens: note.pastes).id(note.id)
             }
         } footer: { note in
-            // What picking the note in the command bar does: a setting of this note.
-            Text("Paste from command bar").foregroundStyle(FrogStyle.ink).lineLimit(1)
+            // What picking the note in the command bar does: a setting of this note. In a narrow window the label
+            // shortens to the word the list's chip uses, rather than cutting off mid-word.
+            ViewThatFits(in: .horizontal) {
+                Text("Paste from command bar")
+                Text("Pastes")
+            }.foregroundStyle(FrogStyle.ink).lineLimit(1)
             Toggle("Paste when picked in the command bar", isOn: documents.binding(note.id, \.pastes))
                 .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 .help("Choosing it in the command bar pastes its text, with {{date}}, {{time}} and {{clipboard}} filled in")
