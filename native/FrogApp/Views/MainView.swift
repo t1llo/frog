@@ -4,8 +4,8 @@ import FrogCore
 
 struct MainView: View {
     /// The size the window opens at the first time: wide enough for the sidebar and a full page column
-    /// (`FrogStyle.pageWidth`), and tall enough that every sidebar row fits without scrolling. The screenshot
-    /// harness draws pages at this size too.
+    /// (`FrogStyle.pageWidth`), and tall enough that the sidebar rows of the features Frog starts with and setup
+    /// recommends fit without scrolling. The screenshot harness draws pages at this size too.
     static let defaultSize = CGSize(width: 1_000, height: 760)
     /// The size older versions opened at, which a window still saved at exactly that size grows from once.
     static let previousDefaultSize = CGSize(width: 800, height: 580)
@@ -267,9 +267,10 @@ struct MainView: View {
     /// set apart by space alone, one `sidebarGroupGap` everywhere: under the search field, under Frog's row,
     /// between groups and above the pinned rows.
     ///
-    /// At the window's default size (`MainView.defaultSize`) the built-in rows fit, so nothing scrolls. When they do
-    /// not, the pinned rows join the list's end, the list rests only on row edges and fades over the panel's bottom
-    /// edge, so no row is ever cut under the search field or above the pinned rows (`layOutSidebar`).
+    /// At the window's default size (`MainView.defaultSize`) the features Frog starts with and the ones setup
+    /// recommends fit, so nothing scrolls. When they do not, the pinned rows join the list's end, the list rests only
+    /// on row edges and fades over the panel's bottom edge, so no row is ever cut under the search field or above the
+    /// pinned rows (`layOutSidebar`).
     private var sidebar: some View {
         let gap = FrogStyle.sidebarGroupGap
         return VStack(alignment: .leading, spacing: 0) {
