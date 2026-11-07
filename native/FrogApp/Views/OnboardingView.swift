@@ -40,6 +40,9 @@ struct OnboardingView: View {
     @State private var pendingImport: Configuration?
     /// How many parts the summary still shows as open, once it has looked.
     @State private var openSteps: Int?
+    /// Whether the summary's Permissions still lacks Accessibility, which Frog's features need, so it is not
+    /// called optional with the rest.
+    @State private var accessibilityMissing = false
 
     /// `step` opens at a later step, for pictures of it.
     init(step: Int = 0) { _step = State(initialValue: Step(rawValue: step) ?? .welcome) }
@@ -129,13 +132,18 @@ struct OnboardingView: View {
     /// The summary says "all set" only when nothing is left open.
     private var title: String {
         guard step == .done, let open = openSteps, open > 0 else { return step.title }
-        return "Frog is ready"
+        return accessibilityMissing ? "Frog is almost ready" : "Frog is ready"
     }
 
     /// Frog works once setup ends, so the summary always closes as done; what was skipped is optional and is said
     /// here, not in the headline.
     private var subtitle: String {
         guard step == .done, let open = openSteps else { return step.subtitle }
+        if accessibilityMissing {
+            // Accessibility is the one step Frog needs; it is said first, and the rest stay optional.
+            return open > 1 ? "Allow Accessibility so Frog can work with your text. The other steps are optional."
+                : "Allow Accessibility so Frog can work with your text."
+        }
         return open == 0 ? "Everything is ready. You can change it any time in Settings."
             : open == 1 ? "One optional step is left. Set it up now or later in Settings."
             : "\(open) optional steps are left. Set them up now or later in Settings."
@@ -162,7 +170,7 @@ struct OnboardingView: View {
         case .permissions: OnboardingPermissions()
         case .models: OnboardingModels()
         case .providers: OnboardingProviders()
-        case .done: OnboardingDone(open: $openSteps) { go(to: $0) }
+        case .done: OnboardingDone(open: $openSteps, accessibilityMissing: $accessibilityMissing) { go(to: $0) }
         }
     }
 
@@ -246,6 +254,7 @@ private struct OnboardingDone: View {
     @EnvironmentObject private var model: AppModel
     @State private var granted: Set<MacPermission> = []
     @Binding var open: Int?
+    @Binding var accessibilityMissing: Bool
     let jump: (OnboardingView.Step) -> Void
 
     var body: some View {
@@ -261,12 +270,13 @@ private struct OnboardingDone: View {
         FrogSection {
             row("Features", on > 0 ? "\(on) turned on" : "None turned on", done: on > 0, step: .plugins)
             row("Permissions", needed.isEmpty ? "None needed" : missing.isEmpty ? "All allowed" : "\(missing.map(\.title).joined(separator: ", ")) still to allow",
-                done: missing.isEmpty, step: .permissions)
+                done: missing.isEmpty, required: missing.contains(.accessibility), step: .permissions)
             row("Local models", ready == 0 ? "None downloaded" : "\(ready) of \(pair.count) ready", done: ready > 0, step: .models)
             row("Coding tools", providers == 0 ? "None added" : "\(providers) added", done: providers > 0, step: .providers)
             row("AI agents", access ? "Can use the frog command" : "Off", done: access, step: .providers)
         }
         .onChange(of: remaining, initial: true) { _, count in open = count }
+        .onChange(of: missing.contains(.accessibility), initial: true) { _, value in accessibilityMissing = value }
         .task {
             while !Task.isCancelled {
                 granted = await OnboardingPermissionSupport.granted()
@@ -275,13 +285,15 @@ private struct OnboardingDone: View {
         }
     }
 
-    private func row(_ title: String, _ detail: String, done: Bool, step: OnboardingView.Step) -> some View {
+    /// A step and its state; one Frog needs (`required`) offers Allow as the step's main action, the rest Set up.
+    private func row(_ title: String, _ detail: String, done: Bool, required: Bool = false, step: OnboardingView.Step) -> some View {
         FrogRow(title, caption: detail, icon: {
             Image(systemName: done ? "checkmark.circle.fill" : "circle.dashed").font(.system(size: 18))
                 .foregroundStyle(done ? FrogStyle.good : FrogStyle.muted).frame(width: 28, height: 28)
                 .accessibilityHidden(true)
         }, control: {
-            if !done { Button("Set up") { jump(step) }.buttonStyle(.frog(.secondary, compact: true)) }
+            if required { Button("Allow") { jump(step) }.buttonStyle(.frog(.primary, compact: true)) }
+            else if !done { Button("Set up") { jump(step) }.buttonStyle(.frog(.secondary, compact: true)) }
         })
     }
 }
