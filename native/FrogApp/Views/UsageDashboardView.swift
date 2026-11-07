@@ -227,11 +227,12 @@ struct UsageLimitView: View {
             }
             FrogMeter(fraction: fraction, tint: meterColor, size: compact ? .compact : .regular, tick: elapsed)
                 .help("The tick marks the time gone in this window.")
-            HStack(spacing: 4) {
+            // No spacing: the pace brings its own " · ", so the dot sits evenly between the two.
+            HStack(spacing: 0) {
                 Text(window.leftText ?? "No reading since it renewed")
                 // Every bar names its pace, in the bar's colour, so the colours explain themselves.
                 if let pace = window.pace(at: now) {
-                    Text("· \(pace)").foregroundStyle(paceColor(pace))
+                    Text(" · \(pace)").foregroundStyle(paceColor(pace))
                         .help(elapsed.map { "\(Int(fraction * 100))% used with \(Int($0 * 100))% of the window gone" } ?? "")
                 }
                 Spacer(minLength: 4)
