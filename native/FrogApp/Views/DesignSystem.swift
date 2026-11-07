@@ -490,8 +490,6 @@ enum FrogType {
     /// Timestamps, paths, counts, badges and footnotes: 11, the floor for any text in Frog.
     static let caption = Font.system(size: 11)
     static let mono = Font.system(size: 11, design: .monospaced)
-    /// Code in a list of body-size rows (a copied snippet on the Clipboard page): monospaced at the body size.
-    static let monoBody = Font.system(size: 13, design: .monospaced)
 }
 
 extension View {
