@@ -92,8 +92,11 @@ struct AnswerPanelView: View {
                     AnswerMarkdown(text: turn.answer)
                 }
                 if let pending = session.pendingQuestion, !session.turns.isEmpty { question(pending).id(Self.followUpID) }
-                // The footer says the answer is still coming, so the text carries no marker of its own.
-                if !session.partial.isEmpty { AnswerMarkdown(text: session.partial) }
+                // A still caret ends the text while it streams, so the eye finds where the answer is growing; it
+                // does not blink, as streaming text is never animated.
+                if !session.partial.isEmpty {
+                    AnswerMarkdown(text: session.partial + (session.phase.isRunning ? Self.caret : ""))
+                }
             }
             .font(FrogType.body).lineSpacing(3)
             .textSelection(.enabled)
@@ -101,6 +104,8 @@ struct AnswerPanelView: View {
     }
 
     private static let followUpID = "follow-up"
+    /// The mark at the end of an answer that is still coming.
+    private static let caret = "\u{258D}"
 
     /// Space sets each follow-up apart from the answer before it.
     private func question(_ text: String) -> some View {
@@ -130,7 +135,8 @@ struct AnswerPanelView: View {
                 case nil: EmptyView()
                 }
             }
-            .buttonStyle(.frog())
+            // The status line's fix at the line's own text size, as a notice pill's button.
+            .buttonStyle(.frog(small: true))
             .padding(.horizontal, FrogStyle.cardPadding).padding(.vertical, FrogStyle.panelInset)
             .accessibilityElement(children: .combine)
         }
