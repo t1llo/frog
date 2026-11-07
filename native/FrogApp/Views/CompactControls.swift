@@ -214,12 +214,51 @@ struct CompactSegments<Value: Hashable>: View {
     var compact = false
     let title: (Value) -> String
     let choose: (Value) -> Void
-    @Namespace private var thumb
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.controlActiveState) private var activeState
-    /// One thumb behind all the labels slides to the chosen segment, so it never covers a label on the way. With
-    /// Reduce Motion each segment has its own thumb, and they fade from one to the other.
+    /// Each segment's frame in the control, measured once per layout.
+    @State private var frames: [Value: CGRect] = [:]
+    /// The segment the thumb stands on. It follows `selected` one turn of the run loop later, so the slide starts after
+    /// whatever the choice rebuilds (a popup's tab) has been drawn, and is never frozen part-way by that work.
+    @State private var thumbOn: Value?
+    private static var space: String { "compact-segments" }
+
+    /// One thumb behind the labels slides to the chosen segment (`FrogMotion.slide`), and that is the only thing that
+    /// moves. The labels are drawn twice: in `ink` on the track and in `onAccent` clipped to the thumb, so a label is
+    /// light exactly where the thumb covers it on every frame of the slide and never changes colour on its own. With
+    /// Reduce Motion the thumb does not slide: the chosen segment's own thumb cross-fades in (`reveal`).
     var body: some View {
+        labels(chosen: false)
+            .overlay(alignment: .topLeading) {
+                if !reduceMotion, let frame = frames[thumbValue] {
+                    labels(chosen: true).allowsHitTesting(false).accessibilityHidden(true)
+                        .mask(alignment: .topLeading) { placed(Capsule(style: .continuous), at: frame) }
+                }
+            }
+            .background(alignment: .topLeading) {
+                if !reduceMotion, let frame = frames[thumbValue] { placed(thumbShape, at: frame) }
+            }
+            .coordinateSpace(name: Self.space)
+            .frame(width: width, height: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight)
+            .background(Capsule(style: .continuous).fill(FrogStyle.control))
+            // Under Reduce Motion only the chosen segment's own thumb and label colour cross-fade.
+            .animation(reduceMotion ? FrogMotion.reveal : nil, value: selected)
+            .onAppear { thumbOn = selected }
+            .onChange(of: selected) { _, value in DispatchQueue.main.async { thumbOn = value } }
+    }
+
+    private var thumbValue: Value { reduceMotion ? selected : (thumbOn.flatMap { values.contains($0) ? $0 : nil } ?? selected) }
+
+    /// The thumb (or its mask) on the chosen segment. Only its place and size animate, scoped to it: whatever else
+    /// changes in the same moment, such as the popup's content and height swapping with the tab, is never animated
+    /// with it, so the labels and the rest of the control never drift through a resize.
+    private func placed(_ shape: some View, at frame: CGRect) -> some View {
+        shape.frame(width: frame.width, height: frame.height).offset(x: frame.minX, y: frame.minY)
+            .animation(FrogMotion.slide, value: frame)
+    }
+
+    /// The row of segments. `chosen` draws every label in `onAccent` for the layer clipped to the thumb.
+    private func labels(chosen: Bool) -> some View {
         HStack(spacing: 0) {
             ForEach(values, id: \.self) { value in
                 Button { choose(value) } label: {
@@ -227,21 +266,21 @@ struct CompactSegments<Value: Hashable>: View {
                         .font(compact ? FrogType.small : FrogType.body)
                         .lineLimit(1).padding(.horizontal, compact ? 9 : 12)
                         .frame(maxWidth: width == nil ? nil : .infinity, maxHeight: .infinity)
-                        .foregroundStyle(selected == value && active ? FrogStyle.onAccent : FrogStyle.ink)
-                        .background { if reduceMotion && selected == value { thumbShape } }
-                        .matchedGeometryEffect(id: value, in: thumb)
+                        .foregroundStyle(labelColor(value, chosen: chosen))
+                        .background { if reduceMotion && selected == value && !chosen { thumbShape } }
                         .contentShape(Capsule())
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { frame in
+                            if !chosen, frames[value] != frame { frames[value] = frame }
+                        }
                 }.buttonStyle(.plain).accessibilityAddTraits(selected == value ? .isSelected : [])
             }
         }
-        .background {
-            if !reduceMotion && values.contains(selected) {
-                thumbShape.matchedGeometryEffect(id: selected, in: thumb, isSource: false)
-            }
-        }
-        .frame(width: width, height: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight)
-        .background(Capsule(style: .continuous).fill(FrogStyle.control))
-        .animation(reduceMotion ? FrogMotion.reveal : FrogMotion.slide, value: selected)
+    }
+
+    private func labelColor(_ value: Value, chosen: Bool) -> Color {
+        if chosen { return active ? FrogStyle.onAccent : FrogStyle.ink }
+        // Under Reduce Motion the chosen segment carries its own thumb, so its label turns light with it.
+        return reduceMotion && selected == value && active ? FrogStyle.onAccent : FrogStyle.ink
     }
 
     private var active: Bool { activeState == .key || activeState == .active }
