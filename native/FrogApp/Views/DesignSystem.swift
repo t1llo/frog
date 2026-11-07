@@ -62,15 +62,19 @@ enum FrogStyle {
     /// The gap between two cards in a popup or a menu tab: the same as their inset from the popup's edge, so every
     /// card in every menu sits the same distance from its neighbours and the panel.
     static let panelCardGap: CGFloat = panelCardInset
-    /// The main window's corner: macOS 26 rounds a window with a toolbar to about 28 points (measured).
+    /// The main window's corner, drawn by macOS. Frog links against the macOS 14 SDK, so macOS 26 draws it the
+    /// pre-Liquid Glass way: a continuous corner of 12 points (fitted to a capture of the real window), 10 before
+    /// macOS 26. Not the 28 of a window linked against the macOS 26 SDK.
     static var windowRadius: CGFloat {
-        if #available(macOS 26, *) { return 28 }
+        if #available(macOS 26, *) { return 12 }
         return 10
     }
-    /// The main window's sidebar panel, `sidebarInset` inside the window's corner.
-    static var sidebarRadius: CGFloat { max(windowRadius - sidebarInset, cardRadius) }
-    /// The gap between the sidebar's edge and its rows.
-    static var sidebarRowInset: CGFloat { sidebarRadius - controlRadius }
+    /// The main window's sidebar panel, `sidebarInset` inside the window's corner, so both curves share one centre
+    /// and the gap between the window's edge and the panel stays even all the way round.
+    static var sidebarRadius: CGFloat { windowRadius - sidebarInset }
+    /// The gap between the sidebar's edge and its rows: the search field and the rows' highlight start 18 in from
+    /// the window's edge, under the window's buttons.
+    static var sidebarRowInset: CGFloat { 18 - sidebarInset }
     /// Small floating status pills, 36 points tall.
     static let pillRadius: CGFloat = 18
     /// Buttons, fields, dropdowns, search boxes and segmented controls.
@@ -99,8 +103,11 @@ enum FrogStyle {
     /// A group's header in the sidebar (Write, Find & launch, Plugins): its 11-point name sits on the bottom of this
     /// height, a little over the first row.
     static let sidebarHeaderHeight: CGFloat = 18
-    /// How far the main window's sidebar panel floats in from the window's edges.
-    static let sidebarInset: CGFloat = 8
+    /// How far the main window's sidebar panel floats in from the window's edges: small, because the panel's
+    /// corner is the window's corner less this gap (`sidebarRadius`).
+    static let sidebarInset: CGFloat = 4
+    /// The main window's sidebar panel, `sidebarInset` from the window's edges.
+    static let sidebarWidth: CGFloat = 212
     /// The bar above a page that holds its title, subtitle and actions: the title's line centred on the window's
     /// buttons (26 points down), the subtitle under it, and a little room below.
     static let toolbarHeight: CGFloat = 60
@@ -170,7 +177,10 @@ enum FrogStyle {
         })
     }
     static var canvas: AnyShapeStyle { adaptiveSurface(themed(\.canvas), strength: 0.85) }
-    static var sidebar: AnyShapeStyle { adaptiveSurface(themed(\.sidebar), strength: 0.85) }
+    /// The main window's sidebar panel: a thin layer of the text colour over the window's canvas, as a card is
+    /// but fainter, so the window around the panel and the page behind it are one surface and the panel is the
+    /// one shape that stands out, a step above the page in every theme, never a second, darker background.
+    static var sidebar: Color { inkLayer(light: 0.03, dark: 0.045) }
     static var surface: AnyShapeStyle { adaptiveSurface(themed(\.surface), strength: 0.78) }
     static var inset: AnyShapeStyle { adaptiveSurface(themed(\.inset), strength: 0.55) }
     static var opaqueCanvas: Color { themed(\.canvas) }

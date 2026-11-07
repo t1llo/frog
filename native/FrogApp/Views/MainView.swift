@@ -80,7 +80,7 @@ struct MainView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            sidebar.frame(width: 208)
+            sidebar.frame(width: FrogStyle.sidebarWidth)
                 .padding([.top, .leading, .bottom], FrogStyle.sidebarInset)
             VStack(spacing: 0) {
                 // Room for the toolbar, which is drawn over the page so its content scrolls up beneath it.
@@ -287,7 +287,11 @@ struct MainView: View {
                 historyButtons
             }
             .padding(.trailing, FrogStyle.sidebarRowInset)
-            .frame(height: 36).frame(maxWidth: .infinity)
+            // Centred on the window's buttons, 26 points down the window, whatever the panel's inset; the strip
+            // gives back what reaches above the field, which starts 44 points down the window.
+            .frame(height: 2 * (Self.windowButtonsMidline - FrogStyle.sidebarInset))
+            .padding(.bottom, -(Self.windowButtonsMidline - FrogStyle.sidebarInset - 18))
+            .frame(maxWidth: .infinity)
             .background { WindowDragRegion().accessibilityHidden(true) }
             // The field follows the strip directly: the window's buttons end 24 points down the panel, so it starts
             // 12 under them.
