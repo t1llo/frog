@@ -57,7 +57,7 @@ struct WindowSwitcherKey: Identifiable {
 
     static let all = [
         WindowSwitcherKey(title: "Next or previous window", keys: ["↑", "↓"]),
-        WindowSwitcherKey(title: "Go back while holding the shortcut", keys: ["⇧"]),
+        WindowSwitcherKey(title: "Go back one window", keys: ["⇧"]),
         WindowSwitcherKey(title: "Search windows", keys: ["A–Z"]),
         WindowSwitcherKey(title: "Delete a typed letter", keys: ["⌫"]),
         WindowSwitcherKey(title: "Switch to the window", keys: ["↩"]),
