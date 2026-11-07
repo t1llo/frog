@@ -437,7 +437,7 @@ final class Store: ObservableObject {
         if inFlight { s = "Refreshing…" }
         else if lastError == "rate limited" {
             s = "Anthropic’s usage endpoint is throttling checks (HTTP 429). This is not your session or weekly limit."
-            if let at = lastGoodAt { s += displayUsage() == nil ? " Last successful check: \(resetClock(at)); current limits unknown." : " Showing saved limits from \(resetClock(at))." }
+            if let at = lastGoodAt { s += displayUsage() == nil ? " Current limits are unknown. Last successful check: \(resetClock(at))." : " Showing saved limits from \(resetClock(at))." }
         }
         else if let e = lastError, let at = lastGoodAt { s = "Couldn't refresh: \(e). Last successful check: \(resetClock(at))." }
         else if let e = lastError { s = "Couldn't load usage: \(e)." }

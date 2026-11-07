@@ -84,8 +84,7 @@ private struct UsageLimitsSection: View {
                         ForEach(windows) { UsageLimitView(window: $0, now: context.date) }
                     }.padding(.vertical, 10)
                 }
-                // Over a reading, "not reading right now" adds nothing the header's source and age do not already say.
-                if !normal, !windows.isEmpty, status != "Not reading limits right now." {
+                if !normal, !windows.isEmpty, status != UsageDashboardModel.notReading {
                     FrogRowNote(text: status).textSelection(.enabled)
                 }
                 if provider == "Claude", usage.needsClaudeSignIn {
