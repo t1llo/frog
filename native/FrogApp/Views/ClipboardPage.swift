@@ -83,7 +83,7 @@ private struct ClipboardPageRow: View {
             let kind = entry.kind
             PluginIconTile(symbol: kind.symbol, tint: kind.tint.color, size: .sidebar).help(L10n.text(kind.title))
                 .accessibilityLabel(L10n.text(kind.title))
-            Text(entry.preview).font(kind == .code ? FrogType.mono : FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
+            Text(entry.preview).font(kind == .code ? FrogType.body.monospaced() : FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             ZStack(alignment: .trailing) {
                 // As far in from the trailing edge as the tile is from the leading one.
