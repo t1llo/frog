@@ -60,7 +60,8 @@ public enum ClaudeAccountsCombination {
     /// have a current reading of it: Σ wᵢ·usedᵢ / Σ wᵢ, with plan sizes as weights when every
     /// counted plan is known, else equal weights.
     public static func combine(_ accounts: [Account], window id: String, now: Date = UsageClock.now) -> Combined {
-        let included = accounts.filter(\.included)
+        // An Ultra account has no session limit, so it neither counts nor is missing there.
+        let included = accounts.filter { $0.included && (claudePlanHasSession($0.plan) || !id.hasPrefix("five_hour")) }
         var counted: [(account: Account, window: UsageWindow)] = []
         var missing: [String] = []
         for account in included {

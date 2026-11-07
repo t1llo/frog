@@ -72,6 +72,17 @@ final class ClaudeAccountsCombinationTests: XCTestCase {
         XCTAssertEqual(session.missing, ["A", "B"], "Every plan has a session; a reading without one renewed since")
     }
 
+    func testUltraAccountsHaveNoSessionToCombine() {
+        let pro = account("A", plan: "Pro", session: 40)
+        let ultra = ClaudeAccountsCombination.Account(label: "B", plan: "Ultra", windows: [
+            UsageWindow(id: "seven_day", title: "Week", percentage: 10, resetsAt: now.addingTimeInterval(86_400), duration: 7 * 86_400),
+        ])
+        let session = ClaudeAccountsCombination.combine([pro, ultra], window: "five_hour", now: now)
+        XCTAssertEqual(session.percentage, 40)
+        XCTAssertEqual(session.missing, [], "Ultra has no session limit, so B's reading is not out of date")
+        XCTAssertEqual(session.breakdown, "A 40%")
+    }
+
     func testCombinedRowRoundsLikeEveryRowAndHasNoRenewalOrPace() {
         let combined = ClaudeAccountsCombination.combine([account("A", session: 33.9), account("B", session: 66.8, resets: nil)],
                                                          window: "five_hour", now: now)

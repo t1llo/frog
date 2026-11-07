@@ -42,16 +42,21 @@ final class UsageStatusReadoutTests: XCTestCase {
     // MARK: Several Claude accounts
 
     private func account(_ label: String, session: Double, week: Double, stale: Bool = false,
-                         included: Bool = true) -> UsageAccountSummary {
+                         included: Bool = true, plan: String? = nil) -> UsageAccountSummary {
         UsageAccountSummary(
             id: "/fixture/\(label)", label: label, shortLabel: String(label.prefix(6)),
             windows: [UsageWindow(id: "five_hour", title: "Session", percentage: session,
                                   resetsAt: reset.addingTimeInterval(3600), duration: 5 * 3600),
                       UsageWindow(id: "seven_day", title: "Week", percentage: week,
                                   resetsAt: reset.addingTimeInterval(3 * 86_400), duration: 7 * 86_400)],
-            plan: nil, sources: ["Claude app · Claude-Account-\(label)"], age: reset.addingTimeInterval(-7200),
+            plan: plan, sources: ["Claude app · Claude-Account-\(label)"], age: reset.addingTimeInterval(-7200),
             readingSource: "Claude app", stale: stale, status: nil, included: included,
             needsLiveSetup: false, mergedNote: nil)
+    }
+
+    func testAnUltraAccountShowsItsWeekForTheSession() {
+        let accounts = [account("A", session: 37.4, week: 12), account("B", session: .nan, week: 64, plan: "Ultra")]
+        XCTAssertEqual(UsageStatusReadout.Face(accounts: accounts, window: "session").values, ["37%", "64%"])
     }
 
     func testEachAccountShowsItsChosenWindow() {

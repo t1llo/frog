@@ -200,10 +200,14 @@ enum UsageStatusReadout {
 
         /// `A 37%  B 81%`: one entry per included account, for its session or its week
         /// (`window` is "session" or "week"). At most three; the description lists every one.
+        /// An Ultra account has no session, so it shows its week.
         init(accounts: [UsageAccountSummary], window: String) {
             let accounts = Array(accounts.filter(\.included).prefix(UsageStatusReadout.maximumAccounts))
             let id = UsageStatusReadout.windowID(window)
-            let windows = accounts.map { $0.windows.first { $0.id == id } }
+            let windows = accounts.map { account in
+                let shown = claudePlanHasSession(account.plan) ? id : UsageStatusReadout.windowID("week")
+                return account.windows.first { $0.id == shown }
+            }
             provider = "Claude"
             labels = accounts.map(\.shortLabel)
             values = windows.map { $0?.usedText ?? "—" }

@@ -442,15 +442,16 @@ extension ClaudeAccountsCombination.Combined: Identifiable {
     public func windows(provider: String, now: Date = UsageClock.now) -> [UsageWindow] {
         let claude = provider == Provider.claude.rawValue
         let source = claude ? primary.displayUsage(now: now) : tokens.codexLimits?.current(now: now)
-        return Self.windows(source, claude: claude, now: now)
+        return Self.windows(source, claude: claude, plan: claude ? primary.plan : nil, now: now)
     }
-    private static func windows(_ source: Usage?, claude: Bool, now: Date) -> [UsageWindow] {
-        var windows = (source?.limits ?? []).filter { $0.resetsAt.map { $0 > now } ?? true }.map {
+    private static func windows(_ source: Usage?, claude: Bool, plan: String?, now: Date) -> [UsageWindow] {
+        let session = !claude || claudePlanHasSession(plan)
+        var windows = (source?.limits ?? []).filter { ($0.resetsAt.map { $0 > now } ?? true) && (session || !$0.id.hasPrefix("five_hour")) }.map {
             UsageWindow(id: $0.id, title: $0.label, percentage: $0.pct, resetsAt: $0.resetsAt, duration: $0.window)
         }
         // A Claude plan always has a session and a week. A session that renewed after the last
         // reading keeps its row, marked unknown, instead of leaving the week on its own.
-        if claude, !windows.isEmpty, !windows.contains(where: { $0.id == "five_hour" }) {
+        if claude, session, !windows.isEmpty, !windows.contains(where: { $0.id == "five_hour" }) {
             windows.insert(UsageWindow(id: "five_hour", title: "Session", percentage: .nan, resetsAt: nil, duration: 5 * 3600), at: 0)
         }
         return windows
@@ -553,7 +554,7 @@ extension UsageDashboardModel {
         return model.accounts.map { account in
             let store = model.stores[account.id], label = model.label(account)
             let reading = store?.reading(now: now)
-            let windows = Self.windows(reading?.usage, claude: true, now: now).filter { Self.accountWindowIDs.contains($0.id) }
+            let windows = Self.windows(reading?.usage, claude: true, plan: store?.plan, now: now).filter { Self.accountWindowIDs.contains($0.id) }
             return UsageAccountSummary(
                 id: account.id, label: label, shortLabel: ClaudeAccountLabels.shortLabel(label), windows: windows,
                 plan: store?.plan, sources: sources(of: account), age: reading?.at,

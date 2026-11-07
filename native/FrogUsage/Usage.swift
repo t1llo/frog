@@ -190,11 +190,15 @@ func claudeProfileURL(directory: URL, home: URL = FileManager.default.homeDirect
 }
 
 /// Profile metadata only; never infer a subscription from token volume or quota percentages.
+/// Ultra has no session limit, so its rows leave the Session window out.
+public func claudePlanHasSession(_ plan: String?) -> Bool { plan != "Ultra" }
+
 func claudePlanName(_ account: [String: Any]) -> String? {
     let type = (account["organizationType"] as? String ?? "").lowercased()
     let tier = ((account["organizationRateLimitTier"] as? String) ?? (account["userRateLimitTier"] as? String) ?? "").lowercased()
     if type.contains("enterprise") { return "Enterprise" }
     if type.contains("team") { return "Team" }
+    if type.contains("ultra") || tier.contains("ultra") { return "Ultra" }
     if tier.contains("max_20x") { return "Max 20×" }
     if tier.contains("max_5x") { return "Max 5×" }
     if type.contains("max") || tier.contains("max") { return "Max" }

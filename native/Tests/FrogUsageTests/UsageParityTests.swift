@@ -186,6 +186,9 @@ import XCTest
         XCTAssertFalse(portable.contains("work-profile"))
         XCTAssertEqual(claudePlanName(["organizationType": "claude_max", "organizationRateLimitTier": "default_claude_max_20x"]), "Max 20×")
         XCTAssertEqual(claudePlanName(["organizationType": "team"]), "Team")
+        XCTAssertEqual(claudePlanName(["organizationType": "claude_ultra", "organizationRateLimitTier": "default_claude_ultra"]), "Ultra")
+        XCTAssertFalse(claudePlanHasSession("Ultra"), "Ultra has no session limit")
+        XCTAssertTrue(claudePlanHasSession("Max 20×"))
         XCTAssertNil(claudePlanName([:]))
     }
 
