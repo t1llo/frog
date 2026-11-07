@@ -72,8 +72,11 @@ struct PluginsCatalogView: View {
                 Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(FrogStyle.muted)
                     .frame(width: FrogStyle.compactHeight, height: FrogStyle.compactHeight).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).help("\(L10n.text("Open")) \(L10n.text(plugin.name))").accessibilityLabel("\(L10n.text("Open")) \(L10n.text(plugin.name))")
-            .opacity(enabled ? 1 : 0).disabled(!enabled).accessibilityHidden(!enabled)
+            .buttonStyle(.plain).accessibilityLabel("\(L10n.text("Open")) \(L10n.text(plugin.name))")
+            // A feature that is off keeps its chevron, faded as a disabled control is, so every row ends on the same
+            // edge and the column of chevrons never breaks.
+            .opacity(enabled ? 1 : FrogStyle.disabledOpacity).disabled(!enabled).accessibilityHidden(!enabled)
+            .help(enabled ? "\(L10n.text("Open")) \(L10n.text(plugin.name))" : L10n.text("Turn it on to open its page"))
         }
         .padding(.horizontal, FrogStyle.rowPadding).padding(.vertical, FrogStyle.space6)
         .contentShape(Rectangle())
