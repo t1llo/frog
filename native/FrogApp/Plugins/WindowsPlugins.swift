@@ -391,6 +391,7 @@ extension WindowSwitcherSettings {
     private func makeController() -> WindowSwitcherController {
         let controller = WindowSwitcherController { [weak self] status in self?.publish(status) }
         controller.onError = { [weak model] in model?.report(FrogError.message($0)) }
+        controller.placement = .shared(in: model.dataDirectory)
         self.controller = controller
         return controller
     }

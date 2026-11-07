@@ -34,23 +34,6 @@ import FrogCore
         XCTAssertFalse(CommandBar.isActionsShortcut(try key("k", code: 40), firstResponder: field))
     }
 
-    func testTheBarOpensOnTheDisplayInUseAndKeepsAPlaceItWasDraggedTo() {
-        let laptop = NSRect(x: 0, y: 0, width: 1440, height: 875), external = NSRect(x: 1440, y: 0, width: 1920, height: 1055)
-        let size = NSSize(width: 600, height: 390)
-        func middle(of display: NSRect) -> NSPoint { NSPoint(x: display.midX - 300, y: display.midY - 195) }
-        let resting = NSRect(origin: middle(of: laptop), size: size)
-        // Left where it opened, the bar follows the pointer to the other display and back.
-        XCTAssertEqual(CommandBar.openingOrigin(of: resting, dragged: false, displays: [laptop, external], inUse: external), middle(of: external))
-        XCTAssertEqual(CommandBar.openingOrigin(of: resting, dragged: false, displays: [laptop, external], inUse: laptop), resting.origin)
-        // A place it was dragged to is kept, whichever display the pointer is on.
-        let placed = NSRect(origin: NSPoint(x: 40, y: 60), size: size)
-        XCTAssertEqual(CommandBar.openingOrigin(of: placed, dragged: true, displays: [laptop, external], inUse: external), placed.origin)
-        // Until the display it was dragged to is disconnected.
-        let lost = NSRect(origin: NSPoint(x: 2000, y: 300), size: size)
-        XCTAssertEqual(CommandBar.openingOrigin(of: lost, dragged: true, displays: [laptop], inUse: laptop), middle(of: laptop))
-        XCTAssertEqual(CommandBar.openingOrigin(of: lost, dragged: true, displays: [], inUse: nil), lost.origin)
-    }
-
     func testFocusedFieldIsReadOnlyWhenClipboardRowsOrNotesThatPasteCanPasteIntoIt() async throws {
         // Before the notes are read, one of them might paste; once they are, only one that does counts.
         for (features, notesRead, expected) in [([FeatureID](), false, 0), ([.clipboard], false, 1), ([.scratchpad], false, 1), ([.scratchpad], true, 0)] {

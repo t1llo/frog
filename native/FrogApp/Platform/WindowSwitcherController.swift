@@ -127,6 +127,8 @@ final class WindowSwitcherController {
     private var inputRunLoop: EventTapRunLoop?
     private var input: WindowSwitchInput?
     private var panel: NSPanel?
+    /// Places the list with the command bar and clipboard history, where the family was last dragged to.
+    var placement = PanelFamilyPlacer()
     private var router: WindowSwitchKeyRouter { input?.state ?? WindowSwitchKeyRouter() }
     private var session = WindowSwitchSession<UUID>()
     private var generation: UInt64?
@@ -554,11 +556,8 @@ final class WindowSwitcherController {
         display.windows = windows
         session.search(windows.map(\.id), query: display.query, current: frontWindow, backwards: openedBackwards)
         display.selected = session.selected
-        if let panel, panel.isVisible {
-            let size = WindowSwitcherLayout.size(windowCount: windows.count, queryVisible: !display.query.isEmpty)
-            panel.setFrame(NSRect(x: panel.frame.midX - size.width / 2, y: panel.frame.midY - size.height / 2,
-                                  width: size.width, height: size.height), display: true)
-        }
+        // Fewer rows lift only the bottom edge: the search line stays where it is.
+        if let panel, panel.isVisible { placement.resize(panel, to: WindowSwitcherLayout.size(windowCount: windows.count)) }
     }
 
     private func reconcile(_ snapshot: WindowCatalog.Snapshot) {
@@ -671,7 +670,7 @@ final class WindowSwitcherController {
                 guard self.pointer.selects(at: NSEvent.mouseLocation) else { return }
                 self.display.selectionFromPointer = true; self.selectionMoved = true
                 self.session.select(id); self.display.selected = self.session.selected
-            }))
+            }, placement: placement))
             (created.contentView as? WindowSwitcherHostingView)?.sizingOptions = []
             panel = created
             created.contentView?.layoutSubtreeIfNeeded()
@@ -682,13 +681,10 @@ final class WindowSwitcherController {
         guard presentation.shouldShow, router.active, generation == presentation.sessionID else { return }
         preparePanel()
         guard let panel else { return }
-        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
-        let size = WindowSwitcherLayout.size(windowCount: display.windows.count, queryVisible: !display.query.isEmpty)
-        if let screen {
-            panel.setFrame(NSRect(x: screen.visibleFrame.midX - size.width / 2,
-                                  y: screen.visibleFrame.midY - size.height / 2,
-                                  width: size.width, height: size.height), display: true)
-        }
+        let size = WindowSwitcherLayout.size(windowCount: display.windows.count)
+        // A refresh while the list is up keeps it where it is (a drag may have moved it); opening places it on the
+        // display under the pointer, where the panel family was last dragged to there.
+        if panel.isVisible { placement.resize(panel, to: size) } else { placement.place(panel, size: size) }
         // A refresh while the list is up must not take the selection back from the pointer.
         if panel.isVisible { pointer.relaid(at: NSEvent.mouseLocation) } else { pointer.rest(at: NSEvent.mouseLocation) }
         panel.orderFrontRegardless()
