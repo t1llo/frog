@@ -44,7 +44,8 @@ struct FrogFooterStatus: View {
             Group {
                 if tone == .off { Circle().strokeBorder(FrogStyle.muted, lineWidth: 1.25) } else { Circle().fill(color) }
             }.frame(width: 6, height: 6)
-            Text(L10n.text(text)).monospacedDigit().lineLimit(1)
+            // A status is a word or a time, never cut: "15 min ago" keeps its whole width wherever it is drawn.
+            Text(L10n.text(text)).monospacedDigit().lineLimit(1).fixedSize()
         }.accessibilityElement(children: .combine)
     }
 

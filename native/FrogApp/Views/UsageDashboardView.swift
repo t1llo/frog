@@ -870,9 +870,11 @@ struct UsageBucketChart: View {
             AxisMarks(position: .leading, values: [0, top / 2, top]) { value in
                 AxisGridLine(stroke: FrogChart.gridLine).foregroundStyle(FrogStyle.hairline)
                 AxisValueLabel {
-                    // A middle that rounds to the same words as 0 or the top is left out rather than said twice.
+                    // A middle that rounds to the same words as 0 or the top is left out rather than said twice, and
+                    // so is one written another way ("$2.50" between "$0" and "$5"): one label format per chart.
                     if let amount = value.as(Double.self),
-                       amount == 0 || amount == top || ![zeroLabel, topLabel].contains(axisFormat(amount)) {
+                       amount == 0 || amount == top
+                        || (![zeroLabel, topLabel].contains(axisFormat(amount)) && Self.sameForm(axisFormat(amount), topLabel)) {
                         Text(axisFormat(amount)).font(FrogType.small).monospacedDigit().foregroundStyle(FrogStyle.muted)
                     }
                 }
@@ -906,6 +908,12 @@ struct UsageBucketChart: View {
 
     /// The smallest round figure (1, 2, 2.5 or 5 times a power of ten) at or above the busiest bucket, so the scale's
     /// top and middle read as plain numbers.
+    /// Whether two axis labels are written the same way: both with decimals or both without.
+    static func sameForm(_ a: String, _ b: String) -> Bool {
+        func decimals(_ text: String) -> Bool { text.range(of: #"\d\.\d"#, options: .regularExpression) != nil }
+        return decimals(a) == decimals(b)
+    }
+
     static func niceCeiling(_ value: Double, floor minimum: Double = 0) -> Double {
         guard value.isFinite, value > 0 else { return max(1, minimum) }
         guard value > minimum else { return minimum }

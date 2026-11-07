@@ -115,7 +115,12 @@ struct FrogStatusMenu: View {
             FrogFooterHint(model.setupPresented ? "Set up Frog" : "Settings", keys: "\u{2318},") {
                 dismiss(); model.showSettings()
             }.keyboardShortcut(",")
-            FrogFooterHint("Quit", keys: "\u{2318}Q") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
+            .fixedSize()
+            // The same footer on every tab at the menu's fixed width: Settings with its caps, then Quit as its word
+            // alone (⌘Q, which every Mac app answers to, still quits and is in its tooltip), so a longer status such
+            // as "15 min ago" never squeezes Settings down to bare caps.
+            FrogFooterHint("Quit", keys: "") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q").fixedSize()
+                .help("Quit Frog (\u{2318}Q)")
         }
     }
 }
