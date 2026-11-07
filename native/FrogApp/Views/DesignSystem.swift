@@ -106,6 +106,8 @@ enum FrogStyle {
     static let toolbarFade: CGFloat = space12
     /// Space around a page's content (`FrogPage`) and between its sections.
     static let pagePadding: CGFloat = 20
+    /// The fade over a page's bottom edge while its content runs on below, and the room under the last card.
+    static let pageBottomFade: CGFloat = space16 * 2
     static let sectionSpacing: CGFloat = 30
     /// The spacing scale for gaps, stacks and paddings: 2 between a title and its caption, 4 inside a label,
     /// 6 and 8 between controls, 10 between blocks inside a card, 12 between a row's icon, text and control,
@@ -479,6 +481,8 @@ enum FrogType {
     /// Timestamps, paths, counts, badges and footnotes.
     static let caption = Font.system(size: 10)
     static let mono = Font.system(size: 11, design: .monospaced)
+    /// Code in a list of body-size rows (a copied snippet on the Clipboard page): monospaced at the body size.
+    static let monoBody = Font.system(size: 13, design: .monospaced)
 }
 
 extension View {

@@ -17,11 +17,14 @@ struct FrogPage<Content: View>: View {
             // A header that hands everything up to the toolbar takes no room, and no section spacing either.
             FrogPageStack(spacing: FrogStyle.sectionSpacing) { content }
                 .frame(maxWidth: width, alignment: .leading)
-                .padding(.horizontal, FrogStyle.pagePadding).padding(.bottom, FrogStyle.pagePadding)
+                .padding(.horizontal, FrogStyle.pagePadding)
                 .padding(.top, titleInToolbar ? FrogStyle.toolbarFade : FrogStyle.pagePadding)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .minimalScrollbars()
         }
+        // A card running on past the window's bottom edge fades out there instead of being cut through; the fade's
+        // margin is the page's bottom padding, so scrolled to the end the last card rests clear of it.
+        .bottomScrollFade(height: FrogStyle.pageBottomFade)
         // The toolbar lines its actions up with the column's trailing edge.
         .preference(key: FrogPageWidthKey.self, value: width)
     }
