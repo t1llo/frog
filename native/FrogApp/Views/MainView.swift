@@ -32,6 +32,9 @@ struct MainView: View {
     @State private var sidebarEndSpace: CGFloat = 0
     /// Heights the sidebar's layout depends on: the list's rows, the pinned rows, and the space below the search.
     @State private var sidebarHeights = SidebarHeights()
+    /// Which edges of the sidebar list have rows beyond them, scrolled away above or hidden below, so each edge
+    /// can show it (`sidebarEdgeCue`). Set only when it changes, so scrolling redraws nothing else.
+    @State private var sidebarMore = SidebarMore()
     /// Draws this in place of the open route's page, for pictures of a step or tab inside a page (a History entry,
     /// a Models tab) in the whole window. The sidebar still shows the route.
     var pageOverride: AnyView? = nil
@@ -154,15 +157,42 @@ struct MainView: View {
     private func layOutSidebar() {
         let heights = sidebarHeights
         guard heights.viewport > 0 else { return }
-        let scrollable = max(0, heights.content + sidebarBottomFade - heights.viewport)
+        let scrollable = max(0, heights.content + sidebarTopFade + sidebarBottomFade - heights.viewport)
         let end = sidebarGrid.endSpace(scrollable: scrollable)
         if abs(end - sidebarEndSpace) > 0.5 { sidebarEndSpace = end }
+    }
+
+    /// Notes which edges of the sidebar list have rows beyond them: any scroll leaves rows above, and rows below
+    /// show past the visible bottom (the viewport less its fade) until the list is scrolled to its end.
+    private func updateSidebarMore(offset: CGFloat, content: CGFloat) {
+        let viewport = sidebarHeights.viewport
+        guard viewport > 0 else { return }
+        let more = SidebarMore(above: offset > 0.5, below: offset + viewport - sidebarTopFade - sidebarBottomFade < content - 0.5)
+        if more != sidebarMore { sidebarMore = more }
+    }
+
+    /// The cue that the sidebar list goes on past an edge: a soft shade one group gap tall over the rows' width, the
+    /// `track` tone fading away from the edge and towards both ends, as a Mac window shades a scroll view's edge;
+    /// never a line or a bar.
+    private func sidebarEdgeCue(fromTop: Bool) -> some View {
+        LinearGradient(colors: [FrogStyle.track, FrogStyle.track.opacity(0)],
+                       startPoint: fromTop ? .top : .bottom, endPoint: fromTop ? .bottom : .top)
+            // Faded at both ends too, so the shade never reads as a rule across the panel.
+            .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.25),
+                                         .init(color: .black, location: 0.75), .init(color: .clear, location: 1)],
+                                 startPoint: .leading, endPoint: .trailing))
+            .frame(height: FrogStyle.sidebarGroupGap)
+            .padding(.horizontal, FrogStyle.sidebarRowInset)
+            .allowsHitTesting(false).accessibilityHidden(true)
     }
 
     /// The fade at the list's bottom edge, one group gap: above the pinned rows it covers only empty space, and once
     /// the list scrolls a row that would reach into it is hidden (`sidebarGridRow`), so at rest it covers nothing
     /// and rows only pass through it while the list moves.
     private var sidebarBottomFade: CGFloat { FrogStyle.sidebarGroupGap }
+    /// The fade at the list's top edge, the group gap under the search field: the list rests with its top row
+    /// just under it, and a row scrolled up fades out through it instead of being cut at the field.
+    private var sidebarTopFade: CGFloat { FrogStyle.sidebarGroupGap }
 
     // MARK: Toolbar
 
@@ -299,8 +329,8 @@ struct MainView: View {
                 .padding(.horizontal, FrogStyle.sidebarRowInset)
 
             // The list starts one group gap under the field. Its scroll rests only on a row's top edge, so a row
-            // never shows cut in half under the field; while it moves, rows pass under a crisp edge, as in a Mac
-            // sidebar.
+            // never shows cut in half under the field; while it moves, rows fade out through that gap, never cut
+            // hard at the field.
             let workspace = workspaceNavigation.filter { matches($0.title) || ($0.id == .features && offFeatureMatches) }
             VStack(spacing: 0) {
                 ScrollViewReader { proxy in
@@ -309,34 +339,48 @@ struct MainView: View {
                         .padding(.horizontal, FrogStyle.sidebarRowInset)
                         .coordinateSpace(name: SidebarRowGrid.content)
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(SidebarRowGrid.viewport)) } action: { frame in
-                            sidebarGrid.offset = -frame.minY
+                            // The list's top sits `sidebarTopFade` down the scroll view at rest.
+                            sidebarGrid.offset = sidebarTopFade - frame.minY
                             if abs(frame.height - sidebarHeights.content) > 0.5 { sidebarHeights.content = frame.height; layOutSidebar() }
+                            updateSidebarMore(offset: sidebarTopFade - frame.minY, content: frame.height)
                         }
                         .padding(.bottom, sidebarEndSpace)
                         .environment(\.sidebarVisibleBottom, sidebarHeights.viewport - sidebarBottomFade)
+                        .environment(\.sidebarVisibleTop, sidebarTopFade)
                         .minimalScrollbars()
                     }
                     .coordinateSpace(name: SidebarRowGrid.viewport)
                     .scrollTargetBehavior(SidebarRowSnap(grid: sidebarGrid))
                     .bottomScrollFade(height: sidebarBottomFade)
+                    .topScrollFade(height: sidebarTopFade)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                         sidebarGrid.viewportHeight = height
                         sidebarHeights.viewport = height
                         layOutSidebar()
+                        updateSidebarMore(offset: sidebarGrid.offset, content: sidebarHeights.content)
                     }
+                    // Rows beyond an edge show there: a soft band in the gap under the search field while rows are
+                    // scrolled away above, and in the gap above the pinned rows while rows are hidden below, so a
+                    // list that rests on a row edge still says it goes on, without a half row or a pill.
+                    .overlay(alignment: .top) {
+                        sidebarEdgeCue(fromTop: true).opacity(sidebarMore.above ? 1 : 0)
+                    }
+                    .overlay(alignment: .bottom) {
+                        sidebarEdgeCue(fromTop: false).opacity(sidebarMore.below ? 1 : 0)
+                    }
+                    .animation(FrogMotion.reveal, value: sidebarMore)
                     // Reveals a feature opened from elsewhere, such as the command bar, by the least scrolling;
                     // a row already in view stays where it is. A window that opens on a page shows its row too.
                     .onAppear { reveal(section, in: proxy) }
                     .onChange(of: section) { _, route in reveal(route, in: proxy) }
                 }
-                .padding(.top, gap)
                 // Models, Features and Settings are pinned under the list at every window height, so the main
                 // destinations never scroll away or hide; only the list above them scrolls.
                 if !workspace.isEmpty {
                     workspaceGroup(workspace).padding(.horizontal, FrogStyle.sidebarRowInset)
                 }
             }
-            .onAppear { sidebarGrid.bottomFade = sidebarBottomFade }
+            .onAppear { sidebarGrid.bottomFade = sidebarBottomFade; sidebarGrid.topFade = sidebarTopFade }
         }
         .background(FrogStyle.sidebar, in: RoundedRectangle(cornerRadius: FrogStyle.sidebarRadius, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: FrogStyle.sidebarRadius, style: .continuous))
@@ -454,6 +498,12 @@ struct MainView: View {
 }
 
 /// The heights the sidebar's layout is worked out from (`MainView.layOutSidebar`).
+/// Whether the sidebar list has rows scrolled away above or hidden below.
+struct SidebarMore: Equatable {
+    var above = false
+    var below = false
+}
+
 struct SidebarHeights: Equatable {
     /// The scroll view and its content.
     var viewport: CGFloat = 0

@@ -21,7 +21,9 @@ final class SidebarScrollTests: XCTestCase {
         window.orderFrontRegardless()
         try await Task.sleep(for: .milliseconds(600))
         let scroll = try XCTUnwrap(descendants(window.contentView!).compactMap { $0 as? NSScrollView }.first { $0.frame.width < 260 })
-        func y() -> CGFloat { scroll.contentView.bounds.origin.y }
+        // How far the list is scrolled from rest: at rest the clip view sits the list's top fade above its content.
+        let rest = scroll.contentView.bounds.origin.y
+        func y() -> CGFloat { scroll.contentView.bounds.origin.y - rest }
         func choose(_ feature: FeatureID) async throws {
             model.toolkit.select(.feature(feature))
             try await Task.sleep(for: .milliseconds(400))
@@ -49,14 +51,13 @@ final class SidebarScrollTests: XCTestCase {
         // App cleaner is below the visible rows, with or without the Finish setup button under the list:
         // the list scrolls until the row shows clear of the bottom fade, not until it is centred.
         let host = try XCTUnwrap(window.contentView)
-        // Below the visible rows it is hidden, never shown cut above the pinned rows.
-        if let below = try AccessibleControls.elements(in: host).first(where: { $0.role == NSAccessibility.Role.button.rawValue && ($0.label ?? $0.title) == "App cleaner" }) {
-            let frame = try AccessibleControls.frame(of: below, in: scroll)
-            XCTAssertLessThan(scroll.isFlipped ? scroll.bounds.maxY - frame.maxY : frame.minY - scroll.bounds.minY, 0,
-                              "App cleaner starts below the visible rows")
-        }
+        // Below the visible rows it is hidden, never shown cut above the pinned rows. Whether the wheel's scroll
+        // already brought it whole into view depends on the sidebar's height, so the list must move only if not.
+        let row = try AccessibleControls.elements(in: host).first(where: { $0.role == NSAccessibility.Role.button.rawValue && ($0.label ?? $0.title) == "App cleaner" })
+        let shown = try row.map { try AccessibleControls.frame(of: $0, in: scroll) }.map { scroll.bounds.contains($0) } ?? false
         try await choose(.cleaner)
-        XCTAssertGreaterThan(y(), scrolled)
+        if !shown { XCTAssertGreaterThan(y(), scrolled, "A row out of view scrolls into view") }
+        else { XCTAssertEqual(y(), scrolled, "A row already whole in view does not move the list") }
         let clearance = try await self.clearance("App cleaner", in: scroll, of: host)
         XCTAssertGreaterThanOrEqual(clearance, fade - 1, "The chosen row shows clear of the bottom fade")
         XCTAssertLessThan(clearance, fade + 40, "The list scrolls to the next row edge, not until the row is centred")
@@ -80,7 +81,7 @@ final class SidebarScrollTests: XCTestCase {
         window.orderFrontRegardless()
         try await Task.sleep(for: .milliseconds(600))
         let scroll = try XCTUnwrap(descendants(host).compactMap { $0 as? NSScrollView }.first { $0.frame.width < 260 })
-        XCTAssertGreaterThan(scroll.contentView.bounds.origin.y, 0, "The list scrolled to the row")
+        XCTAssertGreaterThan(scroll.contentView.bounds.origin.y + scroll.contentInsets.top, 0, "The list scrolled to the row")
         let clearance = try await self.clearance("App cleaner", in: scroll, of: host)
         XCTAssertGreaterThanOrEqual(clearance, fade - 1, "The row shows clear of the bottom fade")
         try await assertNoRowCutAtTheTop(of: scroll, in: host)

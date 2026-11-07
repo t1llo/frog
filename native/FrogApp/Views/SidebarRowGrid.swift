@@ -19,6 +19,8 @@ final class SidebarRowGrid: @unchecked Sendable {
     var viewportHeight: CGFloat = 0
     /// The height of the fade at the list's bottom edge, which a revealed row stays clear of.
     var bottomFade: CGFloat = 0
+    /// The height of the fade at the list's top edge, under the search field, where the list's top row rests.
+    var topFade: CGFloat = 0
     /// The header of each row's group, by the row's ID.
     var groups: [AnyHashable: AnyHashable] = [:]
 
@@ -47,7 +49,7 @@ final class SidebarRowGrid: @unchecked Sendable {
     /// both fit, so the open page never shows under a group it does not belong to.
     func revealTarget(_ id: AnyHashable) -> AnyHashable? {
         guard let frame = rows[id], viewportHeight > 0 else { return nil }
-        let visible = viewportHeight - bottomFade
+        let visible = viewportHeight - topFade - bottomFade
         // The top of what must show: the group's header when the header and the row fit together.
         let header = groups[id].flatMap { rows[$0] }
         let top = header.map { frame.maxY - $0.minY <= visible + 0.5 ? $0.minY : frame.minY } ?? frame.minY
@@ -84,15 +86,17 @@ extension View {
     }
 }
 
-/// The top edge is kept whole by the scroll resting on row tops; the bottom edge, which falls wherever the window's
-/// height puts it, by hiding a row that would show cut there. So the list ends on a row boundary at rest and never
-/// shows half a row, and a row scrolled up into view fades in once all of it fits.
+/// The top edge is kept whole by the scroll resting on row tops just under the top fade, and a row scrolled up into
+/// that fade fades out; the bottom edge, which falls wherever the window's height puts it, by hiding a row that would
+/// show cut there. So the list starts and ends on a row boundary at rest and never shows half a row, and a row
+/// scrolled into view fades in once all of it fits.
 private struct SidebarGridRow: ViewModifier {
     let id: AnyHashable
     let grid: SidebarRowGrid
     let group: AnyHashable?
     let keepsWith: CGFloat
     @Environment(\.sidebarVisibleBottom) private var visibleBottom
+    @Environment(\.sidebarVisibleTop) private var visibleTop
     @State private var whole = true
 
     func body(content: Content) -> some View {
@@ -103,8 +107,9 @@ private struct SidebarGridRow: ViewModifier {
                 grid.rows[id] = $0
                 grid.groups[id] = group
             }
-            .onGeometryChange(for: Bool.self) { [visibleBottom, keepsWith] proxy in
-                visibleBottom <= 0 || proxy.frame(in: .named(SidebarRowGrid.viewport)).maxY + keepsWith <= visibleBottom + 0.5
+            .onGeometryChange(for: Bool.self) { [visibleTop, visibleBottom, keepsWith] proxy in
+                let frame = proxy.frame(in: .named(SidebarRowGrid.viewport))
+                return visibleBottom <= 0 || (frame.minY >= visibleTop - 0.5 && frame.maxY + keepsWith <= visibleBottom + 0.5)
             } action: { fits in
                 if fits != whole { whole = fits }
             }
@@ -113,7 +118,14 @@ private struct SidebarGridRow: ViewModifier {
 }
 
 private struct SidebarVisibleBottomKey: EnvironmentKey { static let defaultValue: CGFloat = 0 }
+private struct SidebarVisibleTopKey: EnvironmentKey { static let defaultValue: CGFloat = 0 }
 extension EnvironmentValues {
+    /// Where the sidebar list's rows start showing whole: under its top fade. A row scrolled up into the fade
+    /// fades out as it goes, so none rests there cut under the search field.
+    var sidebarVisibleTop: CGFloat {
+        get { self[SidebarVisibleTopKey.self] }
+        set { self[SidebarVisibleTopKey.self] = newValue }
+    }
     /// Where the sidebar list's rows stop showing whole: the scroll view's height less its bottom fade; 0 before
     /// the list is laid out, which shows every row.
     var sidebarVisibleBottom: CGFloat {
