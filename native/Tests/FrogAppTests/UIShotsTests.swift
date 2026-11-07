@@ -108,6 +108,25 @@ final class UIShotsTests: XCTestCase {
                 StatisticsView(statistics: statistics).frogPageBack("statistics", parent: "Settings") {}
             }
         }
+        if wanted("page-scripts-output") {
+            // A script just run, its output folded open under it: its own documents and runner in the sample's folder,
+            // and a script that only prints, so nothing on this Mac changes.
+            try await sample.useRealisticFeatures(plus: .scripts)
+            let documents = LocalDocuments(directory: sample.root.appendingPathComponent("scripts-output", isDirectory: true))
+            await documents.load()
+            let script = UtilityDocument(kind: .script, title: "Morning check",
+                                         text: "echo \"Good morning\"\necho \"3 updates waiting\"\necho \"Backup finished at 06:00\"",
+                                         modified: Date())
+            documents.add(script)
+            documents.selection[.script] = script.id
+            let runner = ScriptRunner()
+            runner.run(script, timeout: 10)
+            for _ in 0..<100 where runner.running != nil { try await Task.sleep(for: .milliseconds(50)) }
+            try await step("page-scripts-output", .feature(.scripts)) {
+                ScriptsPage(documents: documents, runner: runner, timeout: 60, run: { _ in }, setTimeout: { _ in })
+            }
+            try await sample.useRealisticFeatures(plus: nil)
+        }
         for (name, tab) in [("directory", PluginsTab.browse), ("build", .build)] {
             try await step("page-plugins-\(name)", .feature(.plugins)) { PluginsView(plugins: model.plugins, tab: tab) }
         }
