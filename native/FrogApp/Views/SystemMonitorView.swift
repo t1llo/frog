@@ -120,6 +120,9 @@ struct SystemMonitorOverview: View {
             }
             if let power = powerLine {
                 section(wide ? "Power" : nil) { power.modifier(OverviewCard(wide: wide)) }
+            } else if snapshot.cpu == .measuring && PowerSources.hasInternalBattery {
+                // The battery card's place, drawn like the card, until the first reading fills it.
+                section(wide ? "Power" : nil) { batterySkeleton.modifier(OverviewCard(wide: wide)) }
             }
         }.accessibilityElement(children: .contain).accessibilityLabel("System overview")
     }
@@ -168,8 +171,10 @@ struct SystemMonitorOverview: View {
                 } else if recordedWithout {
                     Text("—").font(FrogType.small)
                 } else {
-                    Spacer(minLength: 4)
-                    FrogSkeleton(width: 56, height: 12)
+                    // Where the figure goes, beside the title, as tall as the figure's line.
+                    FrogSkeleton(width: 64, height: 14)
+                        // Centred on the title's line rather than standing on its baseline.
+                        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                 }
             }
             meter(fraction ?? 0, color: fraction.map(level) ?? FrogStyle.accent)
@@ -229,6 +234,30 @@ struct SystemMonitorOverview: View {
         })
     }
 
+    /// The battery card before its first reading: the title, a bar where the charge goes, the empty meter and the
+    /// two figures under it, each line as tall as the loaded card's.
+    private var batterySkeleton: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .center, spacing: 6) {
+                    cardTitle("Battery", symbol: "battery.75")
+                    FrogSkeleton(width: 40, height: 14).frame(height: 18)
+                    Spacer(minLength: 4)
+                }
+                meter(0, color: FrogStyle.accent)
+            }
+            HStack(alignment: .top, spacing: 8) {
+                ForEach(["Mac draws", "Temperature"], id: \.self) { title in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L10n.text(title)).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                        FrogSkeleton(width: 48, height: 12).frame(height: 16)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .accessibilityElement().accessibilityLabel("Measuring")
+    }
+
     private var batteryState: String? {
         let power = snapshot.power
         guard power.batteryPercent != nil else { return nil }
@@ -274,7 +303,8 @@ struct SystemMonitorOverview: View {
         value < 0.1 ? "<0.1 W" : value.formatted(.number.precision(.fractionLength(1))) + " W"
     }
 
-    /// CPU or GPU: the dot of its line, the figure now or at the moment under the pointer, and a meter like memory's.
+    /// CPU or GPU: the dot of its line, the figure now or at the moment under the pointer, and a meter like memory's,
+    /// filled in the line's colour (warning and critical override it).
     private func legend(_ title: String, color: Color, recorded: Double??, now: SystemMonitorMetric) -> some View {
         let fraction: Double? = recorded.map { $0 } ?? { if case .value(let value) = now { value } else { nil } }()
         let text = recorded.map { percent($0) } ?? percent(now)
@@ -284,7 +314,8 @@ struct SystemMonitorOverview: View {
             } else {
                 Text(text).font(text.hasSuffix("%") ? GraphStyle.legendValue(page: wide) : FrogType.small)
                     .monospacedDigit().frame(height: wide ? 34 : 24, alignment: .leading)
-                if let fraction { meter(fraction, color: FrogStyle.level(fraction, warning: 0.8, critical: 0.95)) }
+                // In its line's colour, like its dot, until the level says something.
+                if let fraction { meter(fraction, color: fraction >= 0.8 ? FrogStyle.level(fraction, warning: 0.8, critical: 0.95) : color) }
             }
         }.frame(maxWidth: .infinity, alignment: .leading)
     }

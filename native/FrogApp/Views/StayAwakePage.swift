@@ -14,9 +14,9 @@ struct StayAwakePage: View {
                 // Only a session that runs is worth a pill (with its time left); off, the switch below says it.
                 if power.isEnabled { FrogStatePill(text: power.statusText, on: true) }
             }
-            // Every card under a heading, as on the other pages: the session, the lid, the menu bar. The session's first
-            // row says where it stands ("On until 17:30", or that the Mac sleeps as usual).
-            FrogSection("Session") {
+            // One card, so no heading: the session, the lid and the menu-bar icon. The first row says where the
+            // session stands ("On until 17:30", or that the Mac sleeps as usual).
+            FrogSection {
                 FrogRow("Keep this Mac awake", caption: power.isEnabled ? power.statusText : "Off. Your Mac sleeps as usual.") {
                     Toggle("Keep this Mac awake", isOn: Binding(get: { power.isEnabled }, set: power.setEnabled))
                         .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
@@ -37,9 +37,7 @@ struct StayAwakePage: View {
                     Toggle("Keep the screen on", isOn: Binding(get: { settings.keepScreenOn }, set: { on in change { $0.keepScreenOn = on } }))
                         .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
-            }
-            LidClosedSection(power: power, lid: power.lid, on: settings.lidClosed) { on in change(reveal: true) { $0.lidClosed = on } }
-            FrogSection("Menu bar") {
+                LidClosedRows(power: power, lid: power.lid, on: settings.lidClosed) { on in change(reveal: true) { $0.lidClosed = on } }
                 FrogRow("Menu bar icon", caption: "Shows in the menu bar while this Mac is kept awake.") {
                     Toggle("Menu bar icon", isOn: Binding(get: { settings.menuBarItem }, set: { on in change(reveal: true) { $0.menuBarItem = on } }))
                         .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
@@ -76,16 +74,16 @@ struct StayAwakePage: View {
     }
 }
 
-/// The lid-closed mode: a system setting that needs a one-time setup in Terminal, kept apart from the session,
-/// which needs none.
-private struct LidClosedSection: View {
+/// The lid-closed mode: a system setting that needs a one-time setup in Terminal, which the session does not, so
+/// its access rows show only while it is on.
+private struct LidClosedRows: View {
     @ObservedObject var power: StayAwakeController
     @ObservedObject var lid: LidClosedSleep
     let on: Bool
     let set: (Bool) -> Void
 
     var body: some View {
-        FrogSection("Lid closed") {
+        VStack(alignment: .leading, spacing: FrogStyle.space2) {
             FrogRow("Stay awake with the lid closed", caption: on ? "Turns off sleep for the whole Mac." : "Needs a one-time setup in Terminal.") {
                 Toggle("Stay awake with the lid closed", isOn: Binding(get: { on }, set: set))
                     .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)

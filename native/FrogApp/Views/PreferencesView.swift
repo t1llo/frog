@@ -59,8 +59,21 @@ struct PreferencesView: View {
                 }
             }
             FrogSection("Updates") { UpdateSettingsView() }.id("updates")
-            FrogSection("Errors") {
-                FrogRow(model.recentErrors.isEmpty ? "None recorded" : "\(model.recentErrors.count) recorded") {
+            FrogSection("About") {
+                FrogRow("Frog \(Self.version)", caption: "Build \(FrogVersion.build)") {
+                    Link("Source code ↗", destination: URL(string: "https://github.com/t1llo/frog")!)
+                }
+                ForEach(LegalDocument.allCases.filter { $0.url() != nil }) { document in
+                    FrogRow(document.title) { Button("View") { legalDocument = document }.buttonStyle(.frog()) }
+                }
+                FrogRow("Made by Tillo") {
+                    HStack(spacing: 12) {
+                        Link("frog@beffa.xyz", destination: URL(string: "mailto:frog@beffa.xyz")!)
+                        Link("beffa.xyz ↗", destination: URL(string: "https://beffa.xyz")!)
+                    }
+                }
+                // The error log ends About: with nothing recorded it is one row, too little for a card of its own.
+                FrogRow("Errors", caption: model.recentErrors.isEmpty ? "None recorded" : "\(model.recentErrors.count) recorded") {
                     if !model.recentErrors.isEmpty {
                         HStack(spacing: 8) {
                             Button("Clear") { model.clearRecentErrors() }.buttonStyle(.frog())
@@ -74,20 +87,6 @@ struct PreferencesView: View {
                     FrogRow(issue.message, caption: issue.timestamp.formatted(date: .abbreviated, time: .shortened)) {
                         CopyAction(title: "Copy error") { ViewActions.copy("\(issue.timestamp.ISO8601Format())  \(issue.message)") }
                     }.textSelection(.enabled)
-                }
-            }
-            FrogSection("About") {
-                FrogRow("Frog \(Self.version)", caption: "Build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—")") {
-                    Link("Source code ↗", destination: URL(string: "https://github.com/t1llo/frog")!)
-                }
-                ForEach(LegalDocument.allCases.filter { $0.url() != nil }) { document in
-                    FrogRow(document.title) { Button("View") { legalDocument = document }.buttonStyle(.frog()) }
-                }
-                FrogRow("Made by Tillo") {
-                    HStack(spacing: 12) {
-                        Link("frog@beffa.xyz", destination: URL(string: "mailto:frog@beffa.xyz")!)
-                        Link("beffa.xyz ↗", destination: URL(string: "https://beffa.xyz")!)
-                    }
                 }
             }.sheet(item: $legalDocument) { LegalDocumentView(document: $0) }
         }.toggleStyle(.frogSwitch).controlSize(.small)
@@ -104,7 +103,7 @@ struct PreferencesView: View {
             } message: { Text("The current settings are backed up. Provider keys may need to be re-entered.") }
         }
     }
-    private static var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0" }
+    private static var version: String { FrogVersion.short }
     /// Opens config.toml, which Frog writes at its first start, in the app the user picked for it, or TextEdit.
     private func openSettingsFile() {
         let url = model.settingsFile.fileURL
@@ -141,7 +140,7 @@ private struct SettingsHero: View {
     @ObservedObject var model: AppModel
     @ObservedObject private var updater = UpdateService.shared
     @ObservedObject private var readiness = UpdateReadiness.shared
-    private var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0" }
+    private var version: String { FrogVersion.short }
     private var missing: String? {
         if !model.accessibilityGranted { return "Allow Accessibility" }
         if !DictationController.microphoneGranted { return "Allow Microphone" }

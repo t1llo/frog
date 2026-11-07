@@ -24,7 +24,8 @@ struct PhonePage: View {
                     .transition(appear)
             }
             phones
-            PhoneSendSection(phone: phone, plugin: plugin)
+            // Nothing to send to before a phone is paired, so the empty Phones card stands alone without a heading.
+            if !phone.phones.isEmpty { PhoneSendSection(phone: phone, plugin: plugin) }
             if !phone.recents.isEmpty { PhoneRecentsSection(phone: phone).transition(appear) }
         }
         .animation(reduceMotion ? nil : FrogMotion.reveal, value: phone.pairing)
@@ -34,7 +35,8 @@ struct PhonePage: View {
     private func pair() { withAnimation(FrogMotion.reveal) { phone.beginPairing() } }
 
     @ViewBuilder private var phones: some View {
-        FrogSection("Phones") {
+        let alone = phone.phones.isEmpty && phone.pairing == nil && phone.recents.isEmpty
+        FrogSection(alone ? nil : "Phones") {
             if phone.phones.isEmpty {
                 FrogEmptyState(symbol: PhonePlugin.info.symbol, title: "No phone paired", message: "Install Frog Companion on your phone, then pair it.",
                                tint: PhonePlugin.info.tint) {

@@ -90,3 +90,15 @@ struct UpdateSettingsView: View {
         FrogRow("Software updates") { Button("Check for Updates") { updater.check() }.disabled(!updater.canCheck) }
     }
 }
+
+/// Frog's version as Settings shows it. Only Frog's own bundle names it: elsewhere (the test runner, whose bundle is
+/// Xcode's) it falls back to `override`, which the screenshot harness sets, or "1.0.0".
+@MainActor
+enum FrogVersion {
+    static var override: (short: String, build: String)?
+    private static var ownBundle: [String: Any]? {
+        Bundle.main.bundleIdentifier == "xyz.beffa.frog" ? Bundle.main.infoDictionary : nil
+    }
+    static var short: String { override?.short ?? ownBundle?["CFBundleShortVersionString"] as? String ?? "1.0.0" }
+    static var build: String { override?.build ?? ownBundle?["CFBundleVersion"] as? String ?? "—" }
+}

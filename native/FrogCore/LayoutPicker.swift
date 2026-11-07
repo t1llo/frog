@@ -1,25 +1,29 @@
 import Foundation
 
 /// What the layout picker lists and which tile is selected: the layouts that place the window,
-/// grouped as the cheat sheet groups them, four tiles to a row (five for the thirds), filtered by the typed text.
+/// grouped as the cheat sheet groups them, four tiles to a row in every section, filtered by the typed text.
 public struct LayoutPickerModel: Equatable, Sendable {
     public struct Tile: Equatable, Sendable, Identifiable {
         public var action: WindowAction
         public var hotkey: Hotkey?
         /// The full name, for VoiceOver and help. The filter matches it, `name` and the tile's groups.
         public var title: String { action.title }
-        /// The name under its section's heading, one short line: "Left" under Halves, "50%" under Sizes.
+        /// The name under its section's heading, one short line and never another tile's: "Left half", "Left
+        /// third", "50%".
         public var name: String {
             switch action {
-            case .leftHalf, .leftThird: "Left"
-            case .rightHalf, .rightThird: "Right"
-            case .topHalf: "Top"
-            case .bottomHalf: "Bottom"
+            case .leftHalf: "Left half"
+            case .rightHalf: "Right half"
+            case .topHalf: "Top half"
+            case .bottomHalf: "Bottom half"
+            case .leftThird: "Left third"
+            case .rightThird: "Right third"
+            case .centerThird: "Center third"
             case .topLeft: "Top left"
             case .topRight: "Top right"
             case .bottomLeft: "Bottom left"
             case .bottomRight: "Bottom right"
-            case .centerThird, .center: "Center"
+            case .center: "Center"
             case .leftTwoThirds: "Left ⅔"
             case .rightTwoThirds: "Right ⅔"
             case .maximize: "Maximize"
@@ -41,14 +45,15 @@ public struct LayoutPickerModel: Equatable, Sendable {
         public var title: String
         public var tiles: [Tile]
         public var id: String { title }
-        /// How many tiles one of its rows holds: four, and five for Thirds, whose three thirds and two two-thirds
-        /// share one full row rather than leaving holes in a second one.
-        public var columns: Int { title == "Thirds" ? 5 : LayoutPickerModel.columns }
-        /// The tiles in rows of `columns`.
+        /// How many tiles one of its rows holds: four in every section, so tiles are one width and their columns
+        /// line up from section to section.
+        public var columns: Int { LayoutPickerModel.columns }
+        /// The tiles in rows of `columns`. The two-thirds start a row of their own under the three thirds.
         public var rows: [[Tile]] {
             var rows: [[Tile]] = []
             for tile in tiles {
-                if rows.isEmpty || rows[rows.count - 1].count == columns { rows.append([]) }
+                let startsRow = tile.action == .leftTwoThirds || (tile.action == .rightTwoThirds && !tiles.contains { $0.action == .leftTwoThirds })
+                if rows.isEmpty || rows[rows.count - 1].count == columns || (startsRow && !rows[rows.count - 1].isEmpty) { rows.append([]) }
                 rows[rows.count - 1].append(tile)
             }
             return rows

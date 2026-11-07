@@ -6,7 +6,7 @@ final class LayoutPickerModelTests: XCTestCase {
         let model = LayoutPickerModel(hotkeys: [:])
         XCTAssertEqual(model.sections.map(\.title), ["Halves", "Quarters", "Thirds", "Sizes", "More"])
         XCTAssertEqual(model.sections[0].tiles.map(\.action), [.leftHalf, .rightHalf, .topHalf, .bottomHalf])
-        XCTAssertEqual(model.sections[2].rows.map { $0.map(\.action) }, [[.leftThird, .centerThird, .rightThird, .leftTwoThirds, .rightTwoThirds]])
+        XCTAssertEqual(model.sections[2].rows.map { $0.map(\.action) }, [[.leftThird, .centerThird, .rightThird], [.leftTwoThirds, .rightTwoThirds]])
         XCTAssertEqual(model.sections[3].tiles.map(\.action), [.maximize, .centeredSmall, .centeredMedium, .centeredLarge])
         XCTAssertEqual(model.sections[4].tiles.map(\.action), [.center, .restore, .nextDisplay, .previousDisplay])
         XCTAssertEqual(model.selection, .leftHalf)
@@ -54,10 +54,13 @@ final class LayoutPickerModelTests: XCTestCase {
         XCTAssertEqual(model.selection, .topLeft, "Right at the end of a row goes on to the next row")
         model.move(.down)
         XCTAssertEqual(model.selection, .leftThird)
-        for _ in 0..<4 { model.move(.right) }
+        model.move(.down)
+        XCTAssertEqual(model.selection, .leftTwoThirds, "The two-thirds are a row of their own")
+        model.move(.right)
         XCTAssertEqual(model.selection, .rightTwoThirds)
         model.move(.down)
-        XCTAssertEqual(model.selection, .centeredLarge, "A shorter row keeps its last tile")
+        XCTAssertEqual(model.selection, .centeredSmall, "Down keeps the column")
+        for _ in 0..<2 { model.move(.right) }
         model.move(.down)
         XCTAssertEqual(model.selection, .previousDisplay)
         model.move(.up)
@@ -83,13 +86,13 @@ final class LayoutPickerModelTests: XCTestCase {
 
     func testTilesAreNamedShortlyUnderTheirSectionAndKeepTheirFullTitles() {
         let model = LayoutPickerModel(hotkeys: [:])
-        XCTAssertEqual(model.sections[0].tiles.map(\.name), ["Left", "Right", "Top", "Bottom"])
+        XCTAssertEqual(model.sections[0].tiles.map(\.name), ["Left half", "Right half", "Top half", "Bottom half"])
         XCTAssertEqual(model.sections[3].tiles.map(\.name), ["Maximize", "50%", "70%", "90%"])
         XCTAssertEqual(model.sections[4].tiles.map(\.name), ["Center", "Restore", "Next display", "Previous display"])
         XCTAssertEqual(model.sections[3].tiles[1].title, WindowAction.centeredSmall.title)
-        for section in model.sections {
-            XCTAssertEqual(Set(section.tiles.map(\.name)).count, section.tiles.count, "Names repeat in \(section.title)")
-        }
+        XCTAssertEqual(model.sections[2].tiles.map(\.name), ["Left third", "Center third", "Right third", "Left ⅔", "Right ⅔"])
+        let names = model.sections.flatMap { $0.tiles.map(\.name) }
+        XCTAssertEqual(Set(names).count, names.count, "No two tiles share a name")
     }
 
     func testShortcutsArePassedToTheirTiles() {

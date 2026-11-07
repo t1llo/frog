@@ -177,7 +177,7 @@ struct MainView: View {
     /// came from first, as a breadcrumb ("Settings › Statistics") whose first part goes back. Back and forward sit
     /// in the sidebar, beside the window's buttons. The bar drags the window.
     private func toolbar(actions: AnyView?) -> some View {
-        HStack(spacing: FrogStyle.space16) {
+        HStack(alignment: .top, spacing: FrogStyle.space16) {
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: FrogStyle.space6) {
                     if let parent = breadcrumbParent {
@@ -195,16 +195,27 @@ struct MainView: View {
             }
             Spacer(minLength: 0)
             // The actions keep their size; a long subtitle is the one to shorten.
-            if let actions { HStack(spacing: FrogStyle.space8) { actions }.fixedSize() }
+            // Centred on the title's line, so they are level with the window's buttons as well.
+            if let actions {
+                HStack(spacing: FrogStyle.space8) { actions }.fixedSize()
+                    .frame(height: Self.titleLineHeight)
+            }
         }
         .frame(maxWidth: pageWidth, alignment: .leading)
-        // Level with the window's buttons, which the 52-point title bar centres 26 points down.
+        // The title's line is centred on the window's buttons, which the 52-point title bar centres 26 points down,
+        // as a Mac window sets its title; the subtitle hangs under it.
+        .padding(.top, Self.windowButtonsMidline - Self.titleLineHeight / 2)
         .padding(.horizontal, FrogStyle.pagePadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .frame(height: FrogStyle.toolbarHeight)
         .background { WindowDragRegion().accessibilityHidden(true) }
         .background(alignment: .top) { toolbarScrim }
     }
+
+    /// How far down the window macOS centres its buttons under a 52-point unified title bar.
+    static let windowButtonsMidline: CGFloat = 26
+    /// The height of one line of `pageTitle`.
+    static let titleLineHeight: CGFloat = 24
 
     /// Where the open page was entered from, when it is a step inside another: the page's own step back (a
     /// History entry, or Statistics inside Settings).
@@ -283,7 +294,8 @@ struct MainView: View {
             .padding(.trailing, FrogStyle.sidebarRowInset)
             .frame(height: 36).frame(maxWidth: .infinity)
             .background { WindowDragRegion().accessibilityHidden(true) }
-            .padding(.bottom, FrogStyle.space8)
+            // The field follows the strip directly: the window's buttons end 24 points down the panel, so it starts
+            // 12 under them.
             SearchBox(placeholder: "Search", text: $sidebarQuery)
                 .padding(.horizontal, FrogStyle.sidebarRowInset)
 
@@ -357,7 +369,7 @@ struct MainView: View {
                             let index = numbered.firstIndex(of: plugin.id)
                             navigationButton(NavigationItem(id: route, title: plugin.name, symbol: plugin.symbol, tint: plugin.tint.color,
                                                             key: index.map { KeyEquivalent(Character(String($0 + 1))) }))
-                                .id(route).sidebarGridRow(AnyHashable(route), in: sidebarGrid)
+                                .id(route).sidebarGridRow(AnyHashable(route), in: sidebarGrid, group: AnyHashable("group-\(group.category.rawValue)"))
                         }
                         if joinsPages { pluginPageRows(pages) }
                     }
@@ -395,15 +407,21 @@ struct MainView: View {
         ForEach(pages) { item in
             let route = ToolkitRoute.plugin(item.id)
             navigationButton(NavigationItem(id: route, title: item.name, symbol: PluginSymbol.name(item.symbol), tint: PluginCommandRows.tint.color))
-                .id(route).sidebarGridRow(AnyHashable(route), in: sidebarGrid)
+                .id(route).sidebarGridRow(AnyHashable(route), in: sidebarGrid, group: AnyHashable("group-\(PluginCategory.community.rawValue)"))
         }
     }
 
     /// Models, Features and Settings, under the list: pinned while everything fits, at the list's end when not.
     private func workspaceGroup(_ items: [NavigationItem], scrolls: Bool) -> some View {
         VStack(alignment: .leading, spacing: FrogStyle.space2) {
+            // Headed like every other group, so the pinned rows never read as strays of the group above them.
+            if scrolls {
+                SidebarGroupHeader(title: "Frog").id("group-workspace").sidebarGridRow(AnyHashable("group-workspace"), in: sidebarGrid)
+            } else {
+                SidebarGroupHeader(title: "Frog")
+            }
             ForEach(items) { item in
-                if scrolls { navigationButton(item).id(item.id).sidebarGridRow(AnyHashable(item.id), in: sidebarGrid) }
+                if scrolls { navigationButton(item).id(item.id).sidebarGridRow(AnyHashable(item.id), in: sidebarGrid, group: AnyHashable("group-workspace")) }
                 else { navigationButton(item) }
             }
         }
@@ -566,7 +584,6 @@ private struct SettingsHeroRow: View {
     }
 }
 
-/// A sidebar page: its coloured icon tile and name, highlighted on hover and filled when open.
 /// A group's name over its rows in the sidebar: small, muted and semibold, on the rows' icon edge, as Finder heads
 /// Favorites and Locations. It takes no clicks.
 private struct SidebarGroupHeader: View {
@@ -580,6 +597,7 @@ private struct SidebarGroupHeader: View {
     }
 }
 
+/// A sidebar page: its coloured icon tile and name, highlighted on hover and filled when open.
 private struct SidebarRow: View {
     let item: MainView.NavigationItem
     let selected: Bool

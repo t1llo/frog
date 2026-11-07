@@ -14,7 +14,13 @@ struct HiddenBarPage: View {
                     organizer.configure(enabled: true, settings: plugin.settings.organizer)
                 }
             }
+            // The shortcut shares the hiding card: a card of one row would stand alone under its own heading.
             FrogSection("Hiding") {
+                FrogRow("Show or hide icons") {
+                    HotkeyRecorder(hotkey: Binding(get: { plugin.settings.shortcut?.hotkey },
+                                                   set: { hotkey in plugin.update { $0.shortcut = hotkey.flatMap { try? Shortcut($0) } } }))
+                }
+                if let error = plugin.shortcutError { FrogRowNote(text: error, tone: FrogStyle.warning) }
                 // The delay gets its own row under the switch, shown only while it is on.
                 FrogRow("Hide again automatically") {
                     Toggle("Hide again automatically", isOn: binding(\.autoHide, reveal: true)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
@@ -34,13 +40,6 @@ struct HiddenBarPage: View {
                 FrogRow("Always-hidden section", caption: "Icons left of a second divider stay hidden.") {
                     Toggle("Always-hidden section", isOn: binding(\.alwaysHiddenSection)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
-            }
-            FrogSection("Shortcut") {
-                FrogRow("Show or hide icons") {
-                    HotkeyRecorder(hotkey: Binding(get: { plugin.settings.shortcut?.hotkey },
-                                                   set: { hotkey in plugin.update { $0.shortcut = hotkey.flatMap { try? Shortcut($0) } } }))
-                }
-                if let error = plugin.shortcutError { InlineIssue(message: error).padding(.vertical, 6) }
             }
         }
     }

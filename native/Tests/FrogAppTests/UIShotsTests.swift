@@ -34,6 +34,9 @@ final class UIShotsTests: XCTestCase {
         let makeSampler = SystemMonitorPlugin.makeSampler
         SystemMonitorPlugin.makeSampler = { SampleSystemSampler() }
         defer { SystemMonitorPlugin.makeSampler = makeSampler }
+        // A shipped version, as Settings and About show it in the app, never the test bundle's.
+        FrogVersion.override = ("1.0.48", "48")
+        defer { FrogVersion.override = nil }
         let sample = try await SampleFrog(root: root, defaults: temporaryDefaults())
         (sample.model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin)?.monitor?.restore(SampleSystemSampler.history())
         defer { sample.stop() }
@@ -59,10 +62,22 @@ final class UIShotsTests: XCTestCase {
         let routes: [(String, ToolkitRoute)] = FeatureID.allCases.map { ($0.rawValue, .feature($0)) }
             + [("history", .history), ("models", .models), ("features", .features), ("settings", .settings),
                ("statistics", .statistics)]
+        // The pages show the sidebar someone has after setup: the features Frog starts with, the ones setup
+        // recommends and the community plugin, plus the page's own feature when it is not one of those. The menus,
+        // panels and popups after the window keep every feature on.
+        let everyFeature = model.configuration.preferences
         for (route, value) in routes where wanted("page-\(route)") {
+            if case .feature(let feature) = value { try await sample.useRealisticFeatures(plus: feature) }
+            else { try await sample.useRealisticFeatures(plus: nil) }
+            if route == "cleaner", let cleaner = model.cleanerPlugin?.cleaner {
+                // The finished scan, sizes and all, as the page looks once it has loaded.
+                await cleaner.loadApps()
+                await cleaner.measureAppSizes()
+            }
             model.toolkit.select(value)
             try await page("page-\(route)", settle: .milliseconds(500)) { MainView().environmentObject(model) }
         }
+        try await sample.useRealisticFeatures(plus: nil)
         // Behind an entry or a tab, drawn in the whole window like the other pages: sidebar, toolbar and breadcrumb.
         func step<Page: View>(_ name: String, _ route: ToolkitRoute, settle: Duration = .milliseconds(500),
                               _ content: () -> Page) async throws {
@@ -82,6 +97,7 @@ final class UIShotsTests: XCTestCase {
                 ProvidersView(filter: filter)
             }
         }
+        if wanted("page-cleaner-review") { try await sample.useRealisticFeatures(plus: .cleaner) }
         if let cleaner = model.cleanerPlugin?.cleaner, wanted("page-cleaner-review") {
             await cleaner.open(sample.cleanerApp)
             await cleaner.waitForSizes()
@@ -90,6 +106,7 @@ final class UIShotsTests: XCTestCase {
             try await page("page-cleaner-review", settle: .milliseconds(500)) { MainView().environmentObject(model) }
             cleaner.closeReview()
         }
+        try await sample.useFeatures(everyFeature)
     }
 
     // MARK: The menu bar
@@ -108,6 +125,10 @@ final class UIShotsTests: XCTestCase {
         // What it shows in the moment before the first readings arrive.
         let waiting = SystemMonitor(sampler: StalledSystemSampler())
         defer { waiting.stop() }
+        // A Mac with a battery, as the loaded popup pictures one, so the skeleton holds the battery card's place.
+        let hadBattery = PowerSources.hasInternalBattery
+        PowerSources.hasInternalBattery = true
+        defer { PowerSources.hasInternalBattery = hadBattery }
         try await popup("popup-system-monitor-loading") { SystemMonitorStatusPopover(monitor: waiting) {} }
         // Stay awake's menu-bar item opens an NSMenu, which only AppKit draws, on screen.
         try await focusTimerPopup(sample)
@@ -302,6 +323,12 @@ final class UIShotsTests: XCTestCase {
         clock.started = true
         controller.updatePreview("Let's move the design review to Thursday afternoon, and send the new screenshots before then.")
         controller.refreshRecordingFeedback(elapsed: 14)
+        // Fourteen seconds in, the meter holds the last four seconds of speech: syllables with short pauses
+        // between words, across its whole width.
+        for tick in 0..<40 {
+            let syllable = abs(sin(Double(tick) * 1.7)) * (tick % 9 == 8 ? 0.1 : 1)
+            controller.microphoneMeter.append(0.25 + 0.6 * syllable)
+        }
         let frame = DictationPopupLayout.frame(phase: controller.phase, text: controller.liveText,
                                                visibleFrame: CGRect(x: 0, y: 0, width: 1_440, height: 900))
         try await popup("dictation-popup", size: frame.size) { DictationPopup(controller: controller) }
@@ -400,7 +427,8 @@ final class UIShotsTests: XCTestCase {
                                      _ view: () -> Content) async throws {
         guard wanted(name) else { return }
         for (appearance, mode) in Self.appearances {
-            let png = try await render(view().frame(width: width, height: height).background(FrogStyle.opaqueCanvas),
+            let png = try await render(view().frame(width: width, height: height).background(FrogStyle.opaqueCanvas)
+                                        .overlay(alignment: .topLeading) { WindowButtonsPicture() },
                                        size: CGSize(width: width, height: height), appearance: appearance, backdrop: false, settle: settle)
             try write(png, "\(name)-\(mode)")
         }
@@ -648,6 +676,37 @@ private final class SampleFrog {
         await model.pluginHost.syncAndWait()
     }
 
+    /// The features someone has after setup: the ones Frog starts with, the ones setup recommends, and Plugins
+    /// for the community plugin; `extra` as well when given.
+    func realisticFeatures(plus extra: FeatureID?) -> Set<FeatureID> {
+        let infos = model.pluginHost.descriptors.map(\.info)
+        var features = Set(FeatureID.allCases.filter { feature in
+            infos.first { $0.id == BuiltinPlugins.pluginID(for: feature) }.map { $0.enabledByDefault || $0.recommended } ?? false
+        })
+        features.insert(.plugins)
+        if let extra { features.insert(extra) }
+        return features
+    }
+
+    func useRealisticFeatures(plus extra: FeatureID?) async throws {
+        let wanted = realisticFeatures(plus: extra)
+        var preferences = model.configuration.preferences
+        for feature in FeatureID.allCases { preferences.setFeature(feature, enabled: wanted.contains(feature)) }
+        try await useFeatures(preferences)
+    }
+
+    /// Saves the features of `preferences` when they differ and waits for the plugins to follow. System monitor
+    /// starts again on its ten minutes of made-up graph.
+    func useFeatures(_ preferences: Preferences) async throws {
+        let current = model.configuration.preferences
+        guard FeatureID.allCases.contains(where: { current.featureEnabled($0) != preferences.featureEnabled($0) }) else { return }
+        var next = current
+        for feature in FeatureID.allCases { next.setFeature(feature, enabled: preferences.featureEnabled(feature)) }
+        try model.savePreferences(next)
+        await model.pluginHost.syncAndWait()
+        (model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin)?.monitor?.restore(SampleSystemSampler.history())
+    }
+
     func stop() {
         model.shutdown()
         pasteboard.releaseGlobally()
@@ -754,5 +813,45 @@ private struct StalledSystemSampler: SystemMonitorSampling {
     func sample(reset: Bool, full: Bool) async -> SystemMonitorSnapshot {
         try? await Task.sleep(for: .seconds(3_600))
         return SystemMonitorSnapshot()
+    }
+}
+
+/// The window's close, minimise and zoom buttons, which an offscreen picture of the window's content leaves out:
+/// drawn where macOS puts them in Frog's window (measured from a window made as `FrogApp` makes it), in the
+/// colours of a key window.
+private struct WindowButtonsPicture: View {
+    @MainActor static let frames: [CGRect] = {
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: MainView.defaultSize),
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.toolbarStyle = .unified
+        window.toolbar = NSToolbar(identifier: "FrogMainShots")
+        window.layoutIfNeeded()
+        defer { window.close() }
+        return [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap { type in
+            guard let button = window.standardWindowButton(type) else { return nil }
+            let frame = button.convert(button.bounds, to: nil)
+            return CGRect(x: frame.minX, y: window.frame.height - frame.maxY, width: frame.width, height: frame.height)
+        }
+    }()
+    private static let colours: [(fill: UInt32, edge: UInt32)] = [(0xFF5F57, 0xE2463F), (0xFEBC2E, 0xE1A116), (0x28C840, 0x14AE2B)]
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(Array(Self.frames.enumerated()), id: \.offset) { index, frame in
+                let colour = Self.colours[min(index, Self.colours.count - 1)]
+                Circle().fill(Self.color(colour.fill))
+                    .overlay { Circle().strokeBorder(Self.color(colour.edge), lineWidth: 0.5) }
+                    .frame(width: frame.width - 1, height: frame.height - 1)
+                    .offset(x: frame.minX + 0.5, y: frame.minY + 0.5)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private static func color(_ hex: UInt32) -> Color {
+        Color(red: Double(hex >> 16 & 0xFF) / 255, green: Double(hex >> 8 & 0xFF) / 255, blue: Double(hex & 0xFF) / 255)
     }
 }

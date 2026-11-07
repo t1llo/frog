@@ -17,24 +17,6 @@ struct StatisticsView: View {
         }
     }
 
-    /// The switch that counts, and Reset once there is something to clear.
-    @ViewBuilder private var recordingRows: some View {
-        FrogRow("Record statistics", caption: "Counts only, kept on this Mac") {
-            Toggle("Record statistics", isOn: Binding(get: { statistics.snapshot.recordingEnabled }, set: statistics.setRecordingEnabled))
-                .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small).disabled(!statistics.loaded)
-        }
-        if !statistics.snapshot.recordingEnabled {
-            FrogRowNote(text: "Paused. Existing totals remain until you reset them.")
-        }
-        // Resetting sits with the switch that records; with nothing counted there is nothing to clear.
-        if statistics.loaded, !Self.isEmpty(statistics.snapshot.allTime) {
-            FrogRow("Clear all counts") {
-                Button("Reset…", role: .destructive) { confirmingReset = true }.buttonStyle(.frog(.destructive))
-            }
-        }
-        if let issue = statistics.issue { InlineIssue(message: issue) }
-    }
-
     var body: some View {
         FrogPage {
             // The toolbar's Back (⌘[) returns to Settings, which opens this page (MainView offers the step).
@@ -51,7 +33,6 @@ struct StatisticsView: View {
                     recordingRows
                 }
             } else {
-                FrogSection("Local statistics") { recordingRows }
                 VStack(alignment: .leading, spacing: FrogStyle.space12) {
                     CompactSegments(values: Period.allCases, selected: period, title: { $0.rawValue }) { period = $0 }
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: FrogStyle.space10), GridItem(.flexible())], spacing: FrogStyle.space10) {
@@ -74,12 +55,32 @@ struct StatisticsView: View {
                         countRow(toolTitle(kind), count: totals.toolUses(kind))
                     }
                 }
+                // Recording and resetting close the page, under their own heading, two rows with the counts there.
+                FrogSection("Recording") { recordingRows }
             }
         }.foregroundStyle(FrogStyle.ink).buttonStyle(.frog())
             .onAppear { statistics.reload() }
             .confirmationDialog("Reset all statistics?", isPresented: $confirmingReset, titleVisibility: .visible) {
                 Button("Reset statistics", role: .destructive) { statistics.reset() }
             } message: { Text("Every total and daily count will be permanently cleared. Your recording choice is kept.") }
+    }
+
+    /// Whether statistics are recorded, and clearing them once there is something counted.
+    @ViewBuilder private var recordingRows: some View {
+        FrogRow("Record statistics", caption: "Counts only, kept on this Mac") {
+            Toggle("Record statistics", isOn: Binding(get: { statistics.snapshot.recordingEnabled }, set: statistics.setRecordingEnabled))
+                .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small).disabled(!statistics.loaded)
+        }
+        if !statistics.snapshot.recordingEnabled {
+            FrogRowNote(text: "Paused. Existing totals remain until you reset them.")
+        }
+        // Resetting sits with the switch that records; with nothing counted there is nothing to clear.
+        if statistics.loaded, !Self.isEmpty(statistics.snapshot.allTime) {
+            FrogRow("Clear all counts") {
+                Button("Reset…", role: .destructive) { confirmingReset = true }.buttonStyle(.frog(.destructive))
+            }
+        }
+        if let issue = statistics.issue { InlineIssue(message: issue) }
     }
 
     /// Nothing counted at all: no recording, rule run or tool use.

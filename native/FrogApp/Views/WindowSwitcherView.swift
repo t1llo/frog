@@ -11,8 +11,9 @@ struct WindowSwitcherView: View {
     var body: some View {
         FrogPage {
             FrogPageHeader(title: "Window switcher", subtitle: "Every window, not every app. Type to search.")
-            FrogSection("Switching") {
-                FrogRow("Shortcut", caption: "Hold to keep switching; add Shift to go back.") {
+            // The shortcut heads the keys it answers to, so no card holds one row.
+            FrogSection("Keys") {
+                FrogRow("Shortcut", caption: "Hold it to keep switching.") {
                     HotkeyRecorder(hotkey: Binding(get: { plugin.settings.shortcut.hotkey }, set: { value in
                         guard let value else { return }
                         do { try plugin.setShortcut(value) } catch { model.report(error) }
@@ -25,15 +26,13 @@ struct WindowSwitcherView: View {
                 } else if plugin.status.isIssue {
                     FrogRowNote(text: plugin.status.text, tone: FrogStyle.warning)
                 }
+                ForEach(WindowSwitcherKey.all) { key in
+                    FrogRow(key.title) { KeyCaps(key.keys) }
+                }
             }
             VStack(alignment: .leading, spacing: FrogStyle.space8) {
                 FrogSectionHeader("Preview")
                 WindowSwitcherPreview()
-            }
-            FrogSection("While it's open") {
-                ForEach(WindowSwitcherKey.all) { key in
-                    FrogRow(key.title) { KeyCaps(key.keys) }
-                }
             }
         }
     }
