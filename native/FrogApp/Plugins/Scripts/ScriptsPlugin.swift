@@ -157,6 +157,9 @@ struct ScriptsPage: View {
     let run: (UtilityDocument) -> Void
     let setTimeout: (Int) -> Void
     @State private var timeout: Int
+    /// The output panel's state as the person set it with its disclosure; nil follows the script: shut until it has
+    /// run, open once it has printed something.
+    @State private var outputOpen: Bool?
 
     init(documents: LocalDocuments, runner: ScriptRunner, timeout: Int, run: @escaping (UtilityDocument) -> Void, setTimeout: @escaping (Int) -> Void) {
         self.documents = documents; self.runner = runner; self.run = run; self.setTimeout = setTimeout
@@ -184,9 +187,10 @@ struct ScriptsPage: View {
                 CopyAction(title: "Copy output") { ViewActions.copy(runner.output) }
             }
         } content: { script in
+            // The script fills the card, as a note does, and its output folds out right under it: no block of
+            // empty space between the code and what it printed.
             DocumentTextEditor(text: documents.binding(script.id, \.text), font: FrogType.mono)
-            // What the script printed, under a caption, or that it printed nothing; before it has run, the same
-            // block says what will show there, so the card has its final shape and nothing jumps on the first run.
+                .frame(minHeight: 72, maxHeight: .infinity)
             output(ran: runner.resultID == script.id)
         } footer: { script in
             // For every script: Frog stops one that runs longer.
@@ -201,27 +205,53 @@ struct ScriptsPage: View {
         }
     }
 
-    /// What the last run printed, in an inset block under the script with its caption; one height before and after
-    /// a run, so the editor keeps its size.
+    /// What the last run printed, in an inset panel under the script that folds open and shut under its caption.
+    /// It opens by itself on a run of this script and stays as the person leaves it.
     private func output(ran: Bool) -> some View {
-        VStack(alignment: .leading, spacing: FrogStyle.space6) {
-            SectionCaption(text: "Output")
-            ScrollView {
-                Group {
-                    if !ran {
-                        Text("Run it to see what it prints").foregroundStyle(FrogStyle.muted)
-                    } else if runner.output.isEmpty {
-                        Text(runner.running != nil ? "Waiting for output…" : "No output").foregroundStyle(FrogStyle.muted)
-                    } else {
-                        Text(runner.output).textSelection(.enabled)
+        let open = outputOpen ?? ran
+        return VStack(alignment: .leading, spacing: FrogStyle.space6) {
+            Button {
+                withAnimation(.snappy(duration: 0.2)) { outputOpen = !open }
+            } label: {
+                HStack(spacing: FrogStyle.space6) {
+                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(FrogStyle.muted)
+                        .rotationEffect(.degrees(open ? 90 : 0))
+                    Text("Output").font(FrogType.bodyMedium).foregroundStyle(FrogStyle.ink)
+                    if !open, ran, !runner.output.isEmpty {
+                        Text(Self.firstLine(runner.output)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
                     }
                 }
-                .font(FrogType.mono).frame(maxWidth: .infinity, alignment: .leading).padding(FrogStyle.space10)
+                .frame(maxWidth: .infinity, minHeight: FrogStyle.menuRowHeight - FrogStyle.space6, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .minimalScrollbars()
-            .frame(height: 150)
-            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
+            .buttonStyle(.plain)
+            .accessibilityLabel(open ? "Hide output" : "Show output")
+            if open {
+                ScrollView {
+                    Group {
+                        if !ran {
+                            Text("Run it to see what it prints").font(FrogType.body).foregroundStyle(FrogStyle.muted)
+                        } else if runner.output.isEmpty {
+                            Text(runner.running != nil ? "Waiting for output…" : "No output").font(FrogType.body).foregroundStyle(FrogStyle.muted)
+                        } else {
+                            Text(runner.output).font(FrogType.mono).textSelection(.enabled)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(FrogStyle.space10)
+                }
+                .minimalScrollbars()
+                .frame(height: ran ? 160 : 44)
+                .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
         }
+        .onChange(of: runner.resultID) { _, _ in outputOpen = nil }
+    }
+
+    /// The first line a run printed, shown beside the shut panel's caption.
+    private static func firstLine(_ output: String) -> String {
+        output.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
     }
 
     static func duration(_ seconds: Int) -> String {
