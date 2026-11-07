@@ -13,6 +13,10 @@ struct PowerSources: Equatable, Sendable {
     var batteryPercent: Int?
     var charging = false
 
+    /// Whether this Mac has an internal battery, read once: the system monitor holds the battery card's place while
+    /// its first reading is on the way, so the popup does not grow when it arrives.
+    nonisolated(unsafe) static var hasInternalBattery: Bool = read()?.batteryPercent != nil
+
     /// A few system calls, no subprocess. Safe on any thread.
     static func read() -> PowerSources? {
         guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else { return nil }
