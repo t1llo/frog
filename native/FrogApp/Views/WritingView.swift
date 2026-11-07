@@ -248,13 +248,19 @@ struct WritingRuleEditor: View {
             HStack(spacing: 16) {
                 FrogTextField(placeholder: "Name your rule", text: $rule.name).textFieldStyle(.plain).font(FrogType.title)
                     .accessibilityLabel("Rule name")
-                Toggle("On", isOn: $rule.enabled).toggleStyle(.frogSwitch).controlSize(.small).font(FrogType.small)
+                // The switch alone, as on the Writing page's rows: a label beside it would only say "On" while it is on.
+                Toggle("Rule on", isOn: $rule.enabled).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+                    .help(rule.enabled ? "Turn the rule off" : "Turn the rule on")
             }.padding(FrogStyle.sheetPadding)
             FrogSheetScroll {
                 VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
                     FrogSection("Instructions") {
-                        // An empty box says what goes in it, on the editor's own text inset.
+                        // An empty box says what goes in it, on the editor's own text inset. The box grows with the
+                        // instructions, from three lines to about ten, measured by the same text laid out unseen.
                         ZStack(alignment: .topLeading) {
+                            Text(rule.instructions.isEmpty ? " \n \n " : rule.instructions + "\n ")
+                                .font(FrogType.body).padding(.horizontal, 5).frame(maxWidth: .infinity, alignment: .leading)
+                                .fixedSize(horizontal: false, vertical: true).hidden().accessibilityHidden(true)
                             TextEditor(text: $rule.instructions).font(FrogType.body).scrollContentBackground(.hidden)
                                 .accessibilityLabel("Instructions")
                             if rule.instructions.isEmpty {
@@ -262,7 +268,7 @@ struct WritingRuleEditor: View {
                                     .font(FrogType.body).foregroundStyle(FrogStyle.placeholder)
                                     .padding(.leading, 5).allowsHitTesting(false).accessibilityHidden(true)
                             }
-                        }.frame(height: 90).padding(.vertical, 8)
+                        }.frame(minHeight: 54, maxHeight: 180).padding(.vertical, 8)
                     }
                     FrogSection("Starts from") {
                         FrogRow("Shortcut") { HotkeyRecorder(hotkey: $rule.hotkey) }
