@@ -40,9 +40,10 @@ struct ServiceMark: Equatable {
         case .mlx:
             let repository = (descriptor.originalRepository ?? descriptor.repository).lowercased()
             let name = descriptor.name.lowercased() + " " + repository
-            // A family keeps its tint; its smallest sizes (a billion parameters or fewer) wear the hare, so two
-            // sizes of one family side by side are told apart at a glance.
-            if name.contains("qwen") { return ServiceMark(symbol: isSmall(name) ? "hare.fill" : "brain", tint: .purple) }
+            // A family keeps its tint; its smallest sizes (a billion parameters or fewer) wear the bolt, so two
+            // sizes of one family side by side are told apart at a glance. Plain filled glyphs, as the speech
+            // models' waveforms: a drawn brain or hare read as vendor artwork beside them.
+            if name.contains("qwen") { return ServiceMark(symbol: isSmall(name) ? "bolt.fill" : "text.bubble.fill", tint: .purple) }
             if name.contains("llama") { return ServiceMark(symbol: "mountain.2.fill", tint: .indigo) }
             if name.contains("gemma") { return ServiceMark(symbol: "diamond.fill", tint: .blue) }
             return ServiceMark(symbol: "text.alignleft", tint: .green)
