@@ -74,7 +74,7 @@ struct WindowSwitcherPreview: View {
         let display = WindowSwitcherDisplay()
         let apps: [(pid: pid_t, name: String, title: String, path: String, minimized: Bool)] = [
             (1, "Notes", "Weekend plans", "/System/Applications/Notes.app", false),
-            (2, "Safari", "Start Page", "/Applications/Safari.app", false),
+            (2, "Maps", "Lisbon", "/System/Applications/Maps.app", false),
             (3, "Finder", "Downloads", "/System/Library/CoreServices/Finder.app", false),
             (4, "Terminal", "~ — zsh", "/System/Applications/Utilities/Terminal.app", true),
         ]
