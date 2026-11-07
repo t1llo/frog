@@ -46,8 +46,8 @@ struct WritingView: View {
                     }
                 }
             }
-            // No headings on this page: the rules card and the bubble card each say what they are in their rows.
-            FrogSection {
+            // Two cards, so both are headed: the rules, then the bubble that offers them.
+            FrogSection("Rules", count: rules.count) {
                 ForEach(rules) { rule in row(rule) }
             }
         }
@@ -97,8 +97,8 @@ struct WritingBubbleSection: View {
     private var bubble: WritingConfig.Bubble { plugin.settings.bubble }
 
     var body: some View {
-        FrogSection {
-            FrogRow("Selection bubble", caption: "Offers your rules after you select text.") {
+        FrogSection("Selection bubble") {
+            FrogRow("Show after selecting text", caption: "Offers your rules beside the selection.") {
                 Toggle("Selection bubble", isOn: Binding(get: { bubble.on }, set: { value in
                     withAnimation(reduceMotion ? nil : FrogMotion.reveal) { update { $0.on = value } }
                 })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)

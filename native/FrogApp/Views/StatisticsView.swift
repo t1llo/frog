@@ -21,31 +21,15 @@ struct StatisticsView: View {
         FrogPage {
             // The toolbar's Back (⌘[) returns to Settings, which opens this page (MainView offers the step).
             FrogPageHeader(title: "Statistics", subtitle: "What you did with Frog, counted on this Mac")
-            FrogSection("Local statistics") {
-                FrogRow("Record statistics", caption: "Counts only, kept on this Mac") {
-                    Toggle("Record statistics", isOn: Binding(get: { statistics.snapshot.recordingEnabled }, set: statistics.setRecordingEnabled))
-                        .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small).disabled(!statistics.loaded)
-                }
-                if !statistics.snapshot.recordingEnabled {
-                    FrogRowNote(text: "Paused. Existing totals remain until you reset them.")
-                }
-                // Resetting sits with the switch that records; with nothing counted there is nothing to clear.
-                if statistics.loaded, !Self.isEmpty(statistics.snapshot.allTime) {
-                    FrogRow("Clear all counts") {
-                        Button("Reset…", role: .destructive) { confirmingReset = true }.buttonStyle(.frog(.destructive))
-                    }
-                }
-                if let issue = statistics.issue { InlineIssue(message: issue) }
-            }
             if statistics.loaded, Self.isEmpty(statistics.snapshot.allTime) {
                 // Rows of zeros say nothing; one calm note says when numbers arrive.
-                VStack(alignment: .leading, spacing: FrogStyle.space8) {
-                    FrogSectionHeader("Activity")
+                // The page's only card, so no heading: the switch that records, then the note in its place.
+                FrogSection {
+                    recordingRows
                     FrogEmptyState(symbol: "chart.bar.fill", title: "Nothing recorded yet",
                                    message: statistics.snapshot.recordingEnabled
                                        ? "Statistics appear after your first dictation or rule run."
                                        : "Turn on Record statistics to start counting.", tint: .gray)
-                        .frogTableSurface()
                 }
             } else {
                 VStack(alignment: .leading, spacing: FrogStyle.space12) {
@@ -70,12 +54,32 @@ struct StatisticsView: View {
                         countRow(toolTitle(kind), count: totals.toolUses(kind))
                     }
                 }
+                // Recording and resetting close the page, under their own heading, two rows with the counts there.
+                FrogSection("Recording") { recordingRows }
             }
         }.foregroundStyle(FrogStyle.ink).buttonStyle(.frog())
             .onAppear { statistics.reload() }
             .confirmationDialog("Reset all statistics?", isPresented: $confirmingReset, titleVisibility: .visible) {
                 Button("Reset statistics", role: .destructive) { statistics.reset() }
             } message: { Text("Every total and daily count will be permanently cleared. Your recording choice is kept.") }
+    }
+
+    /// Whether statistics are recorded, and clearing them once there is something counted.
+    @ViewBuilder private var recordingRows: some View {
+        FrogRow("Record statistics", caption: "Counts only, kept on this Mac") {
+            Toggle("Record statistics", isOn: Binding(get: { statistics.snapshot.recordingEnabled }, set: statistics.setRecordingEnabled))
+                .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small).disabled(!statistics.loaded)
+        }
+        if !statistics.snapshot.recordingEnabled {
+            FrogRowNote(text: "Paused. Existing totals remain until you reset them.")
+        }
+        // Resetting sits with the switch that records; with nothing counted there is nothing to clear.
+        if statistics.loaded, !Self.isEmpty(statistics.snapshot.allTime) {
+            FrogRow("Clear all counts") {
+                Button("Reset…", role: .destructive) { confirmingReset = true }.buttonStyle(.frog(.destructive))
+            }
+        }
+        if let issue = statistics.issue { InlineIssue(message: issue) }
     }
 
     /// Nothing counted at all: no recording, rule run or tool use.

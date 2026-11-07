@@ -10,7 +10,8 @@ struct CommandBarSettingsView: View {
             FrogPageHeader(title: "Command bar", subtitle: "Apps, files, settings and actions as you type") {
                 Button("Open") { plugin.show() }.buttonStyle(.frog())
             }
-            FrogSection("Shortcut") {
+            // One card, so no heading: the shortcut, freeing ⌘Space, and learning from choices.
+            FrogSection {
                 FrogRow("Open the bar", caption: "Works in any app.") {
                     HotkeyRecorder(hotkey: Binding(get: { plugin.settings.shortcut.hotkey }, set: { key in
                         guard let key, let shortcut = try? Shortcut(key) else { return }
@@ -20,14 +21,15 @@ struct CommandBarSettingsView: View {
                 // Using ⌘Space instead of Spotlight is part of choosing the shortcut, so it shares the card;
                 // its own rows say a shortcut problem, so the note is not repeated above them.
                 CommandBarSetupView()
+                CommandChoicesRows(plugin: plugin, choices: model.commandChoices)
             }
-            CommandChoicesSection(plugin: plugin, choices: model.commandChoices)
         }
     }
 }
 
-/// Learn from your choices, and how much was learned. The count comes from the store, which the page observes.
-private struct CommandChoicesSection: View {
+/// Learn from your choices, and how much was learned, as rows of the page's one card. The count comes from the
+/// store, which the page observes.
+private struct CommandChoicesRows: View {
     let plugin: CommandBarPlugin
     @ObservedObject var choices: CommandChoiceStore
     @State private var confirmingForget = false
@@ -40,7 +42,7 @@ private struct CommandChoicesSection: View {
     }
 
     var body: some View {
-        FrogSection("Ranking") {
+        VStack(alignment: .leading, spacing: FrogStyle.space2) {
             FrogRow("Learn from your choices", caption: "Rows you pick move up. Kept on this Mac.") {
                 Toggle("Learn from your choices", isOn: Binding(get: { plugin.settings.learnChoices }, set: { on in
                     plugin.save { $0.learnChoices = on }

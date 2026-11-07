@@ -19,11 +19,10 @@ struct WindowsView: View {
                     .help("Gives every layout without a shortcut one with ⌃⌥, where it is free.")
             }
             if !model.accessibilityGranted {
-                FrogSection {
-                    FrogRow("Accessibility", caption: "Needed to move and resize windows") {
-                        Button("Allow") { SelectionService.requestAccess(); SelectionService.openAccessibilitySettings() }
-                            .buttonStyle(.frog(.primary))
-                    }
+                // A problem, not a setting: one notice with its fix, above the headed cards.
+                ProblemNotice(title: "Windows needs Accessibility", message: "Allow it to move and resize windows.") {
+                    Button("Allow") { SelectionService.requestAccess(); SelectionService.openAccessibilitySettings() }
+                        .buttonStyle(.frog(.primary))
                 }
             }
             layouts

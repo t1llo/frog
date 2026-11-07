@@ -62,7 +62,8 @@ private struct DictationRuleSection: View {
     @State private var renaming = false
 
     var body: some View {
-        FrogSection(rule.name, accessory: {
+        // A heading never repeats the page's name: the first rule, still called Dictation, is headed by what it sets.
+        FrogSection(rule.name.caseInsensitiveCompare("Dictation") == .orderedSame ? "Shortcut and model" : rule.name, accessory: {
             RecordButton(rule: rule, dictation: dictation, feature: feature)
         }) {
             FrogRow("Turned on") {
