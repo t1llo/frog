@@ -77,10 +77,18 @@ struct PanelFooter: View {
     var showsActions = true
     /// What Escape does, for a panel without actions; nil hides the hint.
     var closeTitle: String? = nil
+    /// Frog's own mark instead of `symbol`, for the command bar, whose symbol (the magnifier) its search line
+    /// already shows right above.
+    var showsFrogMark = false
 
     var body: some View {
         FrogFooter {
-            Image(systemName: symbol).font(FrogType.label)
+            if showsFrogMark {
+                Image(nsImage: FrogMenuIcon.image).renderingMode(.template).resizable().aspectRatio(contentMode: .fit)
+                    .frame(height: 12).accessibilityHidden(true)
+            } else {
+                Image(systemName: symbol).font(FrogType.label)
+            }
             // One text, so the dot sits evenly between the name and its count.
             Text(verbatim: [L10n.text(name), detail].compactMap { $0 }.joined(separator: " · ")).monospacedDigit()
         } actions: {

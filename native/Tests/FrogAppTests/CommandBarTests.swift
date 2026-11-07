@@ -317,21 +317,21 @@ import FrogCore
         XCTAssertEqual(bar.results.first?.title, "Sample App 1999", "Cached results must not wait for application refresh")
         print("Command bar warm open + 2,000-app search: \(start.duration(to: .now))")
         let panel = try XCTUnwrap(NSApp.windows.first { $0.title == "Frog command bar" && $0.isVisible })
-        let visible = try XCTUnwrap(panel.screen?.visibleFrame)
-        let moved = NSPoint(x: visible.minX + 35, y: visible.minY + 45)
+        let home = panel.frame
+        // Where the pointer is does not matter here: the bar reopens on the display it was dragged on.
+        bar.placement.pointer = { NSPoint(x: home.midX, y: home.midY) }
+        let moved = NSPoint(x: home.minX + 135, y: home.minY - 45)
         panel.setFrameOrigin(moved)
         bar.finishDragging()
+        XCTAssertTrue(bar.placement.placed)
         await gate.started()
         bar.hide(); await gate.release()
         await Task.yield()
         bar.show()
         XCTAssertEqual(panel.frame.origin, moved)
-        bar.finishDragging()
-        XCTAssertTrue(bar.showsPositionReset)
         bar.center()
-        XCTAssertFalse(bar.showsPositionReset)
-        XCTAssertEqual(panel.frame.midX, visible.midX, accuracy: 1)
-        XCTAssertEqual(panel.frame.midY, visible.midY, accuracy: 1)
+        XCTAssertFalse(bar.placement.placed)
+        XCTAssertEqual(panel.frame, home)
         bar.query = "25% * 200"
         XCTAssertEqual(bar.results.first?.title, "50")
         await gate.started()

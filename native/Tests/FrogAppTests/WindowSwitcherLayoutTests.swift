@@ -1,19 +1,17 @@
 import XCTest
 @testable import FrogApp
+import FrogCore
 
 final class WindowSwitcherLayoutTests: XCTestCase {
-    func testTheSearchLineAddsItsHeightOnlyWhileVisible() {
-        let plain = WindowSwitcherLayout.size(windowCount: 4)
-        let searching = WindowSwitcherLayout.size(windowCount: 4, queryVisible: true)
-        XCTAssertEqual(plain, WindowSwitcherLayout.size(windowCount: 4, queryVisible: false))
-        XCTAssertEqual(searching.height - plain.height, WindowSwitcherLayout.queryLineHeight)
-        XCTAssertEqual(searching.width, plain.width)
+    func testTheSwitcherIsInThePanelFamilysFrame() {
+        XCTAssertEqual(WindowSwitcherLayout.size(windowCount: 4).width, PanelFamilyPlacement.width)
+        XCTAssertEqual(WindowSwitcherLayout.size(windowCount: 4).height,
+                       FloatingPanelLayout.chromeHeight + 4 * WindowSwitcherLayout.rowHeight, "The search line is always there")
+        XCTAssertLessThanOrEqual(WindowSwitcherLayout.size(windowCount: 50).height, PanelFamilyPlacement.height)
     }
 
     func testAlwaysRoomForOneRowAndNeverMoreThanTheVisibleRows() {
         XCTAssertEqual(WindowSwitcherLayout.size(windowCount: 0).height, WindowSwitcherLayout.size(windowCount: 1).height)
-        XCTAssertEqual(WindowSwitcherLayout.size(windowCount: 0, queryVisible: true).height,
-                       2 * FrogStyle.panelInset + WindowSwitcherLayout.rowHeight + WindowSwitcherLayout.queryLineHeight + WindowSwitcherLayout.footerHeight)
         XCTAssertEqual(WindowSwitcherLayout.size(windowCount: 50).height,
                        WindowSwitcherLayout.size(windowCount: WindowSwitcherLayout.visibleRows).height)
     }

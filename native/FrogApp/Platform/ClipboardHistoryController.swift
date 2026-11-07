@@ -79,11 +79,15 @@ final class ClipboardHistoryController {
     private let captureTarget: () -> (any ClipboardHistoryPasteTarget)?
     private let waitForRelease: () async throws -> Void
     private let activationNotifications: NotificationCenter
+    /// Places the panel with the command bar and the window switcher, where the family was last dragged to.
+    let placement: PanelFamilyPlacer
 
     init(pasteboard: NSPasteboard = .general, history: ClipboardHistoryStore? = nil,
          captureTarget: (() -> (any ClipboardHistoryPasteTarget)?)? = nil,
          waitForRelease: (() async throws -> Void)? = nil,
-         activationNotifications: NotificationCenter? = nil) {
+         activationNotifications: NotificationCenter? = nil,
+         placement: PanelFamilyPlacer? = nil) {
+        self.placement = placement ?? PanelFamilyPlacer()
         self.pasteboard = pasteboard
         self.history = history ?? ClipboardHistoryStore(pasteboard: pasteboard)
         self.captureTarget = captureTarget ?? { NativeClipboardHistoryPasteTarget.capture() }
@@ -158,12 +162,8 @@ final class ClipboardHistoryController {
                     self.cancel("another app became active")
                 }
             }
-        if let visibleFrame = ClipboardHistoryLayout.visibleFrame(main: NSScreen.main?.visibleFrame,
-               screens: NSScreen.screens.map { ($0.frame, $0.visibleFrame) }, pointer: NSEvent.mouseLocation) {
-            panel.setFrameOrigin(ClipboardHistoryLayout.origin(size: panel.frame.size, in: visibleFrame))
-        } else {
-            panel.center()
-        }
+        // On the display under the pointer, where the panel family was last dragged to there.
+        placement.place(panel, size: ClipboardHistoryLayout.size(entryCount: state.visible.count))
         panel.makeKeyAndOrderFront(nil)
         pointer.rest(at: NSEvent.mouseLocation)
         state.focusSearch()
@@ -229,7 +229,7 @@ final class ClipboardHistoryController {
             copy: { [weak self] in self?.copy($0) },
             close: { [weak self] in self?.hide() },
             resize: { [weak self] in self?.resizePanel() },
-            hover: { [weak self] in self?.pointerMoved(over: $0) }))
+            hover: { [weak self] in self?.pointerMoved(over: $0) }, placement: placement))
         hosting.sizingOptions = []
         panel.contentView = hosting
         return panel
@@ -285,10 +285,7 @@ final class ClipboardHistoryController {
         let count = state.visible.count
         state.selectedIndex = max(0, min(state.selectedIndex, count - 1))
         guard let panel else { return }
-        let size = ClipboardHistoryLayout.size(entryCount: count)
-        guard panel.frame.size != size else { return }
-        let top = panel.frame.maxY
-        panel.setFrame(NSRect(x: panel.frame.minX, y: top - size.height, width: size.width, height: size.height), display: true)
+        placement.resize(panel, to: ClipboardHistoryLayout.size(entryCount: count))
     }
 
     private func copy(_ entry: ClipboardHistoryEntry) {
