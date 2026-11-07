@@ -189,9 +189,11 @@ struct ClipboardHistoryView: View {
     private func footer(count: Int) -> some View {
         FrogFooter {
             // The surface and its icon first, like every launcher's footer, then the count.
-            Image(systemName: ClipboardPlugin.info.symbol).font(FrogType.label)
+            // Part of the footer's drag handle, like the band around it.
+            Image(systemName: ClipboardPlugin.info.symbol).font(FrogType.label).allowsHitTesting(false)
             Text(verbatim: L10n.text(ClipboardPlugin.info.name) + " · "
                  + (count == 1 ? L10n.text("1 item") : String(format: L10n.text("%d items"), count))).monospacedDigit()
+                .allowsHitTesting(false)
         } actions: {
             FrogFooterHint("Paste", keys: "↩")
             FrogFooterHint("Plain text", keys: "⇧↩")

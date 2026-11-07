@@ -85,12 +85,14 @@ struct PanelFooter: View {
         FrogFooter {
             if showsFrogMark {
                 Image(nsImage: FrogMenuIcon.image).renderingMode(.template).resizable().aspectRatio(contentMode: .fit)
-                    .frame(height: 12).accessibilityHidden(true)
+                    .frame(height: 12).accessibilityHidden(true).allowsHitTesting(false)
             } else {
-                Image(systemName: symbol).font(FrogType.label)
+                Image(systemName: symbol).font(FrogType.label).allowsHitTesting(false)
             }
             // One text, so the dot sits evenly between the name and its count.
             Text(verbatim: [L10n.text(name), detail].compactMap { $0 }.joined(separator: " · ")).monospacedDigit()
+                // The status is part of the footer's drag handle, like the band around it.
+                .allowsHitTesting(false)
         } actions: {
             if let primaryTitle { FrogFooterHint(primaryTitle, keys: "↩") }
             if showsActions { FrogFooterHint("Actions", keys: "⌘K") }
@@ -117,7 +119,8 @@ extension View {
     func frogFooterBand() -> some View {
         padding(.horizontal, FrogStyle.cardPadding)
             .frame(height: 32).frame(maxWidth: .infinity)
-            .background(FrogStyle.footerBand)
+            // The fill takes no clicks, so whatever lies behind the band (a floating panel's drag handle) gets them.
+            .background(FrogStyle.footerBand.allowsHitTesting(false))
     }
 }
 
