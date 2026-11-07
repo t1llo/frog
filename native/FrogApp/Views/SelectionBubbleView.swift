@@ -20,6 +20,8 @@ struct SelectionBubbleView: View {
     var listScrolls = false
     let select: (BubbleItem) -> Void
     let expand: () -> Void
+    /// Opens Writing, where the rules in the bubble are chosen; nil leaves the list's footer without the action.
+    var editRules: (() -> Void)? = nil
 
     static let space = "selectionBubble"
     /// The list is as wide as its longest row within these bounds.
@@ -30,6 +32,8 @@ struct SelectionBubbleView: View {
     static let barItemHeight: CGFloat = 26
     static let barInset: CGFloat = 5
     static let barItemRadius: CGFloat = FrogStyle.pillRadius - barInset
+    /// The list's footer band, which the scrolling list leaves room for.
+    static let footerHeight: CGFloat = 32
 
     var body: some View {
         Group {
@@ -85,11 +89,17 @@ struct SelectionBubbleView: View {
     // MARK: List
 
     private var list: some View {
-        Group {
+        VStack(spacing: 0) {
             if listScrolls, let listSize {
-                ScrollView { listContent.minimalScrollbars() }.frame(height: listSize.height)
+                ScrollView { listContent.minimalScrollbars() }.frame(height: max(0, listSize.height - Self.footerHeight))
             } else {
                 listContent
+            }
+            // The list holds only the rules chosen for the bubble; the footer says where the rest are chosen.
+            FrogFooter {
+                Text(L10n.text("Rules shown in the bubble"))
+            } actions: {
+                if let editRules { FrogFooterHint("Edit rules", keys: "", action: editRules) }
             }
         }
         .frame(width: listSize?.width)

@@ -13,6 +13,8 @@ import FrogCore
     static let listMinHeight: CGFloat = 130
     var onHover: ((Bool) -> Void)?
     var onSelect: ((BubbleItem) -> Void)?
+    /// Opens the page where the bubble's rules are chosen, from the list's footer.
+    var onEditRules: (() -> Void)?
     private var panel: FrogFloatingPanel?
     private var hosting: FirstMouseHostingView<SelectionBubbleView>?
     private var visible: [BubbleItem] = []
@@ -106,7 +108,8 @@ import FrogCore
         SelectionBubbleView(visible: visible, more: more, expanded: expanded, pointer: hover, listSize: listSize,
                             listScrolls: scrolls,
                             select: { [weak self] in self?.onSelect?($0) },
-                            expand: { [weak self] in self?.expand() })
+                            expand: { [weak self] in self?.expand() },
+                            editRules: onEditRules.map { open in { [weak self] in self?.hide(); open() } })
     }
 
     private func makePanel() -> FrogFloatingPanel {
