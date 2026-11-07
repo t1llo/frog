@@ -78,6 +78,13 @@ Kept across rounds. Root causes, not symptoms. Status: `open`, `fixed, unconfirm
 - **Done when:** both show free space (e.g. "212 GB free"), its share of the disk, and the change against 24 hours ago (e.g. "−3.4 GB since yesterday"), from the sample data in the shots; formatted like the other values.
 - **Status:** open. Seen: owner report, round 0.
 
+### O13. Sidebar list slides under the search field (owner, 2026-11-07, during round 1)
+- **Owner's words:** "the searchbar has a bug in the frog app sidebar under the searchbar".
+- **Root cause (reading of the captures):** the sidebar's scrolling list starts right under the pinned search field and is scrolled to keep the selected page in view, so its top rows are cut off hard under the field with no gap or fade, and the first visible row sits flush against it (`chrome-system-monitor-dark`: "Writing" directly under Search, the rows above it hidden).
+- **Where:** main window sidebar, every page, light and dark, at 980×680 and taller.
+- **Done when:** the list keeps a clear gap under the search field; rows scrolled away fade out under it (as at the bottom edge), never a hard cut; selecting a page never leaves a row half under the field.
+- **Status:** open. Seen: owner, round 1.
+
 ## From judges
 
 ### J1. Meters of one kind come in two thicknesses
