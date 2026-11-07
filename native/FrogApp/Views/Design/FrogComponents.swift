@@ -35,23 +35,46 @@ struct FrogPopupFooter<Status: View>: View {
     }
 }
 
-/// A page's state in its header: a dot and a word or two. While on, a green dot in a faint green capsule; while
-/// off, a hollow dot and the word in `muted` with no fill at all, so it never reads as a button.
-struct FrogStatePill: View {
+/// A state, never an action: a dot and a word or two in muted text, with no fill or outline, so it can never be
+/// mistaken for the buttons beside it ("Connected", "Installed", "Allowed", "Running", "Until 14:00"). The dot says
+/// the kind of state: `.good` green for granted or working, `.active` the accent for something under way, `.warning`
+/// and `.critical` for trouble, `.off` a hollow ring for a state that is simply not on. Used in rows' trailing
+/// slots, page headers, setup and popups alike; buttons are the only filled pills.
+struct FrogStatusLabel: View {
+    enum Tone { case good, active, warning, critical, off }
     let text: String
-    let on: Bool
+    var tone: Tone = .good
+
+    init(_ text: String, tone: Tone = .good) { self.text = text; self.tone = tone }
 
     var body: some View {
         HStack(spacing: FrogStyle.space6) {
             Group {
-                if on { Circle().fill(FrogStyle.good) } else { Circle().strokeBorder(FrogStyle.muted, lineWidth: 1.5) }
+                if tone == .off { Circle().strokeBorder(FrogStyle.muted, lineWidth: 1.5) } else { Circle().fill(color) }
             }.frame(width: 7, height: 7)
-            Text(L10n.text(text)).font(FrogType.bodyMedium).foregroundStyle(on ? FrogStyle.ink : FrogStyle.muted)
+            Text(L10n.text(text)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
         }
-        .padding(.horizontal, FrogStyle.space10).frame(height: FrogStyle.compactHeight)
-        .background(on ? FrogStyle.good.opacity(0.14) : .clear, in: Capsule())
+        // A control's height, so it lines up with switches and buttons in the rows around it.
+        .frame(height: FrogStyle.compactHeight)
         .accessibilityElement(children: .combine)
     }
+
+    private var color: Color {
+        switch tone {
+        case .good: FrogStyle.good
+        case .active: FrogStyle.accent
+        case .warning: FrogStyle.warning
+        case .critical: FrogStyle.critical
+        case .off: FrogStyle.muted
+        }
+    }
+}
+
+/// The former page state pill, now drawn as a `FrogStatusLabel`; new code uses `FrogStatusLabel` directly.
+struct FrogStatePill: View {
+    let text: String
+    let on: Bool
+    var body: some View { FrogStatusLabel(text, tone: on ? .good : .off) }
 }
 
 /// Text with `backticked` commands, the commands set in the mono font on a faint fill and the backticks dropped.
