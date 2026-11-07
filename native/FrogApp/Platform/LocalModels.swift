@@ -59,11 +59,17 @@ final class LocalModels: ObservableObject {
     private let fileChecker: FileChecker
     private var checking: [String: Task<Void, Never>] = [:]
     private var measuring: Task<Void, Never>?
-    private var unloadTask: Task<Void, Never>?
+    /// One idle timer per kind of model, so the speech model can follow its own delay.
+    private var unloadTasks: [LocalModelDescriptor.Kind: Task<Void, Never>] = [:]
     private var memoryPressure: DispatchSourceMemoryPressure?
     private var residencyHolds = Set<UUID>()
+    /// Seconds an idle model stays loaded; `WorkflowPreferences.keepLoaded` starts no timer.
     var idleSeconds = 120 {
         didSet { if idleSeconds != oldValue, !busy, !loaded.isEmpty { scheduleUnload() } }
+    }
+    /// The same for the speech model. Nil follows `idleSeconds`.
+    var speechIdleSeconds: Int? {
+        didSet { if speechIdleSeconds != oldValue, !busy, !loaded.isEmpty { scheduleUnload() } }
     }
     func updateCatalog(_ models: [LocalModelDescriptor]) {
         guard catalog != models else { return }
@@ -109,7 +115,7 @@ final class LocalModels: ObservableObject {
         guard FileManager.default.isWritableFile(atPath: location.path) else { throw FrogError.message("The selected model folder is not writable.") }
         changingDirectory = true; busy = true
         defer { changingDirectory = false; busy = false }
-        unloadTask?.cancel(); unloadTask = nil
+        cancelUnloads()
         loaded = []; await runtime.unload(keepingMetadata: false)
         try FileManager.default.createDirectory(at: storagePreference.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONEncoder().encode(location.path).write(to: storagePreference, options: [.atomic])
@@ -294,7 +300,7 @@ final class LocalModels: ObservableObject {
         guard Self.supported, let model = descriptor(id), installed.contains(id), case .finished(let check) = fileChecks[id], !check.passed else { return }
         if loaded.contains(id) {
             busy = true
-            unloadTask?.cancel(); unloadTask = nil
+            cancelUnloads()
             loaded = []; await runtime.unload(keepingMetadata: false)
             busy = false
         }
@@ -354,10 +360,10 @@ final class LocalModels: ObservableObject {
         }
     }
     func waitForDownload(_ id: String) async { await downloads[id]?.value }
-    func waitForIdleUnload() async { await unloadTask?.value }
+    func waitForIdleUnload() async { for task in Array(unloadTasks.values) { await task.value } }
     func holdResidency() -> UUID {
         let id = UUID(); residencyHolds.insert(id)
-        unloadTask?.cancel(); unloadTask = nil
+        cancelUnloads()
         return id
     }
     func releaseResidency(_ id: UUID) {
@@ -424,7 +430,7 @@ final class LocalModels: ObservableObject {
         guard !busy, residencyHolds.isEmpty, downloads[id] == nil else { throw FrogError.message("Wait for the model operation to finish before deleting it.") }
         busy = true
         defer { busy = false }
-        unloadTask?.cancel(); unloadTask = nil
+        cancelUnloads()
         loaded = []; await runtime.unload(keepingMetadata: false)
         do { try FileManager.default.removeItem(at: directory(id)) }
         catch CocoaError.fileNoSuchFile { /* Already removed outside Frog. Repair the inventory below. */ }
@@ -435,7 +441,7 @@ final class LocalModels: ObservableObject {
         guard !busy, residencyHolds.isEmpty else { return }
         busy = true
         defer { busy = false }
-        unloadTask?.cancel(); unloadTask = nil
+        cancelUnloads()
         loaded = []; await runtime.unload(keepingMetadata: keepingMetadata)
     }
     /// The app turns this on once; tests call `relieveMemoryPressure` themselves.
@@ -459,24 +465,41 @@ final class LocalModels: ObservableObject {
         guard descriptor(id) != nil, let url = modelURL(id) else { throw FrogError.message("Download \(descriptor(id)?.name ?? id) in Models first.") }
         // Only a repair downloads into the folder of a downloaded model.
         guard downloads[id] == nil else { throw FrogError.message("\(descriptor(id)?.name ?? id) is being repaired. Try again once its download has finished.") }
-        busy = true; unloadTask?.cancel(); return url
+        busy = true; cancelUnloads(); return url
     }
     private func release() {
         busy = false
         scheduleUnload()
     }
+    private func cancelUnloads() {
+        for task in unloadTasks.values { task.cancel() }
+        unloadTasks = [:]
+    }
+    private func kind(_ id: String) -> LocalModelDescriptor.Kind { (descriptor(id) ?? LocalModelDescriptor.find(id))?.kind ?? .text }
+    func idleDelay(_ kind: LocalModelDescriptor.Kind) -> Int { kind == .audio ? speechIdleSeconds ?? idleSeconds : idleSeconds }
     private func scheduleUnload() {
-        unloadTask?.cancel()
-        guard !loaded.isEmpty, residencyHolds.isEmpty else { unloadTask = nil; return }
-        let delay = idleSeconds
-        unloadTask = Task { [weak self] in
-            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
-            guard !Task.isCancelled else { return }
-            // Do not cancel this very task inside unload(): the native engine
-            // must receive a live task while releasing its resources.
-            self?.unloadTask = nil
-            await self?.unload(keepingMetadata: true)
+        cancelUnloads()
+        guard !loaded.isEmpty, residencyHolds.isEmpty else { return }
+        for kind in Set(loaded.map(kind)) {
+            let delay = idleDelay(kind)
+            guard delay != WorkflowPreferences.keepLoaded else { continue }
+            unloadTasks[kind] = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(max(0, delay))) } catch { return }
+                guard !Task.isCancelled else { return }
+                // Do not cancel this very task while unloading: the native engine
+                // must receive a live task while releasing its resources.
+                self?.unloadTasks[kind] = nil
+                await self?.unloadIdle(kind)
+            }
         }
+    }
+    /// The end of a kind's idle interval: only the models of that kind leave memory.
+    private func unloadIdle(_ kind: LocalModelDescriptor.Kind) async {
+        guard !busy, residencyHolds.isEmpty else { return }
+        busy = true
+        defer { busy = false }
+        await runtime.unload(kind, keepingMetadata: true)
+        loaded = await runtime.loadedIDs
     }
     /// The transcript of a finished recording waits for running work. A live
     /// preview does not: it fails on a busy engine and its loop tries again.
@@ -522,7 +545,7 @@ final class LocalModels: ObservableObject {
     private func updateResidency(_ ids: Set<String>) { loaded = ids }
     func shutdown() {
         downloads.values.forEach { $0.cancel() }
-        unloadTask?.cancel()
+        cancelUnloads()
         memoryPressure?.cancel(); memoryPressure = nil
         if !busy { Task { await self.unload() } }
     }
@@ -746,9 +769,13 @@ protocol LocalInferenceEngine: Actor {
     func stream(messages: [ChatMessage], instructions: String, id: String, url: URL,
                 residency: @Sendable (Set<String>) async -> Void, onChunk: @Sendable (String) -> Void) async throws -> Bool
     func unload(keepingMetadata: Bool) async
+    /// Frees the models of one kind and keeps the others loaded.
+    func unload(_ kind: LocalModelDescriptor.Kind, keepingMetadata: Bool) async
 }
 
 extension LocalInferenceEngine {
+    /// An engine that cannot free one kind on its own frees everything.
+    func unload(_ kind: LocalModelDescriptor.Kind, keepingMetadata: Bool) async { await unload(keepingMetadata: keepingMetadata) }
     /// An engine that cannot stream answers in one piece, the conversation as one transcript.
     func stream(messages: [ChatMessage], instructions: String, id: String, url: URL,
                 residency: @Sendable (Set<String>) async -> Void, onChunk: @Sendable (String) -> Void) async throws -> Bool {
@@ -1023,16 +1050,26 @@ actor LocalInference: LocalInferenceEngine {
     }
     #endif
     func unload(keepingMetadata: Bool) async {
-        await speech?.unloadModels(); speechID = nil
-        // Idle expiry frees weights while retaining parsed tokenizer metadata for the
-        // next recording. Explicit unload, deletion and folder changes drop everything.
-        if !keepingMetadata { speech = nil }
-        #if arch(arm64)
-        await parakeet?.unload(); parakeet = nil
-        textModel = nil
-        MLX.Memory.clearCache()
-        #endif
-        textID = nil
+        await unload(.audio, keepingMetadata: keepingMetadata)
+        await unload(.text, keepingMetadata: keepingMetadata)
+    }
+    func unload(_ kind: LocalModelDescriptor.Kind, keepingMetadata: Bool) async {
+        switch kind {
+        case .audio:
+            await speech?.unloadModels(); speechID = nil
+            // Idle expiry frees weights while retaining parsed tokenizer metadata for the
+            // next recording. Explicit unload, deletion and folder changes drop everything.
+            if !keepingMetadata { speech = nil }
+            #if arch(arm64)
+            await parakeet?.unload(); parakeet = nil
+            #endif
+        case .text:
+            #if arch(arm64)
+            textModel = nil
+            MLX.Memory.clearCache()
+            #endif
+            textID = nil
+        }
     }
 }
 

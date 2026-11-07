@@ -37,6 +37,25 @@ final class LocalModelsTests: XCTestCase {
         XCTAssertTrue(models.loaded.isEmpty, "Readiness must extend the chosen interval, not disable idle unloading")
     }
 
+    func testAKeptSpeechModelStaysWhileIdleTextModelsUnload() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let engine = FixtureInference()
+        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload, freeSpace: LocalModels.unlimitedFreeSpace)
+        let speech = try XCTUnwrap(LocalModelDescriptor.find("parakeet-v3"))
+        let text = try XCTUnwrap(LocalModelDescriptor.find("qwen-0.6b"))
+        for model in [speech, text] { models.download(model); await models.waitForDownload(model.id) }
+        models.idleSeconds = 0
+        models.speechIdleSeconds = WorkflowPreferences.keepLoaded
+        try await models.prepare(speech.id)
+        _ = try await models.complete("hello", instructions: "Correct", modelID: text.id)
+        await models.waitForIdleUnload()
+        XCTAssertEqual(models.loaded, [speech.id], "Only the text model's idle delay ran out")
+        models.speechIdleSeconds = 0
+        await models.waitForIdleUnload()
+        XCTAssertTrue(models.loaded.isEmpty, "A shorter speech delay applies to the model already in memory")
+    }
+
     func testConcurrentReadinessRequestsSharePreparation() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -806,6 +825,10 @@ private actor FixtureInference: LocalInferenceEngine {
         return text
     }
     func unload(keepingMetadata: Bool) { cancelledUnload = Task.isCancelled; loadedIDs = []; unloads += 1 }
+    func unload(_ kind: LocalModelDescriptor.Kind, keepingMetadata: Bool) {
+        cancelledUnload = Task.isCancelled; unloads += 1
+        loadedIDs = loadedIDs.filter { LocalModelDescriptor.find($0)?.kind != kind }
+    }
 }
 
 private actor Attempts {

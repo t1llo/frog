@@ -47,7 +47,8 @@ Keys are case-sensitive. Booleans are `true`/`false`; numbers use a decimal poin
 | `history-enabled`, `history-hide-text` | Boolean; default `false` |
 | `history-limit` | 1–200; default 200 |
 | `history-retention-days` | 1–30; default 30 |
-| `model-idle-seconds` | 0–3600; default 120; 0 unloads after inference |
+| `model-idle-seconds` | -1–28800; default 120; 0 unloads after inference, -1 keeps models loaded |
+| `speech-model-idle-seconds` | -1–28800; the same for the dictation speech model; follows `model-idle-seconds` when unset |
 | `audio-model` | Legacy default: an audio ID in the built-in/custom model catalog; default `whisper-large-v3-turbo-626mb` |
 | `cleanup-model` | Legacy default: a local text model ID; default `qwen-0.6b` |
 | `text-model` | Legacy default: an optional local text model ID |
