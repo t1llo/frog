@@ -39,8 +39,8 @@ final class RulesWorkflowTests: XCTestCase {
         if audio {
             try await click("Dictation", in: host)
             XCTAssertEqual(model.toolkit.route, .feature(.dictation), "The Dictation sidebar item must open its page")
-            // A dictation rule is a section of the page: Add rule adds one there, with no editor to fill in first.
-            try await click("Add rule", in: host)
+            // Without a dictation rule, Set up dictation adds the one the page shows, with no editor to fill in first.
+            try await click("Set up dictation", in: host)
             XCTAssertNil(window.attachedSheet)
             let saved = try XCTUnwrap(store.load().rules.first, "The new rule must be persisted")
             XCTAssertEqual(saved.name, "Dictation")

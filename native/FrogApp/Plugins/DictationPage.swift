@@ -1,7 +1,9 @@
 import SwiftUI
 import FrogCore
 
-/// The Dictation page: one section per dictation rule, then the settings every recording shares.
+/// The Dictation page: one dictation setup in three cards. Transcription is how it starts and which model hears it,
+/// After transcribing is the optional model pass and where the text goes, Recording is how a recording looks and
+/// sounds. Dictation rules from older configurations, beyond the first, keep a card of their own below.
 struct DictationPage: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var feature: DictationFeature
@@ -12,31 +14,19 @@ struct DictationPage: View {
 
     var body: some View {
         FrogPage {
-            FrogPageHeader(title: "Dictation", subtitle: "Press a shortcut, speak, and Frog types it.") {
-                // Only the page's own action; each rule's Record sits on its card's heading.
-                FrogAddButton("Add rule") { add() }
-            }
+            FrogPageHeader(title: "Dictation", subtitle: "Press a shortcut, speak, and Frog types it.")
             if let missing = rules.first(where: { $0.enabled && !model.ruleHasModel($0) }) {
                 ModelMissingNotice(feature: "Dictation", speech: true) { pickerRequest.open(missing.id) }
             }
-            if rules.isEmpty {
-                FrogEmptyState(symbol: DictationPlugin.info.symbol, title: "No dictation rules", message: "Add one to choose its shortcut and model.",
+            if let main = rules.first {
+                DictationRuleSections(rule: main, dictation: dictation, feature: feature, primary: true)
+            } else {
+                FrogEmptyState(symbol: DictationPlugin.info.symbol, title: "No dictation set up", message: "Set it up to choose its shortcut and model.",
                                tint: DictationPlugin.info.tint)
+                FrogPrimaryButton("Set up dictation") { add() }
             }
-            ForEach(rules) { rule in
-                DictationRuleSection(rule: rule, dictation: dictation, feature: feature)
-            }
-            FrogSection("Recording") {
-                MicrophoneRow(dictation: dictation, selection: feature.settings.microphone) { feature.selectMicrophone($0) }
-                FrogRow("Mute Mac audio") {
-                    Toggle("Mute Mac audio", isOn: Binding(get: { feature.settings.muteAudio },
-                                                           set: { value in feature.update { $0.muteAudio = value } })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
-                }
-                FrogRow("Cancel shortcut", caption: "Escape always cancels.") {
-                    HotkeyRecorder(hotkey: Binding(get: { feature.settings.cancelShortcut?.hotkey }, set: { value in
-                        do { try feature.setCancelShortcut(value) } catch { model.report(error) }
-                    }), purpose: .recordingCancel)
-                }
+            ForEach(rules.dropFirst()) { rule in
+                DictationRuleSections(rule: rule, dictation: dictation, feature: feature, primary: false)
             }
         }.toggleStyle(.frogSwitch).controlSize(.small)
         .environment(\.modelPickerOpenRequest, pickerRequest)
@@ -44,28 +34,81 @@ struct DictationPage: View {
 
     private func add() {
         var rule = model.configuration.newRule(category: .audio, output: .replace, installed: model.localModels.installed)
-        let names = Set(rules.map(\.name))
-        var number = 1
         rule.name = "Dictation"
-        while names.contains(rule.name) { number += 1; rule.name = "Dictation \(number)" }
         do { try model.saveRule(rule) } catch { model.report(error) }
     }
 }
 
-/// One dictation rule as a section: Record and its menu (Rename, Delete) beside its heading, its switch as the first
-/// row and its settings below it.
-private struct DictationRuleSection: View {
+/// How the recording shows itself: the full popup, the small bean, or nothing.
+enum DictationPopupChoice: Hashable, CaseIterable {
+    case full, minimal, off
+    init(_ action: RuleAction?) {
+        if action?.showRecordingPopup == false { self = .off }
+        else { self = action?.recordingPopupStyle == .minimal ? .minimal : .full }
+    }
+    var title: String { switch self { case .full: "Full"; case .minimal: "Minimal"; case .off: "Off" } }
+    var symbol: String { switch self { case .full: "rectangle.bottomhalf.filled"; case .minimal: "capsule.fill"; case .off: "eye.slash" } }
+    func apply(to rule: inout Rule) {
+        rule.action?.showRecordingPopup = self != .off
+        rule.action?.recordingPopupStyle = self == .minimal ? .minimal : nil
+    }
+}
+
+/// One dictation rule. The first is the page's own setup, in three cards; any other is a single card headed by its
+/// name, with its menu (Rename, Delete) on the heading.
+private struct DictationRuleSections: View {
     @EnvironmentObject private var model: AppModel
     let rule: Rule
     let dictation: DictationController
     let feature: DictationFeature
+    let primary: Bool
     @State private var renaming = false
 
+    private var prefs: WorkflowPreferences { model.configuration.preferences.workflowSettings }
+
     var body: some View {
-        // Record and the rule's own menu (Rename, Delete) sit on its heading, so the card ends with its last setting.
-        FrogSection(heading, accessory: {
-            HStack(spacing: FrogStyle.space6) {
-                RecordButton(rule: rule, dictation: dictation, feature: feature)
+        Group {
+            if primary {
+                FrogSection("Transcription", accessory: { heading }) {
+                    transcriptionRows
+                    FrogRow("Unload model", caption: "After the last dictation") {
+                        FrogDropdown(selected: prefs.effectiveSpeechIdleUnloadSeconds, options: WorkflowPreferences.idleUnloadChoices,
+                                     title: { LocalModelSettings.idleTitle(seconds: $0) }) { seconds in updatePreferences { $0.speechIdleUnloadSeconds = seconds } }
+                    }
+                }
+                FrogSection("After transcribing") { afterRows }
+                FrogSection("Recording") {
+                    popupRow
+                    MicrophoneRow(dictation: dictation, selection: feature.settings.microphone) { feature.selectMicrophone($0) }
+                    FrogRow("Mute Mac audio") {
+                        Toggle("Mute Mac audio", isOn: Binding(get: { feature.settings.muteAudio },
+                                                               set: { value in feature.update { $0.muteAudio = value } })).labelsHidden()
+                    }
+                    FrogRow("Cancel shortcut", caption: "Escape pressed twice always cancels.") {
+                        HotkeyRecorder(hotkey: Binding(get: { feature.settings.cancelShortcut?.hotkey }, set: { value in
+                            do { try feature.setCancelShortcut(value) } catch { model.report(error) }
+                        }), purpose: .recordingCancel)
+                    }
+                }
+            } else {
+                FrogSection(rule.name, accessory: { heading }) {
+                    transcriptionRows
+                    afterRows
+                    popupRow
+                }
+            }
+        }
+        .sheet(isPresented: $renaming) {
+            RenameSheet(name: rule.name, kind: "dictation rule") { name in save { $0.name = name } }
+        }
+    }
+
+    /// Record and the on switch beside the card's heading; a second rule also has its menu there.
+    private var heading: some View {
+        HStack(spacing: FrogStyle.space6) {
+            Toggle("Enable \(rule.name)", isOn: binding(\.enabled)).labelsHidden().help(rule.enabled ? "Turn off" : "Turn on")
+            RecordButton(rule: rule, dictation: dictation, feature: feature)
+            if !primary {
                 IconMenu(title: "Rule actions", bordered: false) {
                     Button("Rename…", systemImage: "pencil") { renaming = true }
                     Button("Delete rule", systemImage: "trash", role: .destructive) {
@@ -73,28 +116,13 @@ private struct DictationRuleSection: View {
                     }
                 }
             }
-        }) {
-            FrogRow("Turned on") {
-                Toggle("Enable \(rule.name)", isOn: binding(\.enabled)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
-            }
-            rows
-        }
-        .sheet(isPresented: $renaming) {
-            RenameSheet(name: rule.name, kind: "dictation rule") { name in save { $0.name = name } }
         }
     }
 
-    /// The rule's name heads its card, unless it is the page's own name, as the rule Frog starts with is: a heading
-    /// never repeats the page's title, so that rule's card is headed "Default rule", beside "Recording" for every rule.
-    private var heading: String {
-        rule.name.trimmingCharacters(in: .whitespaces).localizedCaseInsensitiveCompare("Dictation") == .orderedSame ? "Default rule" : rule.name
-    }
-
-    /// The rule's settings; a rule that is off keeps them, still changeable, so they are not dimmed.
-    @ViewBuilder private var rows: some View {
+    /// How a recording starts and which model hears it; a rule that is off keeps them, still changeable.
+    @ViewBuilder private var transcriptionRows: some View {
         FrogRow("Shortcut") { HotkeyRecorder(hotkey: binding(\.hotkey)) }
         if let issue = model.hotkeyErrors[rule.id] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
-        // Its own row, so the shortcut's chip is not read as a third segment.
         FrogRow("Hold to talk", caption: "Records only while you hold the shortcut down.") {
             Toggle("Hold to talk", isOn: Binding(get: { rule.action?.recordingMode == .hold },
                                                  set: { hold in save { $0.action?.recordingMode = hold ? .hold : .toggle } })).labelsHidden()
@@ -108,7 +136,11 @@ private struct DictationRuleSection: View {
                          searchPrompt: languages.count > 8 ? "Find a language" : nil,
                          title: Self.languageName) { code in save { $0.action?.transcriptionLanguage = code } }
         }
-        FrogRow("Clean up") {
+    }
+
+    /// The optional second pass through a text model, then where the text goes.
+    @ViewBuilder private var afterRows: some View {
+        FrogRow("Send to a model", caption: "A Writing rule, such as Proofread") {
             FrogDropdown(selected: cleanup, sections: cleanupSections, searchPrompt: textRules.count > 8 ? "Find a rule" : nil,
                          item: cleanupItem) { choice in save { choice.apply(to: &$0) } }
         }
@@ -116,9 +148,12 @@ private struct DictationRuleSection: View {
             CompactSegments(values: TranscriptOutput.allCases, selected: rule.action?.output ?? .copy,
                             title: { $0 == .copy ? "Copy" : "Paste" }) { output in save { $0.action?.output = output } }
         }
-        FrogRow("Popup while recording") {
-            Toggle("Popup while recording", isOn: Binding(get: { rule.action?.showRecordingPopup ?? true },
-                                                           set: { value in save { $0.action?.showRecordingPopup = value } })).labelsHidden()
+    }
+
+    private var popupRow: some View {
+        FrogRow("Popup", caption: "Minimal shows only the waveform") {
+            FrogDropdown(selected: DictationPopupChoice(rule.action), options: DictationPopupChoice.allCases,
+                         title: { $0.title }, symbol: { $0.symbol }) { choice in save { choice.apply(to: &$0) } }
         }
     }
 
@@ -133,6 +168,11 @@ private struct DictationRuleSection: View {
         change(&updated)
         guard updated != rule else { return }
         do { try model.saveRule(updated) } catch { model.report(error) }
+    }
+
+    private func updatePreferences(_ change: (inout WorkflowPreferences) -> Void) {
+        var value = prefs; change(&value)
+        do { try model.saveWorkflowPreferences(value) } catch { model.report(error) }
     }
 
     /// A new speech model may know fewer languages; the rule keeps one it can recognise.

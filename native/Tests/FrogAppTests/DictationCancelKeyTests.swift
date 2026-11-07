@@ -16,9 +16,37 @@ final class DictationCancelKeyTests: XCTestCase {
         XCTAssertEqual(fixture.controller.phase, .recording)
         XCTAssertEqual(fixture.key.heldModifiers, 0)
         fixture.key.press()
+        XCTAssertEqual(fixture.controller.phase, .recording, "One Escape only asks for the second")
+        XCTAssertTrue(fixture.controller.escapeArmed)
+        fixture.key.press()
         XCTAssertEqual(fixture.controller.phase, .idle)
         XCTAssertEqual(reasons, [.escape])
         XCTAssertNil(fixture.key.heldModifiers, "Escape must go back to the focused app once the recording is cancelled")
+    }
+
+    func testASingleEscapeLapsesAndTheRecordingGoesOn() async {
+        let fixture = Fixture()
+        defer { fixture.cleanUp() }
+        fixture.controller.escapeConfirmation = .milliseconds(50)
+        fixture.controller.start(rule: fixture.rule(), preferences: WorkflowPreferences(), models: fixture.models)
+        await fixture.controller.waitForWork()
+        fixture.key.press()
+        XCTAssertTrue(fixture.controller.escapeArmed)
+        try? await Task.sleep(for: .milliseconds(200))
+        XCTAssertFalse(fixture.controller.escapeArmed)
+        fixture.key.press()
+        XCTAssertEqual(fixture.controller.phase, .recording, "A press after the window lapsed starts over")
+        XCTAssertTrue(fixture.controller.escapeArmed)
+    }
+
+    func testTheMinimalStyleDrawsTheBeanAtTheBottomOfTheScreen() {
+        let screen = NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let bean = DictationBeanLayout.frame(phase: .recording, escapeArmed: false, visibleFrame: screen)
+        XCTAssertEqual(bean.height, DictationBeanLayout.height)
+        XCTAssertEqual(bean.midX, screen.midX)
+        XCTAssertLessThan(bean.width, DictationPopupLayout.frame(phase: .recording, text: "", visibleFrame: screen).width)
+        XCTAssertGreaterThan(DictationBeanLayout.frame(phase: .recording, escapeArmed: true, visibleFrame: screen).width, bean.width,
+                             "The bean widens to say that Escape waits for its second press")
     }
 
     func testTheOwnCancelShortcutCancelsWithoutCountingAsEscape() async {

@@ -26,6 +26,15 @@ final class DictationController: ObservableObject {
     @Published private(set) var preparationMessage = "Preparing…"
     /// A shortcut press came while this recording was still being finished, and started nothing.
     @Published private(set) var pressedWhileFinishing = false
+    /// The full popup with the live transcript, or the small bean with only the waveform.
+    @Published private(set) var popupStyle: RecordingPopupStyle = .full { didSet { resizePanel() } }
+    /// Escape was pressed once: a second press within `escapeConfirmation` cancels, so one stray press never does.
+    @Published private(set) var escapeArmed = false { didSet { resizePanel() } }
+    /// How long the first Escape waits for the second.
+    var escapeConfirmation: Duration = .seconds(2)
+    private var escapeDisarm: Task<Void, Never>?
+    private enum EscapeSource { case registered, monitor }
+    private var lastEscape: (source: EscapeSource, at: ContinuousClock.Instant)?
     private(set) var ruleID: UUID?
     private var recorder: (any DictationRecording)?
     private let makeRecorder: () -> any DictationRecording
@@ -142,6 +151,7 @@ final class DictationController: ObservableObject {
         self.preferences = preferences; self.models = models; activeRule = rule; ruleID = rule.id
         residencyHold = models.holdResidency()
         self.preferences.showDictationPopup = rule.action?.showRecordingPopup ?? true
+        popupStyle = rule.action?.recordingPopupStyle ?? .full
         self.preferences.transcriptionLanguage = rule.action?.transcriptionLanguage
         samples = AudioSamples(); liveText = ""; elapsed = 0
         recordingStarted = nil; recordingSeconds = 0
@@ -155,9 +165,9 @@ final class DictationController: ObservableObject {
         let shortcut = rule.hotkey.map(HotkeyManager.display) ?? "Stop button"
         // A hold recording that its key did not start ends when the key is pressed and released.
         let holding = shortcutHeld && (rule.action?.recordingMode ?? preferences.recordingMode) == .hold
-        let recordingHint = handoff.map { "Stop in \($0.caller) · Esc to cancel" }
-            ?? (rule.hotkey == nil ? "Stop to finish · Esc to cancel" : holding ? "Release \(shortcut) to stop · Esc to cancel" : "\(shortcut) to stop · Esc to cancel")
-        hint = "Esc to cancel"
+        let recordingHint = handoff.map { "Stop in \($0.caller) · Esc twice to cancel" }
+            ?? (rule.hotkey == nil ? "Stop to finish · Esc twice to cancel" : holding ? "Release \(shortcut) to stop · Esc twice to cancel" : "\(shortcut) to stop · Esc twice to cancel")
+        hint = "Esc twice to cancel"
         let stopHint = DictationStopHint(title: holding ? "Release to stop" : "Stop", keys: handoff == nil ? rule.hotkey.map(HotkeyManager.display) : nil,
                                          caller: handoff?.caller)
         if self.preferences.showDictationPopup { showPanel() }
@@ -405,7 +415,7 @@ final class DictationController: ObservableObject {
     private func deliver(token: UUID, rule: Rule, models: LocalModels) {
         let recognition = finishTranscription(token: token, rule: rule, models: models)
         let recordingSeconds = self.recordingSeconds
-        phase = .transcribing; pressedWhileFinishing = false; hint = "Esc to cancel"
+        phase = .transcribing; pressedWhileFinishing = false; hint = "Esc twice to cancel"
         work = Task { [weak self] in
             guard let self else { return }
             do {
@@ -559,6 +569,7 @@ final class DictationController: ObservableObject {
         activeRule = nil; ruleID = nil; phase = .idle
         panel?.orderOut(nil)
         removeEscape()
+        lastEscape = nil
     }
     private func endHandoff(_ outcome: DictationHandoff.Outcome) {
         guard let handoff else { return }
@@ -566,6 +577,7 @@ final class DictationController: ObservableObject {
         onHandoff?(handoff, outcome)
     }
     private func removeEscape() {
+        disarmEscape()
         cancelKey?.unregister()
         if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }; escapeMonitor = nil
         if let localEscapeMonitor { NSEvent.removeMonitor(localEscapeMonitor) }; localEscapeMonitor = nil
@@ -583,21 +595,48 @@ final class DictationController: ObservableObject {
         let hold = (activeRule?.action?.recordingMode ?? preferences.recordingMode) == .hold
         cancelKey?.register(heldModifiers: hold ? activeRule?.hotkey?.modifiers ?? 0 : 0) { [weak self] reason in
             guard self?.token == token else { return }
-            self?.interrupt(reason: reason)
+            // The person's own cancel shortcut is chosen on purpose and cancels at once; Escape asks twice.
+            if reason == .escape { self?.escapePressed(from: .registered) } else { self?.interrupt(reason: reason) }
         }
         guard monitorKeys else { return }
         // The monitors remain for an Escape that macOS would not register for Frog.
         escapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 {
+            if event.keyCode == 53, !event.isARepeat {
                 Task { @MainActor in
                     guard self?.token == token else { return }
-                    self?.interrupt(reason: .escape)
+                    self?.escapePressed(from: .monitor)
                 }
             }
         }
         localEscapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53, self?.token == token { self?.interrupt(reason: .escape); return nil }; return event
+            guard event.keyCode == 53, self?.token == token else { return event }
+            if !event.isARepeat { self?.escapePressed(from: .monitor) }
+            return nil
         }
+    }
+
+    /// Escape, as the registered key delivers it.
+    func pressEscape() { escapePressed(from: .registered) }
+
+    /// The first Escape arms the cancel and says so; the second, within `escapeConfirmation`, cancels.
+    private func escapePressed(from source: EscapeSource) {
+        let at = ContinuousClock.now
+        // The registered key and a monitor may both see one press; it counts once.
+        if let last = lastEscape, last.source != source, last.at.duration(to: at) < .milliseconds(150) { return }
+        lastEscape = (source, at)
+        if escapeArmed { disarmEscape(); interrupt(reason: .escape); return }
+        escapeArmed = true
+        let window = escapeConfirmation
+        escapeDisarm = Task { [weak self] in
+            try? await Task.sleep(for: window)
+            guard !Task.isCancelled else { return }
+            self?.escapeArmed = false
+        }
+    }
+
+    private func disarmEscape() {
+        escapeDisarm?.cancel(); escapeDisarm = nil
+        if escapeArmed { escapeArmed = false }
     }
     private func showPanel() {
         guard presentsPopup else { return }
@@ -609,8 +648,8 @@ final class DictationController: ObservableObject {
             panel.hidesOnDeactivate = false; panel.isReleasedWhenClosed = false
             self.panel = panel
         }
-        let content = DictationPopup(controller: self)
-        if let hosting = panel?.contentView as? NSHostingView<DictationPopup> { hosting.rootView = content }
+        let content = DictationPanelContent(controller: self)
+        if let hosting = panel?.contentView as? NSHostingView<DictationPanelContent> { hosting.rootView = content }
         else {
             let hosting = NSHostingView(rootView: content)
             // The panel owns geometry; SwiftUI must not impose its transient ideal size.
@@ -624,7 +663,9 @@ final class DictationController: ObservableObject {
     private func resizePanel(on screen: NSScreen? = nil, animated: Bool = true) {
         guard let panel, phase != .idle,
               let screen = screen ?? panel.screen ?? NSScreen.main else { return }
-        let frame = DictationPopupLayout.frame(phase: phase, text: liveText, visibleFrame: screen.visibleFrame)
+        let frame = popupStyle == .minimal && phase != .failed
+            ? DictationBeanLayout.frame(phase: phase, escapeArmed: escapeArmed, visibleFrame: screen.visibleFrame)
+            : DictationPopupLayout.frame(phase: phase, text: liveText, visibleFrame: screen.visibleFrame)
         guard frame != panel.frame else { return }
         if animated, panel.isVisible, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             NSAnimationContext.runAnimationGroup { context in
@@ -672,6 +713,74 @@ enum DictationPopupLayout {
         return NSRect(x: visibleFrame.midX - width / 2,
                       y: visibleFrame.minY + min(24, max(0, (visibleFrame.height - height) / 2)),
                       width: width, height: height)
+    }
+}
+
+/// The bean: a 36-point capsule at the bottom of the screen with the recording's dot and waveform, and no text
+/// unless Escape waits for its second press.
+@MainActor
+enum DictationBeanLayout {
+    static let height = ProcessingPill.height
+    static func width(phase: DictationController.Phase, escapeArmed: Bool) -> CGFloat {
+        if escapeArmed { return 220 }
+        return phase == .recording ? 120 : 56
+    }
+    static func frame(phase: DictationController.Phase, escapeArmed: Bool, visibleFrame: NSRect) -> NSRect {
+        let width = min(width(phase: phase, escapeArmed: escapeArmed), max(1, visibleFrame.width - 32))
+        return NSRect(x: visibleFrame.midX - width / 2, y: visibleFrame.minY + 24, width: width, height: height)
+    }
+}
+
+/// What the recording panel shows: the bean when chosen, except for a failed transcription, which needs the full
+/// popup's Retry and Copy.
+struct DictationPanelContent: View {
+    @ObservedObject var controller: DictationController
+    var body: some View {
+        if controller.popupStyle == .minimal, controller.phase != .failed { DictationBean(controller: controller) }
+        else { DictationPopup(controller: controller) }
+    }
+}
+
+struct DictationBean: View {
+    @ObservedObject var controller: DictationController
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pulsing = false
+    var body: some View {
+        HStack(spacing: FrogStyle.space8) {
+            if controller.phase != .recording || !controller.microphoneDelivering {
+                FrogSpinner(size: .mini)
+            } else if controller.noMicrophoneInput {
+                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(FrogStyle.warning).help("No microphone input")
+            } else {
+                Circle().fill(FrogStyle.accent).frame(width: 8, height: 8)
+                    .opacity(pulsing ? 0.45 : 1)
+                    .onAppear { if !reduceMotion { withAnimation(FrogMotion.pulse) { pulsing = true } } }
+            }
+            // While Escape waits for its second press, the bean says so in place of the waveform.
+            if controller.phase == .recording, !controller.escapeArmed {
+                MicrophoneWaveform(meter: controller.microphoneMeter, bars: 18).frame(width: 66, height: 18)
+            }
+            if controller.escapeArmed {
+                HStack(spacing: FrogStyle.space4) {
+                    Text("Press").font(FrogType.label).foregroundStyle(FrogStyle.muted)
+                    KeyCaps("esc", compact: true)
+                    Text("again to cancel").font(FrogType.label).foregroundStyle(FrogStyle.muted)
+                }.fixedSize().transition(.opacity)
+            }
+        }
+        .padding(.horizontal, FrogStyle.space16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Capsule())
+        // A click on the bean stops the recording, as the full popup's Stop does.
+        .onTapGesture { if controller.phase == .recording { controller.requestStop() } }
+        .help(controller.phase == .recording ? "\(L10n.text(controller.statusText)) Click to stop, press Esc twice to cancel." : L10n.text(controller.statusText))
+        .environment(\.locale, L10n.locale)
+        .frogPanel(pill: true)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(L10n.text(controller.statusText))
+        .accessibilityAction(named: Text("Stop recording")) { controller.requestStop() }
+        .accessibilityAction(named: Text("Cancel dictation")) { controller.interrupt() }
     }
 }
 
@@ -783,7 +892,7 @@ struct DictationPopup: View {
             if let caller = stop.caller { Text(L10n.text("Stop in \(caller)")) }
         } actions: {
             FrogFooterHint(stop.title, keys: stop.keys ?? "") { controller.requestStop() }
-            FrogFooterHint("Cancel", keys: "esc") { controller.interrupt() }
+            FrogFooterHint(controller.escapeArmed ? "Press again to cancel" : "Cancel", keys: "esc") { controller.interrupt() }
         }
         .accessibilityLabel(controller.hint)
     }
@@ -878,8 +987,10 @@ final class MicrophoneMeter: ObservableObject {
 
 private struct MicrophoneWaveform: View {
     @ObservedObject var meter: MicrophoneMeter
+    /// The newest readings shown; nil shows them all.
+    var bars: Int? = nil
     var body: some View {
-        let levels = meter.levels
+        let levels = bars.map { Array(meter.levels.suffix($0)) } ?? meter.levels
         Canvas { context, size in
             let count = max(levels.count, 1)
             let step = size.width / CGFloat(count)

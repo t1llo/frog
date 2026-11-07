@@ -7,6 +7,11 @@ public enum RuleCategory: String, Codable, CaseIterable, Identifiable, Sendable 
     public var isShortcut: Bool { self == .application || self == .window || self == .system }
 }
 
+/// How the popup looks while recording: the full popup with the live transcript, or a small bean with only the waveform.
+public enum RecordingPopupStyle: String, Codable, CaseIterable, Sendable {
+    case full, minimal
+}
+
 public enum RecordingMode: String, Codable, CaseIterable, Sendable {
     case toggle, hold
     public var title: String { self == .toggle ? "Press to toggle" : "Hold to record" }
@@ -33,6 +38,8 @@ public struct RuleAction: Codable, Equatable, Sendable {
     public var audioProviderID: UUID?
     public var transcriptionLanguage: String?
     public var showRecordingPopup: Bool?
+    /// Nil is the full popup.
+    public var recordingPopupStyle: RecordingPopupStyle?
     public var localTextModelID: String?
     public var recordingMode: RecordingMode?
     public var output: TranscriptOutput?
