@@ -103,7 +103,10 @@ final class UIShotsTests: XCTestCase {
                 for _ in 0..<((offset * 7) % 19) { statistics.recordToolUse(kind) }
             }
             statistics.waitForWrites()
-            try await step("page-statistics-data", .statistics) { StatisticsView(statistics: statistics) }
+            // With the Settings › Statistics breadcrumb, as MainView shows the page.
+            try await step("page-statistics-data", .statistics) {
+                StatisticsView(statistics: statistics).frogPageBack("statistics", parent: "Settings") {}
+            }
         }
         for (name, tab) in [("directory", PluginsTab.browse), ("build", .build)] {
             try await step("page-plugins-\(name)", .feature(.plugins)) { PluginsView(plugins: model.plugins, tab: tab) }
