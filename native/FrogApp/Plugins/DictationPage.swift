@@ -52,8 +52,8 @@ struct DictationPage: View {
     }
 }
 
-/// One dictation rule as a section: Record beside its heading, its switch as the first row, its settings below it and
-/// Rename and Delete at its foot.
+/// One dictation rule as a section: Record and its menu (Rename, Delete) beside its heading, its switch as the first
+/// row and its settings below it.
 private struct DictationRuleSection: View {
     @EnvironmentObject private var model: AppModel
     let rule: Rule
@@ -62,28 +62,32 @@ private struct DictationRuleSection: View {
     @State private var renaming = false
 
     var body: some View {
-        FrogSection(rule.name, accessory: {
-            RecordButton(rule: rule, dictation: dictation, feature: feature)
+        // Record and the rule's own menu (Rename, Delete) sit on its heading, so the card ends with its last setting.
+        FrogSection(heading, accessory: {
+            HStack(spacing: FrogStyle.space6) {
+                RecordButton(rule: rule, dictation: dictation, feature: feature)
+                IconMenu(title: "Rule actions", bordered: false) {
+                    Button("Rename…", systemImage: "pencil") { renaming = true }
+                    Button("Delete rule", systemImage: "trash", role: .destructive) {
+                        do { try model.deleteRule(id: rule.id) } catch { model.report(error) }
+                    }
+                }
+            }
         }) {
             FrogRow("Turned on") {
                 Toggle("Enable \(rule.name)", isOn: binding(\.enabled)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
             rows
-            // Managing the rule itself comes last, as two pills on the row's trailing edge rather than a menu on the heading.
-            HStack(spacing: FrogStyle.space8) {
-                Spacer()
-                Button("Rename…") { renaming = true }.buttonStyle(.frog())
-                Button("Delete rule", role: .destructive) {
-                    do { try model.deleteRule(id: rule.id) } catch { model.report(error) }
-                }.buttonStyle(.frog(.destructive))
-            }
-            // Row actions are 24 tall, and the last pill ends where the switches above end.
-            .frogRowAccessory()
-            .frame(minHeight: FrogStyle.rowHeight)
         }
         .sheet(isPresented: $renaming) {
             RenameSheet(name: rule.name, kind: "dictation rule") { name in save { $0.name = name } }
         }
+    }
+
+    /// The rule's name heads its card, unless it is the page's own name, as the rule Frog starts with is: a heading
+    /// never repeats the page's title, so that rule's card is headed "Rule", beside "Recording" for every rule.
+    private var heading: String {
+        rule.name.trimmingCharacters(in: .whitespaces).localizedCaseInsensitiveCompare("Dictation") == .orderedSame ? "Rule" : rule.name
     }
 
     /// The rule's settings; a rule that is off keeps them, still changeable, so they are not dimmed.
