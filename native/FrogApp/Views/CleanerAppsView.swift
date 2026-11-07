@@ -14,10 +14,10 @@ struct CleanerAppsView: View {
                 CompactSegments(values: CleanerAppSort.allCases, selected: cleaner.sort, title: \.title) { cleaner.sort = $0 }
             }
             .onSubmit { if let row = apps.first(where: { $0.id == highlighted }) ?? apps.first { open(row) } }
-            if apps.isEmpty {
-                if cleaner.loadingApps {
-                    FrogLoadingNote(text: "Finding apps…")
-                } else if !cleaner.search.trimmingCharacters(in: .whitespaces).isEmpty {
+            if apps.isEmpty, cleaner.loadingApps {
+                loadingList
+            } else if apps.isEmpty {
+                if !cleaner.search.trimmingCharacters(in: .whitespaces).isEmpty {
                     FrogEmptyState(symbol: "magnifyingglass", title: "No matching apps", message: "Try its bundle ID.")
                 } else {
                     FrogEmptyState(symbol: "app.dashed", title: "No apps found", message: "Drop an app here to review it.",
@@ -44,6 +44,50 @@ struct CleanerAppsView: View {
                 .padding(.top, FrogStyle.sectionSpacing - 10)
             }
         }
+    }
+
+    /// The list as it will look, its rows drawn as skeletons, under the heading that says how far the load is, so
+    /// the page has its shape at once and nothing moves when the apps arrive.
+    private var loadingList: some View {
+        VStack(alignment: .leading, spacing: FrogStyle.space8) {
+            FrogSectionHeader("Apps") {
+                HStack(spacing: FrogStyle.space6) {
+                    FrogSpinner(size: .mini, label: "Finding apps")
+                    Text(loadingProgress).monospacedDigit()
+                }
+            }
+            VStack(spacing: 2) {
+                ForEach(Array(Self.skeletonNameWidths.enumerated()), id: \.offset) { index, width in
+                    skeletonRow(nameWidth: width, sizeWidth: index.isMultiple(of: 3) ? 52 : 44)
+                }
+            }
+            .padding(6).frogTableSurface()
+            .accessibilityHidden(true)
+        }
+        .padding(.top, FrogStyle.sectionSpacing - 10)
+    }
+
+    /// "Looking in Applications…" until the bundles are found, then how many are being read.
+    private var loadingProgress: String {
+        guard let count = cleaner.foundAppCount else { return L10n.text("Looking in Applications…") }
+        return String(format: L10n.text("Reading %@ apps…"), count.formatted(.number.locale(L10n.locale)))
+    }
+
+    /// Names of differing lengths, so the skeleton reads as a list of apps rather than a striped block.
+    private static let skeletonNameWidths: [CGFloat] = [96, 140, 72, 118, 160, 88, 124, 104]
+
+    /// One app row's shape: icon, name and size where `appRow` draws them, at its height.
+    private func skeletonRow(nameWidth: CGFloat, sizeWidth: CGFloat) -> some View {
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: FrogStyle.smallRadius + 2, style: .continuous).fill(FrogStyle.skeleton)
+                .frame(width: 24, height: 24).frame(width: 28, height: 28)
+            FrogSkeleton(width: nameWidth, height: 16)
+            Spacer(minLength: 8)
+            FrogSkeleton(width: sizeWidth, height: 14)
+            Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(FrogStyle.skeleton)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 6)
     }
 
     private func appRow(_ row: CleanerAppRow) -> some View {
