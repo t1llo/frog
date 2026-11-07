@@ -96,9 +96,10 @@ struct SystemMonitorOverview: View {
                     if wide { FrogChartScaleGutter(height: 150) }
                     if history.count < 2 {
                         // Hold the graph's place, so the card does not grow when the first readings arrive. The figures'
-                        // skeleton bars and the footer's "Measuring…" already say they are being measured, so the graph
-                        // adds no third note.
-                        FrogChartPlaceholder(height: wide ? 150 : 54) { EmptyView() }.accessibilityLabel("Measuring")
+                        // skeleton bars already say they are being measured, so the graph shows only a faint skeleton
+                        // line where the CPU line will run, and no third note.
+                        FrogChartPlaceholder(height: wide ? 150 : 54) { SkeletonLine().stroke(FrogStyle.skeleton, style: FrogChart.line) }
+                            .accessibilityLabel("Measuring")
                     } else {
                         SystemMonitorGraph(history: history, inspected: $inspected, sample: sample, wide: wide).equatable().frame(height: wide ? 150 : 54)
                     }
@@ -314,9 +315,9 @@ struct SystemMonitorOverview: View {
             } else {
                 Text(text).font(text.hasSuffix("%") ? GraphStyle.legendValue(page: wide) : FrogType.small)
                     .monospacedDigit().frame(height: wide ? 34 : 24, alignment: .leading)
-                // A meter is coloured by its level, like memory's and storage's: the accent until it runs high. The
-                // dot beside the title names the line; a grey meter for the second line read as switched off.
-                if let fraction { meter(fraction, color: FrogStyle.level(fraction, warning: 0.8, critical: 0.95)) }
+                // A meter is coloured like its line (CPU the accent, GPU teal) until it runs high, then by its level
+                // like memory's and storage's, so GPU stands apart from CPU and never reads as switched off.
+                if let fraction { meter(fraction, color: fraction >= 0.8 ? FrogStyle.level(fraction, warning: 0.8, critical: 0.95) : color) }
             }
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -359,6 +360,21 @@ private struct MeasuringValue: View {
             FrogMeter(fraction: 0, tint: FrogStyle.accent)
         }
         .accessibilityElement().accessibilityLabel("Measuring")
+    }
+}
+
+/// The graph's stand-in before two readings: a gentle wave through the lower half, the shape of a quiet CPU line.
+private struct SkeletonLine: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path { path in
+            let steps = 48
+            for step in 0...steps {
+                let x = rect.minX + rect.width * CGFloat(step) / CGFloat(steps)
+                let phase = Double(step) / Double(steps) * .pi * 3
+                let y = rect.minY + rect.height * (0.68 - 0.12 * CGFloat(sin(phase)) - 0.05 * CGFloat(sin(phase * 2.3)))
+                step == 0 ? path.move(to: CGPoint(x: x, y: y)) : path.addLine(to: CGPoint(x: x, y: y))
+            }
+        }
     }
 }
 
