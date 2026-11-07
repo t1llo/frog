@@ -324,7 +324,7 @@ struct UsageAccountRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.space8) {
             HStack(spacing: FrogStyle.space6) {
-                Text(account.label).font(FrogType.bodyMedium).lineLimit(1)
+                Text(Self.title(account.label)).font(FrogType.bodyMedium).lineLimit(1)
                 if let plan = account.plan { UsagePlanBadge(plan: plan) }
                 Spacer(minLength: FrogStyle.space4)
                 Text(account.age.map { UsageStatusPopover.age(of: $0, at: now) } ?? L10n.text("No reading yet"))
@@ -340,6 +340,11 @@ struct UsageAccountRow: View {
             }.opacity(account.stale ? 0.55 : 1)
         }.contentShape(Rectangle()).help(account.status ?? "").accessibilityElement(children: .combine)
     }
+
+    /// A default label is one letter, which the menu bar fits; written out here, "A" reads as "Account A".
+    static func title(_ label: String) -> String {
+        label.count == 1 && label.first?.isLetter == true ? L10n.text("Account \(label)") : label
+    }
 }
 
 /// "Session  ━━━━━━━──────  37%  15:40": a window of one account, one line high.
@@ -350,7 +355,7 @@ private struct UsageAccountWindowLine: View {
     /// The columns, so the meters and figures of every account line up.
     static let titleWidth: CGFloat = 52
     static let valueWidth: CGFloat = 34
-    static let resetWidth: CGFloat = 40
+    static let resetWidth: CGFloat = 48
 
     var body: some View {
         let known = window.map { $0.percentage.isFinite } ?? false
@@ -359,19 +364,16 @@ private struct UsageAccountWindowLine: View {
             Text(L10n.text(title)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
                 .frame(width: Self.titleWidth, alignment: .leading)
             FrogMeter(fraction: fraction, tint: FrogStyle.level(fraction, warning: 0.8, critical: 0.95), tick: elapsed)
-            if known, let window {
-                Text(window.usedText).font(FrogType.label).monospacedDigit().lineLimit(1)
-                    .frame(width: Self.valueWidth, alignment: .trailing)
-                Text(window.resetsAt.map { UsageStatusPopover.shortReset($0, now: now) } ?? "")
-                    .font(FrogType.caption).monospacedDigit().foregroundStyle(FrogStyle.muted).lineLimit(1)
-                    .frame(width: Self.resetWidth, alignment: .trailing)
-                    .help(window.resetsAt.map { "Renews \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "")
-            } else {
-                // A session that renewed after the last reading is not empty: it is unknown until the next one.
-                Text(L10n.text("Renewed")).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                    .frame(width: Self.valueWidth + FrogStyle.space8 + Self.resetWidth, alignment: .trailing)
-                    .help("Renewed since the last reading")
-            }
+            // A window that renewed after the last reading starts again from nothing: 0% until the next reading,
+            // in the same columns as every other line.
+            Text(known ? window?.usedText ?? "" : "0%").font(FrogType.label).monospacedDigit().lineLimit(1)
+                .frame(width: Self.valueWidth, alignment: .trailing)
+            Text(known ? window?.resetsAt.map { UsageStatusPopover.shortReset($0, now: now) } ?? "" : L10n.text("Renewed"))
+                .font(FrogType.caption).monospacedDigit().foregroundStyle(FrogStyle.muted).lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .frame(width: Self.resetWidth, alignment: .trailing)
+                .help(known ? window?.resetsAt.map { "Renews \($0.formatted(date: .abbreviated, time: .shortened))" } ?? ""
+                            : "Renewed since the last reading")
         }
     }
 

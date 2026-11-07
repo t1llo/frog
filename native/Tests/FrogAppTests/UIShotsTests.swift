@@ -231,9 +231,15 @@ final class UIShotsTests: XCTestCase {
         }
         try await popup("popup-llm-usage") { UsageStatusPopover(usage: sample.usage, openDashboard: {}) }
         // Two Claude accounts, as a Mac signed in to two reads them: B's session renewed after its last reading.
+        // The accounts are Claude's, so the popup is on Claude, as it is whenever it shows them.
+        let shown = sample.usage.preferences
+        var claude = shown
+        claude.provider = "Claude"
+        sample.usage.updatePreferences(claude)
         try await popup("popup-llm-usage-accounts") {
             UsageStatusPopover(usage: sample.usage, openDashboard: {}, sampleAccounts: Self.sampleAccounts(now: FrogClock.now))
         }
+        sample.usage.updatePreferences(shown)
         if let monitor = (model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin)?.monitor {
             try await popup("popup-system-monitor") { SystemMonitorStatusPopover(monitor: monitor) {} }
         }
