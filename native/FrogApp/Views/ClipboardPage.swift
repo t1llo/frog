@@ -20,7 +20,7 @@ struct ClipboardPage: View {
                         .disabled(store.entries.isEmpty)
                 }
             }
-            FrogSection("Shortcut & size") {
+            FrogSection("Shortcut and size") {
                 FrogRow("Shortcut") {
                     HotkeyRecorder(hotkey: Binding(get: { state.settings.shortcut.hotkey },
                                                    set: { if let value = $0 { plugin.setShortcut(value) } }),
@@ -83,11 +83,12 @@ private struct ClipboardPageRow: View {
             let kind = entry.kind
             PluginIconTile(symbol: kind.symbol, tint: kind.tint.color, size: .sidebar).help(L10n.text(kind.title))
                 .accessibilityLabel(L10n.text(kind.title))
-            Text(entry.preview).font(kind == .code ? FrogType.monoBody : FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
+            // One type voice down the list: the tile says what kind of item it is, so code is not set in mono.
+            Text(entry.preview).font(FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             ZStack(alignment: .trailing) {
                 // As far in from the trailing edge as the tile is from the leading one.
-                RecentTimestampText(date: entry.timestamp).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                RecentTimestampText(date: entry.timestamp).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                     .fixedSize()
                     .opacity(hovering ? 0 : 1)
                 HStack(spacing: FrogStyle.space2) {
