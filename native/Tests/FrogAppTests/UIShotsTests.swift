@@ -88,6 +88,23 @@ final class UIShotsTests: XCTestCase {
         if let entry = model.history.first {
             try await step("page-history-detail", .history) { HistoryView(viewing: entry.id) }
         }
+        if wanted("page-statistics-data") {
+            // Statistics with counts, as after some weeks of use: its own store in the sample's folder, never this Mac's.
+            let statistics = ActivityStatisticsStore(directory: sample.root.appendingPathComponent("statistics-data", isDirectory: true))
+            statistics.setRecordingEnabled(true)
+            for index in 0..<42 {
+                statistics.recordDictation(recordingSeconds: Double(8 + index % 23), text: String(repeating: "word ", count: 18 + index % 31),
+                                           rule: .dictation)
+            }
+            for (offset, kind) in ActivityRuleKind.allCases.enumerated() {
+                for _ in 0..<[27, 19, 6, 42, 11, 8, 3][offset % 7] { statistics.recordRuleExecution(kind: kind) }
+            }
+            for (offset, kind) in ActivityToolKind.allCases.enumerated() {
+                for _ in 0..<((offset * 7) % 19) { statistics.recordToolUse(kind) }
+            }
+            statistics.waitForWrites()
+            try await step("page-statistics-data", .statistics) { StatisticsView(statistics: statistics) }
+        }
         for (name, tab) in [("directory", PluginsTab.browse), ("build", .build)] {
             try await step("page-plugins-\(name)", .feature(.plugins)) { PluginsView(plugins: model.plugins, tab: tab) }
         }
@@ -410,7 +427,8 @@ final class UIShotsTests: XCTestCase {
         }
         try await sheet("sheet-provider-new") { ProviderEditor(provider: ProviderConfiguration()).environmentObject(model) }
         if let provider = model.configuration.providers.first {
-            try await sheet("sheet-provider-edit") { ProviderEditor(provider: provider).environmentObject(model) }
+            // As the Providers page opens a saved provider: on its second step, the connection.
+            try await sheet("sheet-provider-edit") { ProviderEditor(provider: provider, step: 1).environmentObject(model) }
         }
         if let rule = model.configuration.rules.first(where: { $0.category == .text && !$0.answersInPanel }) {
             try await sheet("sheet-writing-rule") { WritingRuleEditor(rule: rule, bubble: true) { _ in }.environmentObject(model) }
