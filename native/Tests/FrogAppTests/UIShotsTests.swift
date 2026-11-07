@@ -952,7 +952,8 @@ private struct SampleSystemSampler: SystemMonitorSampling {
         power.batteryFlow = .drawing(watts: 9.4); power.systemWatts = 11.2; power.batteryCelsius = 31
         return SystemMonitorSnapshot(cpu: .value(0.24), gpu: .value(0.11),
                                      memory: SystemMonitorMemory(used: 11_400_000_000, total: 17_179_869_184),
-                                     storage: SystemMonitorStorage(available: 182_000_000_000, total: 494_000_000_000), power: power)
+                                     storage: SystemMonitorStorage(available: 182_000_000_000, total: 494_000_000_000,
+                                                                  availableDayAgo: 185_400_000_000), power: power)
     }
 
     /// Ten minutes of graph, a reading every ten seconds, with a short burst of work in the middle.

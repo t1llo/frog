@@ -62,7 +62,12 @@ final class SystemMonitorPlugin: FrogPlugin, ObservableObject {
     func start() async {
         // A seed that could not be written is still used, so the next choice saves the old ones with it.
         settings = seedSettings() ?? context.settings(SystemMonitorSettings.self)
-        monitor = SystemMonitor(sampler: Self.makeSampler())
+        let sampler = Self.makeSampler()
+        // Free space is kept for a day in Frog's data, so the change since yesterday survives a restart.
+        if let native = sampler as? NativeSystemMonitorSampler {
+            await native.keepStorageLog(at: context.legacy.dataDirectory.appendingPathComponent(SystemMonitorStorageLog.fileName))
+        }
+        monitor = SystemMonitor(sampler: sampler)
         monitor?.setRecording(true)
         configureItem()
     }
