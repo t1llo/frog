@@ -315,7 +315,7 @@ struct WritingRuleEditor: View {
                 }
             }
         }.frame(width: 540)
-            .foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas).background(FrogWindowMaterial())
+            .foregroundStyle(FrogStyle.ink).frogSheetSurface()
             .tint(FrogStyle.accent).buttonStyle(FrogButtonStyle()).controlSize(.small)
             .onChange(of: model.configuration, initial: true) { reconcileModels() }
             .onChange(of: model.localModels.installed) { reconcileModels() }
@@ -443,8 +443,8 @@ struct WritingTryView: View {
                     .help(runBlocked.map { L10n.text($0) } ?? "Run (⌘↩)")
                     .accessibilityHint(runBlocked.map { L10n.text($0) } ?? "")
             }
-        }.padding(FrogStyle.sheetPadding).frame(width: 540).foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas)
-            .background(FrogWindowMaterial()).buttonStyle(FrogButtonStyle()).tint(FrogStyle.accent)
+        }.padding(FrogStyle.sheetPadding).frame(width: 540).foregroundStyle(FrogStyle.ink).frogSheetSurface()
+            .buttonStyle(FrogButtonStyle()).tint(FrogStyle.accent)
             .onDisappear { run?.cancel() }
     }
 

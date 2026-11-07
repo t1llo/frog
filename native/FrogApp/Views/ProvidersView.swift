@@ -399,7 +399,7 @@ struct ProviderEditor: View {
                 }
             }
         }
-        .frame(width: 540).background(FrogStyle.canvas).background(FrogWindowMaterial())
+        .frame(width: 540).frogSheetSurface()
         .foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).buttonStyle(.frog())
         // Read before the first frame, so the Connection step does not change its labels once shown.
         .onAppear {

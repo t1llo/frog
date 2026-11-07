@@ -1,3 +1,4 @@
+import FrogCore
 import AppKit
 import Combine
 import SwiftUI
@@ -272,7 +273,7 @@ enum UsageStatusReadout {
     /// 2h ago". Combined values come first, under "A + B combined" and how they are weighted.
     /// Never an e-mail address: the summaries carry none.
     static func description(accounts: [UsageAccountSummary], combined: [UsageCombinedWindow]? = nil,
-                            now: Date = Date()) -> String {
+                            now: Date = FrogClock.now) -> String {
         let accounts = accounts.filter(\.included)
         var lines: [String]
         if let combined {

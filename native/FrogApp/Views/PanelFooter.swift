@@ -31,6 +31,35 @@ struct FrogFooter<Status: View, Actions: View>: View {
     }
 }
 
+/// The one status form on a popup's footer: a 6-point dot in the state's colour and a short word or time, muted,
+/// as Frog's "Ready", System monitor's "Live" and LLM usage's "12 min ago" read. `.off` is a hollow ring, for a
+/// state still to come ("Measuring…", no reading yet).
+struct FrogFooterStatus: View {
+    typealias Tone = FrogStatusLabel.Tone
+    let text: String
+    var tone: Tone = .good
+
+    var body: some View {
+        HStack(spacing: FrogStyle.space6) {
+            Group {
+                if tone == .off { Circle().strokeBorder(FrogStyle.muted, lineWidth: 1.25) } else { Circle().fill(color) }
+            }.frame(width: 6, height: 6)
+            // A status is a word or a time, never cut: "15 min ago" keeps its whole width wherever it is drawn.
+            Text(L10n.text(text)).monospacedDigit().lineLimit(1).fixedSize()
+        }.accessibilityElement(children: .combine)
+    }
+
+    private var color: Color {
+        switch tone {
+        case .good: FrogStyle.good
+        case .active: FrogStyle.accent
+        case .warning: FrogStyle.warning
+        case .critical: FrogStyle.critical
+        case .off: FrogStyle.muted
+        }
+    }
+}
+
 /// One action in a `FrogFooter`: its word and its keys as caps. With `action` it is a button for the pointer and
 /// VoiceOver, with a hover fill; without, a hint for the keyboard.
 struct FrogFooterHint: View {
@@ -77,12 +106,22 @@ struct PanelFooter: View {
     var showsActions = true
     /// What Escape does, for a panel without actions; nil hides the hint.
     var closeTitle: String? = nil
+    /// Frog's own mark instead of `symbol`, for the command bar, whose symbol (the magnifier) its search line
+    /// already shows right above.
+    var showsFrogMark = false
 
     var body: some View {
         FrogFooter {
-            Image(systemName: symbol).font(FrogType.label)
+            if showsFrogMark {
+                Image(nsImage: FrogMenuIcon.image).renderingMode(.template).resizable().aspectRatio(contentMode: .fit)
+                    .frame(height: 12).accessibilityHidden(true).allowsHitTesting(false)
+            } else {
+                Image(systemName: symbol).font(FrogType.label).allowsHitTesting(false)
+            }
             // One text, so the dot sits evenly between the name and its count.
             Text(verbatim: [L10n.text(name), detail].compactMap { $0 }.joined(separator: " · ")).monospacedDigit()
+                // The status is part of the footer's drag handle, like the band around it.
+                .allowsHitTesting(false)
         } actions: {
             if let primaryTitle { FrogFooterHint(primaryTitle, keys: "↩") }
             if showsActions { FrogFooterHint("Actions", keys: "⌘K") }
@@ -109,7 +148,8 @@ extension View {
     func frogFooterBand() -> some View {
         padding(.horizontal, FrogStyle.cardPadding)
             .frame(height: 32).frame(maxWidth: .infinity)
-            .background(FrogStyle.footerBand)
+            // The fill takes no clicks, so whatever lies behind the band (a floating panel's drag handle) gets them.
+            .background(FrogStyle.footerBand.allowsHitTesting(false))
     }
 }
 

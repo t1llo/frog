@@ -34,7 +34,8 @@ import SwiftUI
     @Published private(set) var argument: CommandArgument?
     /// Published so that rows already drawn switch to their own icon, even when nothing else about them changed.
     @Published private(set) var iconPaths: [String: String] = [:]
-    @Published private(set) var showsPositionReset = false
+    /// Places the bar with the clipboard and the window switcher, where the family was last dragged to.
+    let placement: PanelFamilyPlacer
     /// The caption above a row that starts a group, by the row's ID: "Suggestions", "Applications", "Results".
     @Published private(set) var headers: [String: String] = [:]
     /// The selected row's actions, listed over the footer by ⌘K.
@@ -46,8 +47,6 @@ import SwiftUI
     private(set) var lastOpen: (rows: Duration, shown: Duration)?
 
     private var selectionWasMoved = false
-    /// Set by a drag that left the bar away from the middle of its display, until it is centred again.
-    private var userPlaced = false
     private weak var model: AppModel?
 
     // MARK: Rows
@@ -142,7 +141,9 @@ import SwiftUI
          openSetting: @escaping @MainActor (SystemSetting) throws -> Void = { try MacSettingsNavigation.open($0) },
          loadApplications: @escaping @MainActor () async -> [Rule] = { await ApplicationCatalogStore.shared.load() },
          applicationNames: @escaping @MainActor (String) -> [String] = { ApplicationCatalogStore.shared.alternativeNames[$0] ?? [] },
-         extraProviders: [any CommandBarRowProviding] = []) {
+         extraProviders: [any CommandBarRowProviding] = [],
+         placement: PanelFamilyPlacer? = nil) {
+        self.placement = placement ?? .shared(in: model.dataDirectory)
         self.model = model; self.extraProviders = extraProviders; self.pasteboard = pasteboard
         applications = ApplicationCommandRows(load: loadApplications, alternativeNames: applicationNames)
         macSettings = MacSettingsCommandRows(load: loadSettings, open: openSetting)
@@ -239,7 +240,7 @@ import SwiftUI
         created.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         let host = NSHostingView(rootView: CommandBarView(bar: self))
         host.sizingOptions = []; created.contentView = host; panel = created
-        center()
+        self.placement.place(created, size: CommandBarView.size)
         host.layoutSubtreeIfNeeded()
     }
     func show() {
@@ -293,11 +294,8 @@ import SwiftUI
                 self?.hide()
             }
         }
-        // Retain the user's drag position; recover if its display was disconnected. A bar that was left where it
-        // opened follows the pointer to the display in use, as the window switcher does.
-        let inUse = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
-        let origin = Self.openingOrigin(of: panel.frame, dragged: userPlaced, displays: NSScreen.screens.map(\.visibleFrame), inUse: inUse?.visibleFrame)
-        if origin != panel.frame.origin { panel.setFrameOrigin(origin); userPlaced = false }
+        // On the display under the pointer, where the panel family was last dragged to there.
+        placement.place(panel, size: CommandBarView.size)
         // The rows are drawn before the panel is ordered in, so its first frame already lists them.
         panel.contentView?.layoutSubtreeIfNeeded()
         panel.makeKeyAndOrderFront(nil)
@@ -382,7 +380,6 @@ import SwiftUI
         if paths != iconPaths { iconPaths = paths }
     }
     func hide() {
-        showsPositionReset = false
         generation = UUID(); delivery?.cancel(); delivery = nil
         for load in iconLoads.values { load.task.cancel() }; iconLoads = [:]
         for provider in providers where !pluginProviders.contains(ObjectIdentifier(provider)) { provider.close() }
@@ -696,24 +693,10 @@ import SwiftUI
 
     // MARK: Position
 
-    /// Where the bar opens: where it was dragged to while a display still shows all of it, otherwise in the middle
-    /// of the display in use.
-    static func openingOrigin(of frame: NSRect, dragged: Bool, displays: [NSRect], inUse: NSRect?) -> NSPoint {
-        if dragged, displays.contains(where: { $0.contains(frame) }) { return frame.origin }
-        guard let inUse else { return frame.origin }
-        return NSPoint(x: inUse.midX - frame.width / 2, y: inUse.midY - frame.height / 2)
-    }
-    func finishDragging() {
-        guard let panel, let screen = panel.screen else { return }
-        let target = NSPoint(x: screen.visibleFrame.midX - panel.frame.width / 2, y: screen.visibleFrame.midY - panel.frame.height / 2)
-        if abs(panel.frame.minX - target.x) < 18, abs(panel.frame.minY - target.y) < 18 { center() }
-        else { showsPositionReset = true; userPlaced = true }
-    }
-    func center() {
-        guard let panel, let screen = panel.screen ?? NSScreen.main else { return }
-        panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - panel.frame.width / 2, y: screen.visibleFrame.midY - panel.frame.height / 2))
-        showsPositionReset = false; userPlaced = false
-    }
+    /// What the end of a drag does (the search line's and footer's handles call the placer the same way).
+    func finishDragging() { if let panel { placement.finishDrag(panel) } }
+    /// Moves the bar, and with it the panel family, back to the default place on its display.
+    func center() { if let panel { placement.reset(panel) } }
     private func copy(_ value: String) { pasteboard.clearContents(); pasteboard.setString(value, forType: .string) }
     isolated deinit { stop() }
 }
@@ -897,7 +880,7 @@ struct CommandRowKind: Equatable {
 /// The command bar in Raycast's arrangement: the search field, the rows in captioned groups, and a footer that
 /// names what Return does and opens the selected row's actions with ⌘K.
 struct CommandBarView: View {
-    static let size = NSSize(width: 680, height: 460)
+    static let size = NSSize(width: FloatingPanelLayout.width, height: FloatingPanelLayout.height)
     static let rowHeight: CGFloat = 40
     static let headerHeight: CGFloat = 28
     @ObservedObject var bar: CommandBar
@@ -906,8 +889,7 @@ struct CommandBarView: View {
     private struct CaptionID: Hashable { let row: String }
     var body: some View {
         VStack(spacing: 0) {
-            searchField.padding(.horizontal, FrogStyle.panelInset).padding(.top, FrogStyle.panelInset).padding(.bottom, FrogStyle.space4)
-                .background(WindowDragRegion(onDragEnd: bar.finishDragging))
+            searchField
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -945,7 +927,7 @@ struct CommandBarView: View {
             .overlay(alignment: .bottomTrailing) {
                 if bar.actionsShown { CommandActionsList(bar: bar).padding(FrogStyle.panelInset) }
             }
-            footer
+            footer.panelFamilyDragHandle(bar.placement)
         }.frame(width: Self.size.width, height: Self.size.height).frogPanel().environment(\.frogKeyboardSurface, true)
             // Opening, typing and the arrow keys are instant: nothing inside the bar animates.
             .transaction { $0.animation = nil }
@@ -955,9 +937,7 @@ struct CommandBarView: View {
     /// The search line is borderless, as Raycast's: the magnifier in the rows' icon column and the query, a step
     /// larger than the rows, starting where their titles do. Space, not a box, sets it apart from the list.
     private var searchField: some View {
-        HStack(spacing: FrogStyle.space10) {
-            Image(systemName: "magnifyingglass").font(.system(size: 15, weight: .medium)).foregroundStyle(FrogStyle.muted)
-                .frame(width: 22, height: 36).overlay { WindowDragRegion(onDragEnd: bar.finishDragging).help("Drag to move") }
+        FloatingPanelSearchLine(placement: bar.placement) {
             if let argument = bar.argument {
                 Label(argument.title, systemImage: argument.symbol).font(FrogType.label).lineLimit(1)
                     .foregroundStyle(FrogStyle.ink).padding(.horizontal, FrogStyle.space8).frame(height: FrogStyle.compactHeight)
@@ -973,10 +953,7 @@ struct CommandBarView: View {
                             .foregroundStyle(FrogStyle.placeholder).lineLimit(1).allowsHitTesting(false).accessibilityHidden(true)
                     }
                 }
-            if bar.showsPositionReset {
-                IconAction(title: "Center command bar", symbol: "scope") { bar.center() }
-            }
-        }.padding(.horizontal, FrogStyle.rowPadding).frame(height: 40)
+        }
     }
 
     /// Where the bar is on the left; what Return does and the actions on the right.
@@ -985,7 +962,7 @@ struct CommandBarView: View {
         let actions = bar.selectedActions
         return PanelFooter(symbol: bar.argument?.symbol ?? "magnifyingglass", name: bar.argument?.title ?? "Command bar",
                            primaryTitle: selected.flatMap { bar.primaryTitle(for: $0) }, showsActions: !actions.isEmpty,
-                           closeTitle: bar.argument == nil ? "Close" : "Back")
+                           closeTitle: bar.argument == nil ? "Close" : "Back", showsFrogMark: bar.argument == nil)
     }
 }
 

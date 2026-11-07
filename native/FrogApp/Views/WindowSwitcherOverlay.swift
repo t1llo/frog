@@ -1,18 +1,16 @@
 import AppKit
 import SwiftUI
 
+/// The window switcher in the panel family's frame: the family's width, the same search line and footer, and as many
+/// rows as there are windows up to the family's height.
 enum WindowSwitcherLayout {
-    static let width: CGFloat = 500
+    static let width = FloatingPanelLayout.width
     static let rowHeight: CGFloat = 44
-    static let queryLineHeight: CGFloat = 44
-    static let visibleRows = 10
-    /// The footer that says typing searches and what Return does, as every Frog panel has.
-    static let footerHeight: CGFloat = 32
-    /// The panel fits up to ten rows, at least one for the empty message, the search line while there is a query,
-    /// and the footer.
-    static func size(windowCount: Int, queryVisible: Bool = false) -> CGSize {
-        CGSize(width: width, height: 2 * FrogStyle.panelInset + CGFloat(max(1, min(visibleRows, windowCount))) * rowHeight
-               + (queryVisible ? queryLineHeight : 0) + footerHeight)
+    static let footerHeight = FloatingPanelLayout.footerHeight
+    static let visibleRows = Int((FloatingPanelLayout.height - FloatingPanelLayout.chromeHeight) / rowHeight)
+    /// The search line, up to `visibleRows` rows (at least one, for the empty message), and the footer.
+    static func size(windowCount: Int) -> CGSize {
+        CGSize(width: width, height: FloatingPanelLayout.chromeHeight + CGFloat(max(1, min(visibleRows, windowCount))) * rowHeight)
     }
     /// The icon a window shows while its app's own is not read yet: macOS's generic application icon, never a blank square.
     @MainActor static let genericIcon = NSWorkspace.shared.icon(for: .applicationBundle)
@@ -35,7 +33,7 @@ final class WindowSwitcherDisplay: ObservableObject {
         loading = false
         // Build the first visible rows during idle inventory refresh, rather than
         // on the first Command–Tab. Subsequent selections reuse the hosted tree.
-        panel?.setContentSize(WindowSwitcherLayout.size(windowCount: windows.count, queryVisible: false))
+        panel?.setContentSize(WindowSwitcherLayout.size(windowCount: windows.count))
         panel?.contentView?.layoutSubtreeIfNeeded()
     }
 }
@@ -44,10 +42,11 @@ struct WindowSwitcherOverlay: View {
     @ObservedObject var model: WindowSwitcherDisplay
     let choose: (UUID) -> Void
     let hover: (UUID) -> Void
+    var placement = PanelFamilyPlacer()
 
     var body: some View {
         VStack(spacing: 0) {
-            if !model.query.isEmpty { queryLine }
+            searchLine
             if model.windows.isEmpty {
                 Spacer()
                 Text(model.query.isEmpty ? L10n.text("No accessible windows") : "No windows match \"\(model.query)\"").font(FrogType.row).foregroundStyle(FrogStyle.muted)
@@ -78,7 +77,7 @@ struct WindowSwitcherOverlay: View {
                                     .onContinuousHover { phase in if case .active = phase { hover(window.id) } }
                                     .accessibilityAddTraits(model.selected == window.id ? .isSelected : [])
                             }
-                        }.padding(FrogStyle.panelInset)
+                        }.padding(.horizontal, FrogStyle.panelInset).padding(.top, FrogStyle.space2).padding(.bottom, FrogStyle.panelInset)
                     }
                     // `.never`, not `.hidden`: with "Show scroll bars: Always" macOS shows a hidden indicator anyway.
                     .scrollIndicators(.never)
@@ -87,10 +86,9 @@ struct WindowSwitcherOverlay: View {
                 }
             }
             PanelFooter(symbol: WindowSwitcherPlugin.info.symbol, name: WindowSwitcherPlugin.info.name,
-                        // The search line appears only once typing starts, so until then the footer says it is there.
-                        detail: model.query.isEmpty ? L10n.text("Type to search") : model.windows.count == 1 ? L10n.text("1 window")
-                            : String(format: L10n.text("%d windows"), model.windows.count),
+                        detail: model.windows.count == 1 ? L10n.text("1 window") : String(format: L10n.text("%d windows"), model.windows.count),
                         primaryTitle: model.windows.isEmpty ? nil : "Switch", showsActions: false, closeTitle: "Close")
+                .panelFamilyDragHandle(placement)
         }.frame(width: WindowSwitcherLayout.width)
             .environment(\.locale, L10n.locale)
             .frogPanel()
@@ -109,19 +107,18 @@ struct WindowSwitcherOverlay: View {
         }
     }
 
-    /// What has been typed to narrow the list; Backspace takes it back a character at a time.
-    private var queryLine: some View {
-        // The magnifier as wide as a row icon, so the query starts where the window titles do.
-        HStack(spacing: FrogStyle.space12) {
-            Image(systemName: "magnifyingglass").font(FrogType.row).foregroundStyle(FrogStyle.muted).frame(width: 28)
-            Text(model.query).font(FrogType.row).lineLimit(1).truncationMode(.head)
-            Spacer(minLength: 8)
-            KeyCap("⌫")
-        }.padding(.horizontal, FrogStyle.space10).frame(height: WindowSwitcherLayout.queryLineHeight - FrogStyle.space12)
-            .frogControlSurface(height: WindowSwitcherLayout.queryLineHeight - FrogStyle.space12, radius: FrogStyle.controlRadius)
-            .padding(.horizontal, FrogStyle.panelInset).padding(.top, FrogStyle.panelInset).frame(height: WindowSwitcherLayout.queryLineHeight)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(L10n.text("Search"))
-            .accessibilityValue(model.query)
+    /// The search line, as on the command bar and clipboard: the panel never takes the keyboard (the held shortcut
+    /// keeps the app in front), so what is typed while it is held is drawn here as text, and Backspace takes it back.
+    private var searchLine: some View {
+        FloatingPanelSearchLine(placement: placement) {
+            Text(model.query.isEmpty ? L10n.text("Type to search windows") : model.query).font(FrogType.query)
+                .foregroundStyle(model.query.isEmpty ? FrogStyle.placeholder : FrogStyle.ink)
+                .lineLimit(1).truncationMode(.head).frame(maxWidth: .infinity, alignment: .leading)
+        } trailing: {
+            if !model.query.isEmpty { KeyCap("⌫") }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L10n.text("Search"))
+        .accessibilityValue(model.query)
     }
 }

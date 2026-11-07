@@ -86,7 +86,7 @@ struct SystemMonitorOverview: View {
         VStack(spacing: wide ? FrogStyle.space16 : FrogStyle.panelCardGap) {
             // CPU and GPU: one legend entry per line in the graph, each with its dot.
             VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top, spacing: FrogStyle.space16) {
+                HStack(alignment: .top, spacing: columnGap) {
                     legend("CPU", color: FrogStyle.series, recorded: sample.map(\.cpu), now: snapshot.cpu)
                         .help("Busy time across all CPU cores.")
                     legend("GPU", color: FrogStyle.seriesSecondary, recorded: sample.map(\.gpu), now: snapshot.gpu)
@@ -113,7 +113,7 @@ struct SystemMonitorOverview: View {
             if snapshot.storage != nil || snapshot.memory != nil || snapshot.cpu == .measuring {
                 section(wide ? "Memory and storage" : nil) {
                     // Side by side on the page; one above the other in the narrow popup, where each needs the width.
-                    let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: FrogStyle.space16 * 2))
+                    let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: columnGap))
                                       : AnyLayout(VStackLayout(alignment: .leading, spacing: FrogStyle.space12))
                     layout {
                         memory(sample)
@@ -129,6 +129,10 @@ struct SystemMonitorOverview: View {
             }
         }.accessibilityElement(children: .contain).accessibilityLabel("System overview")
     }
+
+    /// The gap between two columns inside a card: CPU and GPU, memory and storage, the battery's figures. One
+    /// gap and equal columns, so every card's second column starts on the same edge.
+    private var columnGap: CGFloat { wide ? FrogStyle.space16 * 2 : FrogStyle.space16 }
 
     /// On the page, a card under a heading of its own, a section's gap below the one above; in a popup, the card.
     @ViewBuilder private func section<Content: View>(_ title: String?, @ViewBuilder content: () -> Content) -> some View {
@@ -153,13 +157,42 @@ struct SystemMonitorOverview: View {
             .help("Memory in use as Activity Monitor counts it: app memory, wired and compressed.")
     }
 
-    /// Space used on the startup disk, as Finder counts it.
+    /// Free space on the startup disk, as Finder counts it: what is free ("182 GB"), its share of the disk ("free ·
+    /// 37% of 494 GB"), a meter filled with that free share, and how free space
+    /// changed since about this time yesterday.
     private var storage: some View {
         let storage = snapshot.storage
-        return usage(title: "Storage", symbol: "internaldrive",
-                     used: storage.map { $0.total - $0.available }, total: storage?.total, fraction: storage?.usedFraction,
-                     level: { FrogStyle.level($0, warning: 0.85, critical: 0.95) }, format: diskBytes, recordedWithout: false)
-            .help(storage.map { "\(diskBytes($0.available)) free, counting what macOS can clear." } ?? "")
+        return VStack(alignment: .leading, spacing: 6) {
+            cardTitle("Storage", symbol: "internaldrive")
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if let storage {
+                    Text(diskBytes(storage.available)).font(GraphStyle.figure).monospacedDigit()
+                    Text("free · \(Int((storage.freeFraction * 100).rounded()))% of \(diskBytes(storage.total))")
+                        .font(FrogType.small).foregroundStyle(FrogStyle.muted).monospacedDigit().lineLimit(1)
+                } else {
+                    SkeletonText(font: GraphStyle.figure, width: 64, height: 12)
+                }
+            }
+            // The meter fills with the free share, the quantity the headline names, so "182 GB free · 37%" is a 37%
+            // bar; it turns `warning` under 15% free and `critical` under 5%.
+            meter(storage?.freeFraction ?? 0, color: storage.map { FrogStyle.level($0.usedFraction, warning: 0.85, critical: 0.95) } ?? FrogStyle.accent)
+            if let storage {
+                Text(Self.storageChange(storage.changeSinceDayAgo, format: diskBytes))
+                    .font(FrogType.small).foregroundStyle(FrogStyle.muted).monospacedDigit().lineLimit(1)
+            } else {
+                SkeletonText(font: FrogType.small, width: 120, height: 10)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .combine)
+        .help(storage.map { "\(diskBytes($0.available)) free, counting what macOS can clear." } ?? "")
+    }
+
+    /// "−3.4 GB since yesterday", "+1.2 GB since yesterday", "Same as yesterday" within 50 MB, or what to expect
+    /// before Frog has a reading from a day ago.
+    static func storageChange(_ change: Int64?, format: (Int64) -> String) -> String {
+        guard let change else { return L10n.text("Change since yesterday shows after a day") }
+        if abs(change) < 50_000_000 { return L10n.text("Same as yesterday") }
+        return "\(change < 0 ? "−" : "+")\(format(abs(change))) " + L10n.text("since yesterday")
     }
 
     /// One block of the memory and storage card: its title, what is used ("312 GB used of 494 GB") and a meter of it.
@@ -177,7 +210,7 @@ struct SystemMonitorOverview: View {
                     Text("—").font(GraphStyle.figure)
                 } else {
                     // Where the figure goes, as tall as the figure's line.
-                    FrogSkeleton(width: 64, height: 14).frame(height: 20)
+                    SkeletonText(font: GraphStyle.figure, width: 64, height: 12)
                 }
             }
             meter(fraction ?? 0, color: fraction.map(level) ?? FrogStyle.accent)
@@ -220,7 +253,7 @@ struct SystemMonitorOverview: View {
                 }
             }
             if !stats.isEmpty {
-                HStack(alignment: .top, spacing: 8) {
+                HStack(alignment: .top, spacing: columnGap) {
                     ForEach(stats, id: \.title) { stat in
                         VStack(alignment: .leading, spacing: 2) {
                             Text(stat.title).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
@@ -244,14 +277,14 @@ struct SystemMonitorOverview: View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 6) {
                 cardTitle("Battery", symbol: "battery.75")
-                FrogSkeleton(width: 40, height: 14).frame(height: 20)
+                SkeletonText(font: GraphStyle.figure, width: 40, height: 12)
                 meter(0, color: FrogStyle.accent)
             }
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: columnGap) {
                 ForEach(["Mac draws", "Temperature"], id: \.self) { title in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L10n.text(title)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                        FrogSkeleton(width: 48, height: 12).frame(height: 16)
+                        SkeletonText(font: FrogType.bodyMedium, width: 48, height: 12)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
@@ -351,6 +384,18 @@ struct SystemMonitorOverview: View {
 
 /// A figure that has no reading yet: a quiet bar the width of a number, the one sign that it is being measured, over
 /// its meter's empty track, so nothing moves when the reading arrives.
+/// A skeleton bar on a line exactly as tall as one line of `font`, so the loaded text that replaces it takes the
+/// same height and nothing moves (or grows) when the first reading arrives.
+private struct SkeletonText: View {
+    let font: Font
+    let width: CGFloat
+    let height: CGFloat
+    var body: some View {
+        Text(verbatim: "0").font(font).hidden().frame(width: width, alignment: .leading)
+            .overlay(alignment: .leading) { FrogSkeleton(width: width, height: height) }
+    }
+}
+
 private struct MeasuringValue: View {
     let wide: Bool
     var body: some View {

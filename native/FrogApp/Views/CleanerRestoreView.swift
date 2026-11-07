@@ -94,7 +94,7 @@ struct CleanerRestoreView: View {
                 .buttonStyle(.frog(.primary)).keyboardShortcut(.cancelAction)
             }
         }
-        .padding(FrogStyle.sheetPadding).frame(width: 520).frame(maxHeight: 520)
+        .padding(FrogStyle.sheetPadding).frame(width: 520).frame(maxHeight: 520).frogSheetSurface()
         .buttonStyle(FrogButtonStyle())
         .foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent)
     }
@@ -113,7 +113,7 @@ struct CleanerRestoreView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(record.title).font(FrogType.bodyMedium).lineLimit(1)
-                        Text(Self.relativeDate.localizedString(for: record.date, relativeTo: Date()))
+                        Text(Self.relativeDate.localizedString(for: record.date, relativeTo: FrogClock.now))
                             .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
                     }
                     Text([row.detail, row.restoredText, row.missingText].compactMap { $0 }.joined(separator: " · "))

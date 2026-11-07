@@ -11,6 +11,6 @@ final class SwitcherApplicationTests: XCTestCase {
         XCTAssertFalse(SwitcherApplication.eligible(policy: .prohibited, terminated: false, bundleURL: nil))
         XCTAssertFalse(SwitcherApplication.eligible(policy: .regular, terminated: true, bundleURL: safari))
         XCTAssertFalse(SwitcherApplication.eligible(policy: .regular, terminated: false, bundleURL: URL(fileURLWithPath: "/Library/PrivilegedHelperTools/com.docker.vmnetd")))
-        XCTAssertEqual(WindowSwitcherLayout.size(windowCount: 3).height, 3 * WindowSwitcherLayout.rowHeight + 2 * FrogStyle.panelInset + WindowSwitcherLayout.footerHeight)
+        XCTAssertEqual(WindowSwitcherLayout.size(windowCount: 3).height, 3 * WindowSwitcherLayout.rowHeight + FloatingPanelLayout.chromeHeight)
     }
 }

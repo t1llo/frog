@@ -11,7 +11,7 @@ public struct UtilityDocument: Identifiable, Codable, Equatable, Sendable {
     public var modified: Date
     /// A note the command bar pastes, with `SnippetExpansion`'s variables filled in, instead of opening it.
     public var pastes: Bool
-    public init(id: UUID = UUID(), kind: Kind, title: String, text: String = "", files: [URL] = [], modified: Date = Date(), pastes: Bool = false) {
+    public init(id: UUID = UUID(), kind: Kind, title: String, text: String = "", files: [URL] = [], modified: Date = FrogClock.now, pastes: Bool = false) {
         self.id = id; self.kind = kind; self.title = title; self.text = text; self.files = files; self.modified = modified; self.pastes = pastes
     }
 

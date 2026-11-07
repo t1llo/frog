@@ -8,8 +8,9 @@ enum FrogMotion {
     static let press = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.14)
     /// A hover fill leaving. It arrives at once. CSS `ease`, the curve for a colour change.
     static let hoverOut = Animation.timingCurve(0.25, 0.1, 0.25, 1, duration: 0.15)
-    /// A choice moving to another option, such as the thumb of a segmented control.
-    static let slide = Animation.spring(response: 0.28, dampingFraction: 1)
+    /// A choice moving to another option, such as the thumb of a segmented control or a switch's knob: one short
+    /// ease-out, 0.18 s, no overshoot, so a tab switch is a single calm movement that is over before the eye follows it.
+    static let slide = Animation.timingCurve(0.25, 1, 0.5, 1, duration: 0.18)
     /// Something occasional arriving, such as an error banner. A strong ease-out: it moves at once and settles
     /// slowly, where the built-in ease-out starts too gently.
     static let reveal = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.2)

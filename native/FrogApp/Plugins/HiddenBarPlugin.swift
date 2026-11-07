@@ -40,7 +40,7 @@ struct HiddenBarSettings: ConfigSection {
 /// Hides menu-bar icons left of Frog's divider behind an arrow. The organizer and its status items exist only
 /// while the plugin runs.
 final class HiddenBarPlugin: LegacyPlugin, FrogPlugin, ObservableObject {
-    static let info = PluginInfo(id: "hidden-bar", name: "Hidden bar", symbol: "menubar.rectangle", tint: .gray, category: .system,
+    static let info = PluginInfo(id: "hidden-bar", name: "Hidden bar", symbol: "menubar.arrow.up.rectangle", tint: .blue, category: .system,
                                  summary: "Tuck menu-bar icons out of sight")
     /// For tests: an organizer with fake status items. Without one, only a model that registers shortcuts gets
     /// a real organizer, so test models never touch the menu bar.

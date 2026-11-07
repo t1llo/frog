@@ -3,7 +3,7 @@ import AppKit
 import SwiftUI
 import FrogCore
 import FrogTestSupport
-import FrogUsage
+@testable import FrogUsage
 @testable import FrogApp
 
 /// Pictures of every surface of Frog a user sees, in light and dark, for a design review from one folder: each page of
@@ -28,6 +28,11 @@ final class UIShotsTests: XCTestCase {
         self.folder = folder
         only = ProcessInfo.processInfo.environment["FROG_UI_SHOTS_ONLY"]?.split(separator: ",").map(String.init)
         try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        // Every time the pictures show (resets, "ago", "Until", chart ranges, the sample data's own dates) reads one
+        // fixed clock, so two runs draw the same pictures.
+        let previousNow = getenv(FrogClock.variable).map { String(cString: $0) }
+        setenv(FrogClock.variable, Self.fixedNow, 1)
+        defer { if let previousNow { setenv(FrogClock.variable, previousNow, 1) } else { unsetenv(FrogClock.variable) } }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("frog-ui-shots-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         // System monitor reads made-up figures, never this Mac's, and opens on ten minutes of graph.
@@ -38,7 +43,7 @@ final class UIShotsTests: XCTestCase {
         FrogVersion.override = ("1.0.48", "48")
         defer { FrogVersion.override = nil }
         let sample = try await SampleFrog(root: root, defaults: temporaryDefaults())
-        (sample.model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin)?.monitor?.restore(SampleSystemSampler.history())
+        (sample.model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin)?.monitor?.restore(SampleSystemSampler.history(now: FrogClock.now))
         defer { sample.stop() }
 
         try await mainWindow(sample)
@@ -52,6 +57,9 @@ final class UIShotsTests: XCTestCase {
         XCTAssertFalse(written.isEmpty, "No surface matched FROG_UI_SHOTS_ONLY")
         print("UI shots: \(written.count) pictures in \(folder)")
     }
+
+    /// The time of every picture: 2026-11-07 13:40 in this Mac's time zone, an afternoon.
+    static let fixedNow = "2026-11-07T13:40:00"
 
     // MARK: The window
 
@@ -116,7 +124,7 @@ final class UIShotsTests: XCTestCase {
             await documents.load()
             let script = UtilityDocument(kind: .script, title: "Morning check",
                                          text: "echo \"Good morning\"\necho \"3 updates waiting\"\necho \"Backup finished at 06:00\"",
-                                         modified: Date())
+                                         modified: FrogClock.now)
             documents.add(script)
             documents.selection[.script] = script.id
             let runner = ScriptRunner()
@@ -160,10 +168,59 @@ final class UIShotsTests: XCTestCase {
                 CleanerView(cleaner: loading) { _ in }
             }
         }
+        try await hiddenBarSections(sample)
         try await sample.useFeatures(everyFeature)
     }
 
+    /// Hidden bar's page with its picture of the menu bar, which it shows only beside a running organizer: one with
+    /// status items that never reach this Mac's menu bar, and the always-hidden section on, so both dividers show.
+    /// Afterwards Hidden bar runs again as before, without an organizer.
+    private func hiddenBarSections(_ sample: SampleFrog) async throws {
+        guard wanted("page-hiddenBar-sections") else { return }
+        let model = sample.model
+        var on = model.configuration.preferences, off = on
+        on.setFeature(.menuBar, enabled: true)
+        off.setFeature(.menuBar, enabled: false)
+        // The section is on before the organizer starts, as after a restart: turned on beside a running organizer,
+        // it would open the page arranging.
+        try await sample.useFeatures(on)
+        var plugin = try XCTUnwrap(model.pluginHost.running["hidden-bar"] as? HiddenBarPlugin)
+        let alwaysHidden = plugin.settings.alwaysHiddenSection
+        plugin.update { $0.alwaysHiddenSection = true }
+        try await sample.useFeatures(off)
+        HiddenBarPlugin.makeOrganizer = {
+            MenuBarOrganizer(statusItems: ShotStatusItems(), applications: ShotApplications(), automaticTicks: false, environment: {
+                OrganizerEnvironment(screens: [OrganizerScreen(frame: CGRect(x: 0, y: 0, width: 1_440, height: 900),
+                                                               menuRegions: [CGRect(x: 0, y: 876, width: 1_440, height: 24)])])
+            })
+        }
+        defer { HiddenBarPlugin.makeOrganizer = nil }
+        try await sample.useFeatures(on)
+        plugin = try XCTUnwrap(model.pluginHost.running["hidden-bar"] as? HiddenBarPlugin)
+        model.toolkit.select(.feature(.menuBar))
+        try await page("page-hiddenBar-sections", settle: .milliseconds(500)) { MainView().environmentObject(model) }
+        plugin.update { $0.alwaysHiddenSection = alwaysHidden }
+        try await sample.useFeatures(off)
+    }
+
     // MARK: The menu bar
+
+    /// Two Claude accounts on the Max plan, read a moment and three minutes ago.
+    static func sampleAccounts(now: Date) -> [UsageAccountSummary] {
+        func account(_ label: String, session: Double, sessionReset: TimeInterval, week: Double, weekReset: TimeInterval, age: TimeInterval) -> UsageAccountSummary {
+            UsageAccountSummary(
+                id: "/sample/\(label)", label: label, shortLabel: label,
+                windows: [UsageWindow(id: "five_hour", title: "Session", percentage: session,
+                                      resetsAt: session.isFinite ? now.addingTimeInterval(sessionReset) : nil, duration: 5 * 3600),
+                          UsageWindow(id: "seven_day", title: "Week", percentage: week,
+                                      resetsAt: now.addingTimeInterval(weekReset), duration: 7 * 86_400)],
+                plan: "Max 20×", sources: ["Claude app · Claude-Account-\(label)"], age: now.addingTimeInterval(-age),
+                readingSource: "Claude app", stale: false, status: nil, included: true,
+                needsLiveSetup: false, mergedNote: nil)
+        }
+        return [account("A", session: 37, sessionReset: 2 * 3600, week: 52, weekReset: 5 * 86_400, age: 20),
+                account("B", session: .nan, sessionReset: 0, week: 57, weekReset: 4 * 86_400, age: 180)]
+    }
 
     private func menuBar(_ sample: SampleFrog) async throws {
         let model = sample.model
@@ -173,6 +230,16 @@ final class UIShotsTests: XCTestCase {
             try await popup("menu-\(name)") { FrogStatusMenu(model: model, tab: tab.id).environment(\.locale, L10n.locale) }
         }
         try await popup("popup-llm-usage") { UsageStatusPopover(usage: sample.usage, openDashboard: {}) }
+        // Two Claude accounts, as a Mac signed in to two reads them: B's session renewed after its last reading.
+        // The accounts are Claude's, so the popup is on Claude, as it is whenever it shows them.
+        let shown = sample.usage.preferences
+        var claude = shown
+        claude.provider = "Claude"
+        sample.usage.updatePreferences(claude)
+        try await popup("popup-llm-usage-accounts") {
+            UsageStatusPopover(usage: sample.usage, openDashboard: {}, sampleAccounts: Self.sampleAccounts(now: FrogClock.now))
+        }
+        sample.usage.updatePreferences(shown)
         if let monitor = (model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin)?.monitor {
             try await popup("popup-system-monitor") { SystemMonitorStatusPopover(monitor: monitor) {} }
         }
@@ -184,6 +251,16 @@ final class UIShotsTests: XCTestCase {
         PowerSources.hasInternalBattery = true
         defer { PowerSources.hasInternalBattery = hadBattery }
         try await popup("popup-system-monitor-loading") { SystemMonitorStatusPopover(monitor: waiting) {} }
+        // The pages' Menu bar sections on their own, switched on so the style and colour pickers show.
+        if let plugin = model.pluginHost.running["llm-usage"] as? LLMUsagePlugin {
+            try await section("picker-llm-usage-menubar") { UsageMenuBarSection(plugin: plugin, usage: sample.usage) }
+        }
+        if let plugin = model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin {
+            var settings = plugin.settings
+            settings.menuBarItem = true
+            try await section("picker-system-monitor-menubar") { SystemMonitorMenuBarSection(settings: settings) { _ in } }
+        }
+        try await popup("menubar-items") { MenuBarItemsPicture(usage: sample.usage) }
         // Stay awake's menu-bar item opens an NSMenu, which only AppKit draws, on screen.
         try await focusTimerPopup(sample)
     }
@@ -494,6 +571,20 @@ final class UIShotsTests: XCTestCase {
         }
     }
 
+    /// One section of a page, as tall as it is, at the width of the page's column in the window (the window beside
+    /// MainView's 208-point sidebar, less the page's padding, no wider than `FrogStyle.pageWidth`), on the window's
+    /// canvas with the page's padding around it.
+    private func section<Content: View>(_ name: String, _ view: () -> Content) async throws {
+        guard wanted(name) else { return }
+        let width = min(FrogStyle.pageWidth, Self.windowSize.width - 208 - FrogStyle.pagePadding * 2)
+        for (appearance, mode) in Self.appearances {
+            let png = try await render(view().frame(width: width, alignment: .leading).padding(FrogStyle.pagePadding)
+                                        .background(FrogStyle.opaqueCanvas),
+                                       size: nil, appearance: appearance, backdrop: false)
+            try write(png, "\(name)-\(mode)")
+        }
+    }
+
     /// A popup, panel or sheet at the size the app gives it, or its own fitting size, on a plain backdrop so its edge shows.
     private func popup<Content: View>(_ name: String, size: CGSize? = nil, _ view: () -> Content) async throws {
         guard wanted(name) else { return }
@@ -650,7 +741,9 @@ private final class SampleFrog {
         configuration.providers = [ProviderConfiguration(name: "Ollama", kind: .ollama)]
         try ConfigurationStore(directory: root).save(configuration)
         // Changed at different times, so the lists' times say something.
-        let now = Date()
+        let now = FrogClock.now
+        // A phone paired a while ago and out of reach now, with the long name the menu row has to fit.
+        try Self.writePairedPhone(in: root)
         try await UtilityDocumentStore(directory: root.appendingPathComponent("Toolkit")).save([
             UtilityDocument(kind: .note, title: "Email signature", text: "Best,\nAnna\n{{date}}", modified: now.addingTimeInterval(-3 * 86_400), pastes: true),
             UtilityDocument(kind: .note, title: "Meeting notes", text: "# Standup\n- Ship the release\n- Update the website", modified: now.addingTimeInterval(-25 * 60)),
@@ -661,12 +754,13 @@ private final class SampleFrog {
         history = ClipboardHistoryStore(pasteboard: pasteboard, gate: ClipboardHistoryCaptureGate())
         history.configure(enabled: true, automaticallyPoll: false)
         // Copied over the last few days, oldest first, so the times down the list differ as they would.
-        let copies: [(String, TimeInterval)] = [
-            ("brew install --cask frog", 4 * 86_400), ("Thanks, see you at 3!", 27 * 3_600),
-            ("https://frog.beffa.xyz/docs/command-bar/", 3 * 3_600), ("Meeting moved to Thursday", 47 * 60),
-            ("func greet(_ name: String) -> String {\n    \"Hello, \\(name)\"\n}", 12 * 60), ("git push origin main", 20)
+        // Each in the app it would come from, as the rows and the preview name it.
+        let copies: [(String, TimeInterval, String)] = [
+            ("brew install --cask frog", 4 * 86_400, "Terminal"), ("Thanks, see you at 3!", 27 * 3_600, "Messages"),
+            ("https://frog.beffa.xyz/docs/command-bar/", 3 * 3_600, "Safari"), ("Meeting moved to Thursday", 47 * 60, "Mail"),
+            ("func greet(_ name: String) -> String {\n    \"Hello, \\(name)\"\n}", 12 * 60, "Xcode"), ("git push origin main", 20, "Terminal")
         ]
-        for (text, ago) in copies { history.recordCopiedText(text, at: now.addingTimeInterval(-ago)) }
+        for (text, ago, app) in copies { history.recordCopiedText(text, at: now.addingTimeInterval(-ago), source: app) }
 
         let fixtures = root.appendingPathComponent("fixtures", isDirectory: true)
         try Self.writeCodexLog(in: fixtures)
@@ -701,16 +795,16 @@ private final class SampleFrog {
         try await Task.sleep(for: .seconds(2))
 
         // History: a writing result, an answer and a dictation.
-        var answer = HistoryEntry(timestamp: Date().addingTimeInterval(-3_600), originalText: "Requests must be idempotent so that retries are safe.",
+        var answer = HistoryEntry(timestamp: now.addingTimeInterval(-3_600), originalText: "Requests must be idempotent so that retries are safe.",
                                   processedText: "Doing it again changes nothing: a request sent twice has the same effect as one.",
                                   ruleName: "Explain", providerName: "OpenAI", model: "gpt-5-mini")
         answer.answer = AnswerRecord(context: nil, application: "Safari", source: nil, followUps: [])
-        var dictated = HistoryEntry(timestamp: Date().addingTimeInterval(-86_400), originalText: "",
+        var dictated = HistoryEntry(timestamp: now.addingTimeInterval(-86_400), originalText: "",
                                     processedText: "Remind me to send the invoice on Friday and book the train to Zurich.",
                                     ruleName: "Dictation", providerName: "Parakeet", model: "parakeet-ultra")
         dictated.category = .audio
         let entries = [
-            HistoryEntry(timestamp: Date().addingTimeInterval(-120), originalText: "i think we should of shipped it yesterday",
+            HistoryEntry(timestamp: now.addingTimeInterval(-120), originalText: "i think we should of shipped it yesterday",
                          processedText: "I think we should have shipped it yesterday.", ruleName: "Proofread", providerName: "Ollama", model: "llama3.2"),
             answer, dictated
         ]
@@ -764,7 +858,7 @@ private final class SampleFrog {
         for feature in FeatureID.allCases { next.setFeature(feature, enabled: preferences.featureEnabled(feature)) }
         try model.savePreferences(next)
         await model.pluginHost.syncAndWait()
-        (model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin)?.monitor?.restore(SampleSystemSampler.history())
+        (model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin)?.monitor?.restore(SampleSystemSampler.history(now: FrogClock.now))
     }
 
     func stop() {
@@ -790,10 +884,22 @@ private final class SampleFrog {
         try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted]).write(to: file)
     }
 
+    /// "OPPO Find X9 Pro", paired five days ago and offline: Phone's pairing file in the sample's folder, as the app
+    /// writes it. Its secret is never needed, as the sample opens no connection.
+    static func writePairedPhone(in root: URL) throws {
+        let paired = FrogClock.now.addingTimeInterval(-5 * 86_400)
+        let json = """
+        {"macID": "6F3C1A52-2B7E-4D0A-9C41-8E5B7D2F1A90", "phones": [{"id": "0B7E9C14-5A3D-4F21-8B6C-2D9E4A7F3C15", \
+        "name": "OPPO Find X9 Pro", "pairedAt": "\(ISO8601DateFormatter().string(from: paired))"}]}
+        """
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data(json.utf8).write(to: PhonePairingStore.defaultFile(in: root))
+    }
+
     /// A week of Codex sessions, heavier on some days than others, with the plan's limits as Codex logs them: the
     /// activity chart pictures a working week, not a single day's spike.
     private static func writeCodexLog(in fixtures: URL) throws {
-        let now = Date()
+        let now = FrogClock.now
         let format = ISO8601DateFormatter()
         let calendar = Calendar(identifier: .gregorian)
         func line(_ date: Date, _ type: String, _ payload: [String: Any]) throws -> Data {
@@ -853,11 +959,12 @@ private struct SampleSystemSampler: SystemMonitorSampling {
         power.batteryFlow = .drawing(watts: 9.4); power.systemWatts = 11.2; power.batteryCelsius = 31
         return SystemMonitorSnapshot(cpu: .value(0.24), gpu: .value(0.11),
                                      memory: SystemMonitorMemory(used: 11_400_000_000, total: 17_179_869_184),
-                                     storage: SystemMonitorStorage(available: 182_000_000_000, total: 494_000_000_000), power: power)
+                                     storage: SystemMonitorStorage(available: 182_000_000_000, total: 494_000_000_000,
+                                                                  availableDayAgo: 185_400_000_000), power: power)
     }
 
     /// Ten minutes of graph, a reading every ten seconds, with a short burst of work in the middle.
-    static func history(now: Date = Date()) -> [SystemMonitorSample] {
+    static func history(now: Date = FrogClock.now) -> [SystemMonitorSample] {
         (0..<60).map { index in
             let t = Double(index)
             let burst = max(0, 1 - abs(t - 34) / 6) * 0.45
@@ -866,6 +973,133 @@ private struct SampleSystemSampler: SystemMonitorSampling {
             return SystemMonitorSample(time: now.addingTimeInterval(-600 + t * 10), cpu: cpu, gpu: gpu, memory: 0.64 + 0.02 * sin(t / 9))
         }
     }
+}
+
+/// Hidden bar's status items for its page's picture: none reaches this Mac's menu bar.
+@MainActor private final class ShotStatusItems: OrganizerStatusItems {
+    func setMenuAction(_ action: @escaping (OrganizerMenuAction) -> Void) {}
+    func install(_ item: OrganizerItem) {}
+    func remove(_ item: OrganizerItem) {}
+    func setLength(_ length: CGFloat, for item: OrganizerItem) {}
+    func setExpanded(_ expanded: Bool) {}
+    func frame(of item: OrganizerItem) -> CGRect? { nil }
+    func updateMenu(_ state: OrganizerMenuState) {}
+}
+
+@MainActor private final class ShotApplications: OrganizerApplications {
+    func watch(_ changed: @escaping () -> Void) {}
+    func stopWatching() {}
+}
+
+/// Every menu-bar item Frog puts up, drawn by the code its status item draws with, at menu-bar size on strips of
+/// menu bar in its light or dark look, each named under it: Frog's own, LLM usage and System monitor in each style
+/// and colour, Hidden bar's arrow and dividers, and Stay awake's looks. On the plain backdrop, so the light bar shows.
+private struct MenuBarItemsPicture: View {
+    let usage: UsageDashboardModel
+    @Environment(\.colorScheme) private var scheme
+
+    private enum Glyph {
+        case image(NSImage)
+        /// Hidden bar's divider, which its status item draws as a view in the button, single or double.
+        case divider(double: Bool)
+    }
+    private struct Item { let label: String; let glyph: Glyph }
+
+    var body: some View {
+        let dark = scheme == .dark
+        VStack(alignment: .leading, spacing: 14) {
+            group("Frog", [Item(label: "Frog", glyph: .image(FrogMenuIcon.image))])
+            group("LLM usage", MenuBarMeterStyle.allCases.map { style in
+                Item(label: style.title, glyph: .image(usageImage(style: style, palette: .clean, dark: dark)))
+            } + [MenuBarMeterPalette.level, .spectrum].map { palette in
+                Item(label: "\(MenuBarMeterStyle.segments.title), \(palette.title)",
+                     glyph: .image(usageImage(style: .segments, palette: palette, dark: dark)))
+            })
+            group("System monitor", MenuBarMeterStyle.allCases.map { style in
+                Item(label: style.title, glyph: .image(systemImage(style: style, palette: SystemMonitorSettings().menuBarPalette, dark: dark)))
+            } + [MenuBarMeterPalette.clean, .level].map { palette in
+                Item(label: "\(SystemMonitorSettings().menuBarStyle.title), \(palette.title)",
+                     glyph: .image(systemImage(style: SystemMonitorSettings().menuBarStyle, palette: palette, dark: dark)))
+            })
+            group("Hidden bar", [Item(label: "Shown", glyph: .image(NativeOrganizerStatusItems.arrowImage(expanded: true))),
+                                 Item(label: "Hidden", glyph: .image(NativeOrganizerStatusItems.arrowImage(expanded: false))),
+                                 Item(label: "Divider", glyph: .divider(double: false)),
+                                 Item(label: "Always hidden", glyph: .divider(double: true))])
+            // A session with two hours and twenty minutes of four left, as Stay awake's page shows it.
+            let deadline = FrogClock.now.addingTimeInterval(140 * 60 + 30)
+            group("Stay awake", StayAwakePreferences.menuBarStyles.map { style in
+                Item(label: ["icon": "Cup", "ring": "Ring", "time": "Time left"][style] ?? style,
+                     glyph: .image(StayAwakeIcon.image(StayAwakeIcon.Face(style: style, deadline: deadline, duration: 4 * 3600))))
+            })
+        }
+    }
+
+    /// LLM usage's item as it reads the sample's plan limits, in `style` and `palette`.
+    private func usageImage(style: MenuBarMeterStyle, palette: MenuBarMeterPalette, dark: Bool) -> NSImage {
+        var (face, _) = UsageStatusReadout.readout(usage, dark: dark)
+        face.style = style
+        face.palette = palette
+        face.dark = palette != .clean && dark
+        return UsageStatusReadout.image(face)
+    }
+
+    /// System monitor's item with its default readings (CPU and GPU) on the sample's load.
+    private func systemImage(style: MenuBarMeterStyle, palette: MenuBarMeterPalette, dark: Bool) -> NSImage {
+        var settings = SystemMonitorSettings()
+        settings.menuBarStyle = style
+        settings.menuBarPalette = palette
+        let reading = SystemMonitorReading(cpu: .value(0.24), gpu: .value(0.11), memory: .value(0.66))
+        return MenuBarMeter.image(SystemMonitorStatusItemController.face(reading, settings: settings, dark: dark))
+    }
+
+    private func group(_ title: String, _ items: [Item]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    VStack(spacing: 5) {
+                        glyph(item.glyph).frame(height: 24).padding(.horizontal, 10)
+                        Text(item.label).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1).fixedSize()
+                            .padding(.horizontal, 6)
+                    }
+                }
+            }
+            // The menu bar runs behind every item of the group, 24 points tall.
+            .background(alignment: .top) {
+                Rectangle().fill(scheme == .dark ? Color(white: 0.12).opacity(0.92) : Color.white.opacity(0.78))
+                    .overlay(alignment: .bottom) { Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 0.5) }
+                    .frame(height: 24)
+            }
+        }
+    }
+
+    @ViewBuilder private func glyph(_ glyph: Glyph) -> some View {
+        switch glyph {
+        case .image(let image):
+            // As the status item's button draws it: a template in the menu bar's ink, a coloured one as it is.
+            Image(nsImage: image).renderingMode(image.isTemplate ? .template : .original)
+                .foregroundStyle(scheme == .dark ? Color.white : Color.black)
+                .frame(width: image.size.width, height: image.size.height)
+        case .divider(let double):
+            DividerItemPicture(double: double).frame(width: OrganizerItem.divider.revealedLength(padding: 0), height: 22)
+        }
+    }
+}
+
+/// Hidden bar's divider as its status item draws it: `OrganizerDividerView` in a 22-point button.
+private struct DividerItemPicture: NSViewRepresentable {
+    let double: Bool
+
+    func makeNSView(context: Context) -> NSButton {
+        let width = OrganizerItem.divider.revealedLength(padding: 0)
+        let button = NSButton(frame: NSRect(x: 0, y: 0, width: width, height: 22))
+        button.isBordered = false
+        button.title = ""
+        _ = OrganizerDividerView(button: button, isDouble: double, width: width)
+        return button
+    }
+
+    func updateNSView(_ button: NSButton, context: Context) {}
 }
 
 /// A sampler whose first reading never comes, for the loading picture.

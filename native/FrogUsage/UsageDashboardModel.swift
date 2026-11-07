@@ -33,7 +33,7 @@ public struct UsageWindow: Identifiable {
     public var leftText: String? { usedPercent.map { String(format: "%.0f%% left", max(0, 100 - $0)) } }
     private var usedPercent: Double? { percentage.isFinite ? max(0, percentage).rounded(.down) : nil }
     /// "15:40" today, "Thu 09:00" within the week, else "12 Oct"; nil without a renewal time.
-    public func resetText(now: Date = Date()) -> String? { resetsAt.map { resetClock($0, now: now) } }
+    public func resetText(now: Date = UsageClock.now) -> String? { resetsAt.map { resetClock($0, now: now) } }
 }
 
 /// Portable display choices only. Credentials, readings and request gates stay local.
@@ -439,7 +439,7 @@ extension ClaudeAccountsCombination.Combined: Identifiable {
             menuBarStyle: UsageDashboardPreferences.menuBarStyles.contains(value.menuBarStyle) ? value.menuBarStyle : "numbers",
             menuBarPalette: UsageDashboardPreferences.menuBarPalettes.contains(value.menuBarPalette) ? value.menuBarPalette : "clean")
     }
-    public func windows(provider: String, now: Date = Date()) -> [UsageWindow] {
+    public func windows(provider: String, now: Date = UsageClock.now) -> [UsageWindow] {
         let claude = provider == Provider.claude.rawValue
         let source = claude ? primary.displayUsage(now: now) : tokens.codexLimits?.current(now: now)
         return Self.windows(source, claude: claude, now: now)
@@ -463,7 +463,7 @@ extension ClaudeAccountsCombination.Combined: Identifiable {
         if provider == Provider.claude.rawValue { return primary.status }
         if let error = tokens.liveError { return error }
         if tokens.checkingLive { return "Refreshing plan limits…" }
-        if let limits = tokens.codexLimits, limits.current(now: Date()).limits.isEmpty, limits.credits == nil {
+        if let limits = tokens.codexLimits, limits.current(now: UsageClock.now).limits.isEmpty, limits.credits == nil {
             return "Current limits are unknown. Last reading: \(resetClock(limits.asOf))."
         }
         return tokens.codexLimits == nil ? "Sign in to Codex or OpenCode to read plan limits." : "Newest available plan limits"
@@ -547,7 +547,7 @@ extension UsageDashboardModel {
     public var claudeAccountsEnabled: Bool { claudeAccountsModel.enabled }
 
     /// Each account and its reading, in slot order; empty while the switch is off.
-    public func accounts(now: Date = Date()) -> [UsageAccountSummary] {
+    public func accounts(now: Date = UsageClock.now) -> [UsageAccountSummary] {
         guard claudeAccountsModel.enabled else { return [] }
         let model = claudeAccountsModel
         return model.accounts.map { account in
@@ -568,7 +568,7 @@ extension UsageDashboardModel {
     }
 
     /// Session, Week and the model weeks over the included accounts, for each kind any of them has.
-    public func combinedWindows(now: Date = Date()) -> [UsageCombinedWindow] {
+    public func combinedWindows(now: Date = UsageClock.now) -> [UsageCombinedWindow] {
         let accounts = accounts(now: now)
         let inputs = accounts.map { ClaudeAccountsCombination.Account(label: $0.label, included: $0.included, plan: $0.plan, windows: $0.windows) }
         let kinds = Self.accountWindowIDs.filter { id in accounts.contains { $0.included && $0.windows.contains { $0.id == id } } }

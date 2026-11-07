@@ -596,7 +596,7 @@ struct OrganizerMenuState: Equatable {
     }
     static func arrowImage(expanded: Bool) -> NSImage {
         let image = NSImage(size: NSSize(width: 12, height: 18), flipped: false) { _ in
-            let path = NSBezierPath(); path.lineWidth = 1.5; path.lineCapStyle = .round; path.lineJoinStyle = .round
+            let path = NSBezierPath(); path.lineWidth = OrganizerMark.stroke; path.lineCapStyle = .round; path.lineJoinStyle = .round
             path.move(to: NSPoint(x: expanded ? 4 : 8, y: 5))
             path.line(to: NSPoint(x: expanded ? 8 : 4, y: 9))
             path.line(to: NSPoint(x: expanded ? 4 : 8, y: 13))
@@ -638,9 +638,41 @@ struct OrganizerMenuState: Equatable {
         return isDouble ? [center - 2, center + 2] : [center]
     }
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.labelColor.withAlphaComponent(0.8).setFill()
-        for x in lineOrigins {
-            NSBezierPath(roundedRect: NSRect(x: x, y: (bounds.height - 14) / 2, width: 1, height: 14), xRadius: 0.5, yRadius: 0.5).fill()
+        OrganizerMark.drawDividers(at: lineOrigins, in: bounds, scale: window?.backingScaleFactor ?? 2)
+    }
+}
+
+/// Hidden bar's marks, one stroke for all: the arrow, the divider and the double divider are drawn in the same
+/// colour and thickness, and the dividers stand one height on whole pixels, so no mark reads heavier or blurred.
+enum OrganizerMark {
+    /// The arrow's stroke and a divider's width, in points.
+    static let stroke: CGFloat = 1.5
+    /// A divider's height, the same for the single and the double one.
+    static let dividerHeight: CGFloat = 12
+
+    /// Draws divider lines whose leading edges are `origins`, snapped to the display's pixels.
+    static func drawDividers(at origins: [CGFloat], in bounds: NSRect, scale: CGFloat) {
+        let scale = max(1, scale)
+        func pixel(_ value: CGFloat) -> CGFloat { (value * scale).rounded() / scale }
+        let width = max(1, (stroke * scale).rounded()) / scale
+        let y = pixel((bounds.height - dividerHeight) / 2)
+        NSColor.labelColor.setFill()
+        for x in origins {
+            NSBezierPath(roundedRect: NSRect(x: pixel(x), y: y, width: width, height: dividerHeight),
+                         xRadius: width / 2, yRadius: width / 2).fill()
         }
+    }
+
+    /// The divider as a template image, for pictures of the menu bar (the Hidden bar page's preview).
+    static func dividerImage(double: Bool) -> NSImage {
+        let width: CGFloat = double ? 8 : 4
+        let image = NSImage(size: NSSize(width: width, height: 18), flipped: false) { rect in
+            let center = (rect.width / 2).rounded(.down)
+            drawDividers(at: double ? [center - 2.75, center + 1.25] : [center - 0.75], in: rect,
+                         scale: NSGraphicsContext.current?.cgContext.userSpaceToDeviceSpaceTransform.a ?? 2)
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 }

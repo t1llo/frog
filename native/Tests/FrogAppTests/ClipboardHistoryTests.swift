@@ -407,7 +407,7 @@ final class ClipboardHistoryTests: XCTestCase {
         defer { window.orderOut(nil); window.contentView = nil }
         try await Task.sleep(for: .milliseconds(50)); host.layoutSubtreeIfNeeded()
         // The middle of the second row's text.
-        let top = ClipboardHistoryLayout.headerHeight + ClipboardHistoryLayout.inset + ClipboardHistoryLayout.rowHeight * 1.5
+        let top = ClipboardHistoryLayout.listTop + ClipboardHistoryLayout.rowHeight * 1.5
         let point = host.convert(NSPoint(x: 160, y: host.isFlipped ? top : host.bounds.maxY - top), to: nil)
         func click(count: Int) async throws {
             for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
@@ -588,7 +588,7 @@ final class ClipboardHistoryTests: XCTestCase {
         let panel = try XCTUnwrap(NSApplication.shared.windows.first { $0.isVisible && $0.title == "Clipboard history" })
         let view = try XCTUnwrap(panel.contentView)
         view.layoutSubtreeIfNeeded()
-        let rowCenter = ClipboardHistoryLayout.headerHeight + ClipboardHistoryLayout.inset + ClipboardHistoryLayout.rowHeight / 2
+        let rowCenter = ClipboardHistoryLayout.listTop + ClipboardHistoryLayout.rowHeight / 2
         let point = view.convert(NSPoint(x: 100, y: view.isFlipped ? rowCenter : view.bounds.maxY - rowCenter), to: nil)
         for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
             let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,

@@ -40,8 +40,7 @@ struct PluginIconTile: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: size.radius, style: .continuous)
         let fill = Self.fill(for: tint, colorScheme: colorScheme, contrast: contrast)
-        Image(systemName: symbol)
-            .font(.system(size: size.rawValue * 0.52, weight: .medium))
+        OpticalSymbol(name: symbol, size: size.rawValue * 0.52)
             .symbolRenderingMode(.monochrome)
             .foregroundStyle(fill == nil ? FrogStyle.ink : .white)
             .frame(width: size.rawValue, height: size.rawValue)

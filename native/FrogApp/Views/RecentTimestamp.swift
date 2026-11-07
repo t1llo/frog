@@ -1,3 +1,4 @@
+import FrogCore
 import SwiftUI
 
 /// When something happened, as lists show it, in one short form that reads down a column as Mail's does: relative
@@ -5,7 +6,7 @@ import SwiftUI
 /// then "Nov 2" (and the year once it is not this year's), in the Mac's own date and time format. `full` is the
 /// whole date and time, for a tooltip.
 enum RecentTimestamp {
-    static func text(_ date: Date, now: Date = Date(), calendar: Calendar = .autoupdatingCurrent,
+    static func text(_ date: Date, now: Date = FrogClock.now, calendar: Calendar = .autoupdatingCurrent,
                      locale: Locale = .autoupdatingCurrent) -> String {
         let seconds = now.timeIntervalSince(date)
         if seconds >= 0, seconds < 60 { return L10n.text("Just now") }
@@ -52,7 +53,7 @@ struct RecentTimestampText: View {
 
     var body: some View {
         // The clock, not the schedule's minute-aligned date, which can fall before an item copied this minute.
-        TimelineView(.everyMinute) { _ in Text(RecentTimestamp.text(date, now: max(Date(), shownAt))) }
+        TimelineView(.everyMinute) { _ in Text(RecentTimestamp.text(date, now: max(FrogClock.now, shownAt))) }
             .monospacedDigit().lineLimit(1).help(RecentTimestamp.full(date))
     }
 }

@@ -19,11 +19,14 @@ struct ClipboardHistoryEntry: Identifiable, Equatable, Sendable {
     let isSensitive: Bool
     /// What the whole text looks like (a link, code, a sentence), worked out once for the lists' kind tiles.
     let kind: ClipboardContentKind
+    /// The app it was copied in, by name: the app in front when the copy was seen, or Frog for its own results.
+    var source: String?
 
     static let previewLength = 160
 
-    init(text: String, formatting: [String: Data] = [:], isSensitive: Bool = false, timestamp: Date = Date()) {
+    init(text: String, formatting: [String: Data] = [:], isSensitive: Bool = false, timestamp: Date = FrogClock.now, source: String? = nil) {
         id = UUID(); self.timestamp = timestamp; self.text = text; self.formatting = formatting; self.isSensitive = isSensitive
+        self.source = source
         preview = Self.preview(of: text)
         searchKey = ClipboardSearch.fold(text.prefix(ClipboardSearch.keyLength))
         kind = ClipboardContentKind(text, formatted: !formatting.isEmpty)
@@ -307,7 +310,11 @@ final class ClipboardHistoryStore: ObservableObject {
         }
         pendingCount = nil; pendingAttempts = 0
         changeCount = observation.changeCount
-        if let entry = observation.entry { record(entry) }
+        if var entry = observation.entry {
+            // A copy is made in the app in front, which is still in front a poll later.
+            entry.source = entry.source ?? NSWorkspace.shared.frontmostApplication?.localizedName
+            record(entry)
+        }
         if forwardsCopies, let copy = observation.copy { onCopy?(copy) }
         return settledCount
     }
@@ -327,10 +334,11 @@ final class ClipboardHistoryStore: ObservableObject {
     /// Explicitly include Frog results even if a subsequent compatibility Copy
     /// temporarily suppresses clipboard polling/restores that same result.
     /// `at` is when it was copied: now, or an earlier moment for sample data.
-    func recordCopiedText(_ text: String, at date: Date = Date()) {
+    /// `source` is the app it came from: Frog for its own results.
+    func recordCopiedText(_ text: String, at date: Date = FrogClock.now, source: String? = "Frog") {
         guard enabled, !text.isEmpty, text.utf8.count <= Self.textLimit, ClipboardSecret.detect(text) == nil else { return }
         epoch = UUID(); pendingCount = nil; pendingAttempts = 0
-        record(ClipboardHistoryEntry(text: text, timestamp: date))
+        record(ClipboardHistoryEntry(text: text, timestamp: date, source: source))
         changeCount = pasteboard.changeCount
     }
 

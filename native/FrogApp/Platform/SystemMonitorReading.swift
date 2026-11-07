@@ -30,7 +30,55 @@ struct SystemMonitorMemory: Equatable, Sendable {
 struct SystemMonitorStorage: Equatable, Sendable {
     let available: Int64
     let total: Int64
+    /// What was free about 24 hours ago, from the readings Frog keeps (`SystemMonitorStorageLog`); nil until
+    /// Frog has one from then.
+    var availableDayAgo: Int64? = nil
     var usedFraction: Double { total > 0 ? min(1, max(0, Double(total - available) / Double(total))) : 0 }
+    /// The free share of the disk.
+    var freeFraction: Double { total > 0 ? min(1, max(0, Double(available) / Double(total))) : 0 }
+    /// How much more is free than a day ago; negative when space was used.
+    var changeSinceDayAgo: Int64? { availableDayAgo.map { available - $0 } }
+}
+
+/// Free space on the startup disk about every half hour over the last two days, kept in Frog's data folder, so
+/// System monitor can say how free space changed since about this time yesterday, across launches.
+struct SystemMonitorStorageLog: Codable, Equatable, Sendable {
+    struct Entry: Codable, Equatable, Sendable {
+        let time: Date
+        let available: Int64
+        let total: Int64
+    }
+
+    static let fileName = "system-monitor-storage.json"
+    /// One reading per half hour is enough for a change over a day.
+    static let spacing: TimeInterval = 1_800
+    /// Older readings are dropped.
+    static let kept: TimeInterval = 2 * 86_400
+    static let day: TimeInterval = 86_400
+    /// A reading from 20 to 28 hours ago stands for yesterday; the one nearest 24 hours wins.
+    static let tolerance: TimeInterval = 4 * 3_600
+
+    private(set) var entries: [Entry] = []
+
+    /// Keeps the reading when the newest kept one is at least `spacing` old. True when the log changed and should
+    /// be saved. A clock set back drops readings that now lie ahead of it.
+    mutating func record(available: Int64, total: Int64, at time: Date) -> Bool {
+        let count = entries.count
+        entries.removeAll { $0.time > time || time.timeIntervalSince($0.time) > Self.kept }
+        var changed = entries.count != count
+        if entries.last.map({ time.timeIntervalSince($0.time) >= Self.spacing }) ?? true {
+            entries.append(Entry(time: time, available: available, total: total))
+            changed = true
+        }
+        return changed
+    }
+
+    /// What was free about a day before `time` on a disk of the same size, or nil without a reading from then.
+    func availableDayAgo(at time: Date, total: Int64) -> Int64? {
+        entries.filter { $0.total == total && abs(time.timeIntervalSince($0.time) - Self.day) <= Self.tolerance }
+            .min { abs(time.timeIntervalSince($0.time) - Self.day) < abs(time.timeIntervalSince($1.time) - Self.day) }?
+            .available
+    }
 }
 
 /// The newest load, as the menu-bar item shows it.

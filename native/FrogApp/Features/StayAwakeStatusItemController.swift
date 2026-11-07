@@ -73,7 +73,7 @@ import FrogCore
         item.button?.setAccessibilityLabel(description)
     }
 
-    static func description(_ power: StayAwakeController, now: Date = Date()) -> String {
+    static func description(_ power: StayAwakeController, now: Date = FrogClock.now) -> String {
         guard let deadline = power.deadline else { return "Stay awake is on until turned off" }
         return "Stay awake is on until \(deadline.formatted(date: .omitted, time: .shortened))"
             + (StayAwakeIcon.left(until: deadline, now: now).map { " · \($0) left" } ?? "")
@@ -108,7 +108,7 @@ enum StayAwakeIcon {
         /// "3h 42m", "42m"; nil for a session without an end or a style without text.
         let text: String?
 
-        init(style: String, deadline: Date?, duration: TimeInterval, now: Date = Date()) {
+        init(style: String, deadline: Date?, duration: TimeInterval, now: Date = FrogClock.now) {
             self.style = StayAwakePreferences.menuBarStyles.contains(style) ? style : "ring"
             if let deadline {
                 let left = max(0, deadline.timeIntervalSince(now))
@@ -122,7 +122,7 @@ enum StayAwakeIcon {
     }
 
     /// "3h 42m" or "42m" until `deadline`, at least "1m"; nil once it has passed.
-    static func left(until deadline: Date, now: Date = Date()) -> String? {
+    static func left(until deadline: Date, now: Date = FrogClock.now) -> String? {
         let minutes = Int((deadline.timeIntervalSince(now) / 60).rounded(.up))
         guard minutes > 0 else { return nil }
         return minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
@@ -133,10 +133,14 @@ enum StayAwakeIcon {
         let ring = face.style == "ring"
         let iconWidth: CGFloat = ring ? 20 : 18
         let textWidth = face.text.map { ceil(($0 as NSString).size(withAttributes: [.font: font]).width) + 3 } ?? 0
-        let symbolSize: CGFloat = ring ? 9.5 : 13.5
-        let configuration = NSImage.SymbolConfiguration(pointSize: symbolSize, weight: ring ? .bold : .semibold)
-        let symbol = (NSImage(systemSymbolName: "cup.and.heat.waves.fill", accessibilityDescription: nil)
-            ?? NSImage(systemSymbolName: "cup.and.saucer.fill", accessibilityDescription: nil))?.withSymbolConfiguration(configuration)
+        // Inside the ring the steam would blur into the cup at this size, so the ring holds the plain cup.
+        let symbolName = ring ? "cup.and.saucer.fill" : "cup.and.heat.waves.fill"
+        let symbolSize: CGFloat = ring ? 8.5 : 13.5
+        let weight: NSFont.Weight = .semibold
+        let configuration = NSImage.SymbolConfiguration(pointSize: symbolSize, weight: weight)
+        let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
+        // Centred by its ink, not its box, which leaves room under the saucer and beside the handle.
+        let optical = MainActor.assumeIsolated { OpticalSymbol.offset(symbolName, size: symbolSize, weight: weight) }
         let image = NSImage(size: NSSize(width: iconWidth + textWidth, height: 22), flipped: false) { _ in
             let center = NSPoint(x: iconWidth / 2, y: 11)
             if ring {
@@ -156,7 +160,11 @@ enum StayAwakeIcon {
             }
             if let symbol {
                 let size = symbol.size
-                symbol.draw(in: NSRect(x: center.x - size.width / 2, y: center.y - size.height / 2 + (ring ? 0.25 : 0),
+                // On half points, so the cup's edges land on the display's pixels; the offset is in a flipped
+                // frame, so its y turns round here.
+                func half(_ value: CGFloat) -> CGFloat { (value * 2).rounded() / 2 }
+                symbol.draw(in: NSRect(x: half(center.x - size.width / 2 + optical.width),
+                                       y: half(center.y - size.height / 2 - optical.height),
                                        width: size.width, height: size.height))
             }
             if let text = face.text {

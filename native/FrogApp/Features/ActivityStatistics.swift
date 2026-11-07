@@ -59,7 +59,7 @@ import FrogCore
 
     private func record(_ events: [ActivityStatisticsEvent]) {
         guard loaded, snapshot.recordingEnabled, !events.isEmpty else { return }
-        let date = Date(), timeZone = TimeZone.current
+        let date = FrogClock.now, timeZone = TimeZone.current
         var counted = snapshot
         do { for event in events { try counted.record(event, at: date, timeZone: timeZone) } }
         catch { issue = error.localizedDescription; return }

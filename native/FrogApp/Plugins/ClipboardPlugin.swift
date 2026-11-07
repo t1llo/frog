@@ -51,7 +51,8 @@ final class ClipboardPlugin: LegacyPlugin, FrogPlugin {
         state.settings = context.settings(ClipboardSettings.self).clamped
         store.capacity = state.settings.items
         mirrorShortcut()
-        let controller = ClipboardHistoryController(pasteboard: store.pasteboard, history: store)
+        let controller = ClipboardHistoryController(pasteboard: store.pasteboard, history: store,
+                                                    placement: .shared(in: model.dataDirectory))
         controller.onError = { [weak self] in self?.context.report($0) }
         controller.onSuccessfulPaste = { [weak model] in model?.statistics.recordToolUse(.clipboardPaste) }
         controller.configure(enabled: true, automaticallyPoll: model.runsLiveServices)

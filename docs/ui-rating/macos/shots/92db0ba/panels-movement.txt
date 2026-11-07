@@ -1,0 +1,26 @@
+Panel movement check: drag by ~200 pt, close, reopen. Frames are x, y, width, height in points,
+from the top-left of the panel's screen (the Cocoa frame in brackets: origin bottom-left of the primary display).
+
+command-bar
+  how:           emulated: setFrameOrigin by +200,-120 pt, then CommandBar.finishDragging() as WindowDragRegion calls it (no synthetic events allowed)
+  isMovable: True, isMovableByWindowBackground: False
+  before drag:   620, 325, 680 x 460   [620, 295]
+  after drag:    820, 445, 680 x 460   [820, 175]
+  after reopen:  820, 445, 680 x 460   [820, 175]
+  result:        moved, reopens where it was moved to
+
+clipboard
+  how:           emulated: setFrameOrigin by +200,-120 pt (no synthetic events allowed; this panel has no drag region and no end-of-drag code, so a real drag would not move it)
+  isMovable: True, isMovableByWindowBackground: False
+  before drag:   700, 210, 520 x 332   [700, 538]
+  after drag:    900, 330, 520 x 332   [900, 418]
+  after reopen:  700, 210, 520 x 332   [700, 538]
+  result:        moved, reopens at its default place
+
+window-switcher
+  how:           emulated: setFrameOrigin by +200,-120 pt (no synthetic events allowed; this panel has no drag region and no end-of-drag code, so a real drag would not move it)
+  isMovable: True, isMovableByWindowBackground: False
+  before drag:   710, 421, 500 x 268   [710, 391]
+  after drag:    910, 541, 500 x 268   [910, 271]
+  after reopen:  710, 421, 500 x 268   [710, 391]
+  result:        moved, reopens at its default place

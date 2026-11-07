@@ -10,6 +10,18 @@ actor NativeSystemMonitorSampler: SystemMonitorSampling {
     private var storageTime: TimeInterval?
     /// Free space changes slowly, so the volume is asked at most this often.
     static let storageInterval: TimeInterval = 30
+    /// Where the free-space readings of the last two days are kept; nil keeps none (tests, an agent's one reading).
+    private var storageLogURL: URL?
+    private var storageLog: SystemMonitorStorageLog?
+
+    init(storageLog url: URL? = nil) { storageLogURL = url }
+
+    /// Starts keeping the free-space readings in `url`, so a change since yesterday survives a restart.
+    func keepStorageLog(at url: URL) {
+        guard storageLogURL != url else { return }
+        storageLogURL = url
+        storageLog = nil
+    }
 
     func sample(reset: Bool, full: Bool) async -> SystemMonitorSnapshot {
         if reset { cpu.reset() }
@@ -23,12 +35,37 @@ actor NativeSystemMonitorSampler: SystemMonitorSampling {
         // Storage and power are shown, not graphed, so only a visible overview reads them.
         guard full, !Task.isCancelled else { return result }
         if reset || storageTime.map({ now - $0 >= Self.storageInterval || now < $0 }) ?? true {
-            storage = Self.readStorage()
+            storage = Self.readStorage().map(rememberStorage)
             storageTime = now
         }
         result.storage = storage
         result.power = readPower()
         return result
+    }
+
+    /// Adds the reading to the log and fills in what was free a day ago.
+    private func rememberStorage(_ reading: SystemMonitorStorage) -> SystemMonitorStorage {
+        guard let url = storageLogURL else { return reading }
+        var log = storageLog ?? Self.loadLog(url)
+        let time = Date()
+        if log.record(available: reading.available, total: reading.total, at: time) { Self.saveLog(log, to: url) }
+        storageLog = log
+        var reading = reading
+        reading.availableDayAgo = log.availableDayAgo(at: time, total: reading.total)
+        return reading
+    }
+
+    private static func loadLog(_ url: URL) -> SystemMonitorStorageLog {
+        guard let data = try? Data(contentsOf: url), data.count < 256 * 1024 else { return SystemMonitorStorageLog() }
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        return (try? decoder.decode(SystemMonitorStorageLog.self, from: data)) ?? SystemMonitorStorageLog()
+    }
+
+    private static func saveLog(_ log: SystemMonitorStorageLog, to url: URL) {
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(log) else { return }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: url, options: .atomic)
     }
 
     /// The writable startup volume, not the read-only sealed system snapshot. Free counts space

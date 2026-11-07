@@ -9,14 +9,11 @@ struct HiddenBarPage: View {
     var body: some View {
         FrogPage {
             FrogPageHeader(title: "Hidden bar", subtitle: "Hold ⌘ and drag icons left of the divider to hide them.")
-            if let organizer = plugin.organizer {
-                HiddenBarArrangement(organizer: organizer, alwaysHidden: plugin.settings.alwaysHiddenSection) {
-                    organizer.configure(enabled: true, settings: plugin.settings.organizer)
-                }
+            // Like every feature page: where things stand at the top, as a picture of the menu bar, then the settings.
+            HiddenBarArrangement(organizer: plugin.organizer, alwaysHidden: plugin.settings.alwaysHiddenSection) {
+                plugin.organizer?.configure(enabled: true, settings: plugin.settings.organizer)
             }
-            // The shortcut shares the hiding card: a card of one row would stand alone under its own heading. The
-            // card is headed only beside the menu bar's picture; alone it is the page's one card.
-            FrogSection(plugin.organizer == nil ? nil : "Hiding") {
+            FrogSection("Hiding") {
                 FrogRow("Show or hide icons") {
                     HotkeyRecorder(hotkey: Binding(get: { plugin.settings.shortcut?.hotkey },
                                                    set: { hotkey in plugin.update { $0.shortcut = hotkey.flatMap { try? Shortcut($0) } } }))
@@ -52,60 +49,111 @@ struct HiddenBarPage: View {
     }
 }
 
-/// A picture of the menu bar with the arrow's state, and the two things the arrow does.
+/// Where Hidden bar stands, as a picture of the menu bar: the items packed to the trailing edge as the menu bar
+/// packs them, the hidden ones faded while the arrow hides them, and each section named under its own items, the
+/// arrow's state ("Hidden", "Shown", "Arranging") under the icons it hides. The two things the arrow does follow.
 private struct HiddenBarArrangement: View {
-    @ObservedObject var organizer: MenuBarOrganizer
+    /// Nil only where Frog runs without the menu bar (tests): the picture then shows the icons hidden, with no actions.
+    let organizer: MenuBarOrganizer?
     let alwaysHidden: Bool
     let retry: () -> Void
 
     var body: some View {
         FrogSection("Menu bar") {
-            VStack(alignment: .leading, spacing: 10) {
-                preview
-                HStack(spacing: 8) {
-                    Button(organizer.isExpanded ? "Hide icons" : "Show icons") { organizer.toggle() }
-                    Button(organizer.isEditingArrangement ? "Done" : "Arrange…") {
-                        organizer.setEditingArrangement(!organizer.isEditingArrangement)
-                    }
-                    Spacer()
-                    Text(organizer.isEditingArrangement ? "Arranging" : organizer.isExpanded ? "Shown" : "Hidden")
-                        .font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                }.disabled(!organizer.isInstalled)
-                if let issue = organizer.issue {
-                    InlineIssue(message: issue)
-                    if !organizer.isInstalled { Button("Retry", action: retry) }
+            VStack(alignment: .leading, spacing: FrogStyle.space10) {
+                if let organizer {
+                    ObservingArrangement(organizer: organizer, alwaysHidden: alwaysHidden, retry: retry)
+                } else {
+                    HiddenBarPreview(expanded: false, arranging: false, alwaysHidden: alwaysHidden)
                 }
-            }.padding(.vertical, 10)
+            }.padding(.vertical, FrogStyle.space10)
         }
-        // A closed, minimised or covered settings window keeps this page, so appearing and
-        // disappearing do not say whether it can be seen. Out of sight it must not hold the icons open.
-        .background(FeatureVisibility { visible in
-            // Leaving the page ends arranging, which the organizer publishes: never inside the update that removes the page.
-            DispatchQueue.main.async { organizer.setSettingsVisible(visible) }
-        })
     }
+}
 
-    private var preview: some View {
-        HStack(spacing: 14) {
-            if alwaysHidden {
-                Image(systemName: "ellipsis").foregroundStyle(FrogStyle.muted)
-                Text("‖").foregroundStyle(FrogStyle.muted)
+private struct ObservingArrangement: View {
+    @ObservedObject var organizer: MenuBarOrganizer
+    let alwaysHidden: Bool
+    let retry: () -> Void
+
+    var body: some View {
+        HiddenBarPreview(expanded: organizer.isExpanded, arranging: organizer.isEditingArrangement, alwaysHidden: alwaysHidden)
+        HStack(spacing: FrogStyle.space8) {
+            Button(organizer.isExpanded ? "Hide icons" : "Show icons") { organizer.toggle() }
+            Button(organizer.isEditingArrangement ? "Done" : "Arrange…") {
+                organizer.setEditingArrangement(!organizer.isEditingArrangement)
             }
-            HStack(spacing: 14) {
+        }.disabled(!organizer.isInstalled)
+            // A closed, minimised or covered settings window keeps this page, so appearing and
+            // disappearing do not say whether it can be seen. Out of sight it must not hold the icons open.
+            .background(FeatureVisibility { visible in
+                // Leaving the page ends arranging, which the organizer publishes: never inside the update that removes the page.
+                DispatchQueue.main.async { organizer.setSettingsVisible(visible) }
+            })
+        if let issue = organizer.issue {
+            InlineIssue(message: issue)
+            if !organizer.isInstalled { Button("Retry", action: retry) }
+        }
+    }
+}
+
+/// The menu bar in small: the Apple menu leading, then the bar's items packed to the trailing edge with the menu
+/// bar's even spacing, and the clock last. The dividers are the organizer's own marks.
+private struct HiddenBarPreview: View {
+    let expanded: Bool
+    let arranging: Bool
+    let alwaysHidden: Bool
+    /// The menu bar's height in the picture, and the room under it for the sections' names.
+    private static let barHeight: CGFloat = 30
+    private static let itemSpacing: CGFloat = 14
+
+    var body: some View {
+        let shown = expanded || arranging
+        HStack(spacing: Self.itemSpacing) {
+            Image(systemName: "apple.logo")
+            Spacer(minLength: Self.itemSpacing)
+            if alwaysHidden {
+                group(caption: "Always hidden", emphasised: false, faded: !arranging) {
+                    Image(systemName: "ellipsis")
+                    Image(nsImage: OrganizerMark.dividerImage(double: true))
+                }
+            }
+            group(caption: arranging ? "Arranging" : shown ? "Shown" : "Hidden", emphasised: true, faded: !shown) {
                 Image(systemName: "cloud")
                 Image(systemName: "externaldrive")
                 Image(systemName: "headphones")
-            }.frame(maxWidth: .infinity).opacity(organizer.isExpanded ? 1 : 0.25)
-            Text("|").foregroundStyle(FrogStyle.muted)
-            HStack(spacing: 14) {
-                Image(nsImage: FrogMenuIcon.image).renderingMode(.template)
-                Image(systemName: "wifi")
-                Image(systemName: "battery.100percent")
-                Image(nsImage: NativeOrganizerStatusItems.arrowImage(expanded: organizer.isExpanded))
-            }.frame(maxWidth: .infinity)
-        }.font(.system(size: 14)).padding(.vertical, 16).padding(.horizontal, 18).foregroundStyle(FrogStyle.ink)
-            .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(organizer.isExpanded ? "Menu bar: hidden icons shown" : "Menu bar: icons hidden")
+            }
+            Image(nsImage: OrganizerMark.dividerImage(double: false))
+            Image(nsImage: FrogMenuIcon.image).renderingMode(.template)
+            Image(nsImage: NativeOrganizerStatusItems.arrowImage(expanded: expanded))
+            Image(systemName: "wifi")
+            Image(systemName: "battery.100percent")
+            Text(Self.clock(FrogClock.now)).font(FrogType.row).monospacedDigit()
+        }
+        .font(.system(size: 14)).foregroundStyle(FrogStyle.ink)
+        .frame(height: Self.barHeight)
+        .padding(.horizontal, FrogStyle.space12)
+        .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
+        // The sections' names hang under the bar, so they never push its items apart.
+        .padding(.bottom, FrogStyle.space16 + FrogStyle.space4)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(arranging ? "Menu bar: arranging, every icon shown" : shown ? "Menu bar: hidden icons shown" : "Menu bar: icons hidden")
+    }
+
+    /// The menu bar's clock: "Sat Nov 7 13:40", without the "at" a date and time formatted together would add.
+    static func clock(_ now: Date) -> String {
+        [now.formatted(.dateTime.weekday(.abbreviated)), now.formatted(.dateTime.month(.abbreviated).day()),
+         now.formatted(date: .omitted, time: .shortened)].joined(separator: " ")
+    }
+
+    /// A section of the bar, faded while hidden, with its name centred under it below the bar, never faded.
+    private func group<Content: View>(caption: String, emphasised: Bool, faded: Bool, @ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: Self.itemSpacing, content: content)
+            .opacity(faded ? 0.35 : 1)
+            .frame(height: Self.barHeight)
+            .overlay(alignment: .top) {
+                Text(L10n.text(caption)).font(FrogType.label).foregroundStyle(emphasised ? FrogStyle.ink : FrogStyle.muted)
+                    .fixedSize().offset(y: Self.barHeight + FrogStyle.space4)
+            }
     }
 }

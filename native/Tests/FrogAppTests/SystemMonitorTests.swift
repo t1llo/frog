@@ -271,4 +271,36 @@ final class SystemMonitorDeltaTests: XCTestCase {
         XCTAssertEqual(SystemMonitorStorage(available: 250, total: 1000).usedFraction, 0.75)
         XCTAssertEqual(SystemMonitorStorage(available: 0, total: 0).usedFraction, 0)
     }
+
+    func testStorageLogKeepsADayAgoAcrossLaunches() async throws {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        var log = SystemMonitorStorageLog()
+        XCTAssertTrue(log.record(available: 200, total: 1000, at: start))
+        XCTAssertFalse(log.record(available: 199, total: 1000, at: start.addingTimeInterval(60)), "One reading per half hour")
+        for hour in 1...30 { _ = log.record(available: 200 - Int64(hour), total: 1000, at: start.addingTimeInterval(Double(hour) * 3600)) }
+        let now = start.addingTimeInterval(30 * 3600)
+        XCTAssertEqual(log.availableDayAgo(at: now, total: 1000), 194, "The reading nearest 24 hours before")
+        XCTAssertNil(log.availableDayAgo(at: now, total: 2000), "Another disk has no yesterday")
+        XCTAssertNil(SystemMonitorStorageLog().availableDayAgo(at: now, total: 1000))
+        XCTAssertEqual(SystemMonitorStorage(available: 170, total: 1000, availableDayAgo: 194).changeSinceDayAgo, -24)
+        XCTAssertEqual(SystemMonitorOverview.storageChange(-3_400_000_000) { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) },
+                       "−3.4 GB since yesterday")
+        XCTAssertEqual(SystemMonitorOverview.storageChange(10_000_000) { "\($0)" }, "Same as yesterday")
+
+        // The sampler keeps the log in a file, so a new sampler (a new launch) finds yesterday's reading.
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("frog-storage-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent(SystemMonitorStorageLog.fileName)
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        var saved = SystemMonitorStorageLog()
+        let real = try XCTUnwrap(NativeSystemMonitorSampler.readStorage())
+        _ = saved.record(available: real.available + 1_000_000_000, total: real.total, at: Date().addingTimeInterval(-86_400))
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try encoder.encode(saved).write(to: file)
+        let sampler = NativeSystemMonitorSampler(storageLog: file)
+        let reading = await sampler.sample(reset: true, full: true)
+        XCTAssertEqual(reading.storage?.availableDayAgo, real.available + 1_000_000_000)
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        XCTAssertEqual(try decoder.decode(SystemMonitorStorageLog.self, from: Data(contentsOf: file)).entries.count, 2, "Today's reading was saved")
+    }
 }
