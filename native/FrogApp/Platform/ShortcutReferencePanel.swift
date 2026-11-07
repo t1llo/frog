@@ -62,8 +62,10 @@ struct ShortcutReferenceContent: View {
                             // A plugin's action names its plugin, muted, so two plugins' "Refresh" read apart.
                             let label = Self.label(item)
                             ShortcutPanelRow(title: label.title, detail: label.plugin, hotkey: item.hotkey) {
+                                // A layout shows its picture; everything else the coloured tile its feature wears in
+                                // the sidebar, the command bar and the bubble.
                                 if let action = item.windowAction { WindowLayoutGlyph(action: action) }
-                                else { ShortcutPanelSymbol(name: item.symbol ?? "command") }
+                                else { PluginIconTile(symbol: item.symbol ?? "command", tint: Self.tint(item), size: .sidebar) }
                             }
                                 .help(L10n.text(item.title))
                                 .accessibilityLabel(L10n.text(item.title))
@@ -150,6 +152,29 @@ struct ShortcutPanelSymbol: View {
 }
 
 extension ShortcutReferenceContent {
+    /// The colour of the feature a shortcut belongs to: a rule's feature, a plugin's community tint, and Frog's own
+    /// keys their feature's (Command bar indigo, Clipboard orange).
+    static func tint(_ item: ShortcutReferenceItem) -> Color {
+        switch item.group {
+        case .writing: return WritingPlugin.info.tint.color
+        case .explain: return ExplainPlugin.info.tint.color
+        case .dictation: return DictationPlugin.info.tint.color
+        case .shortcuts: return ShortcutsPlugin.info.tint.color
+        case .plugins: return CommunityPlugin.info.tint.color
+        case .windows: return WindowsPlugin.info.tint.color
+        case .frog:
+            let byID: [String: PluginInfo] = [
+                "frog.command-bar": CommandBarPlugin.info, "frog.clipboard": ClipboardPlugin.info,
+                "frog.window-switcher": WindowSwitcherPlugin.info, "frog.menu-bar": HiddenBarPlugin.info,
+                "frog.cancel-recording": DictationPlugin.info, "frog.shortcuts": ShortcutsPlugin.info
+            ]
+            if let info = byID[item.id] { return info.tint.color }
+            // A lone Explain or Dictation rule joins Frog's own keys; it keeps its feature's colour.
+            let features = [ExplainPlugin.info, DictationPlugin.info, WritingPlugin.info]
+            return features.first { $0.symbol == item.symbol }?.tint.color ?? PluginTint.gray.color
+        }
+    }
+
     /// "Focus timer: Start or pause the focus timer" as the action, "Start or pause the focus timer", and its plugin,
     /// unless the action already names it.
     static func label(_ item: ShortcutReferenceItem) -> (title: String, plugin: String?) {

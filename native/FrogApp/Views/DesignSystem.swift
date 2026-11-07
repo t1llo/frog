@@ -77,6 +77,9 @@ enum FrogStyle {
     static let controlHeight: CGFloat = 28
     /// The same controls in popups, panel headers and dense rows.
     static let compactHeight: CGFloat = 24
+    /// The value field of every number stepper (− field +), whatever its bounds, so the minus and plus of rows above
+    /// each other line up: room for six digits in `body`.
+    static let numberFieldWidth: CGFloat = 64
     /// The least height of a `FrogRow` in a `FrogSection` card: a 28-point control with `space6` above and below,
     /// so a row with a dropdown or segments is as tall as one with a switch.
     static let rowHeight: CGFloat = controlHeight + 2 * space6
@@ -291,9 +294,15 @@ enum FrogStyle {
     static let disabledOpacity: Double = 0.6
     /// The band under a popup's footer (`PanelFooter`, `FrogPopupFooter`): a shade darker than the panel, which
     /// sets the footer apart without a line.
+    /// In light it is a faint layer of the theme's own text colour, lighter than a card, so it reads as the panel's
+    /// base in the theme's tone rather than a grey strip; in dark a shade of black under the panel.
     static var footerBand: Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
-            NSColor.black.withAlphaComponent(appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 0.22 : 0.035)
+        let ink = ink
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua { return NSColor.black.withAlphaComponent(0.22) }
+            var resolved = NSColor(ink)
+            appearance.performAsCurrentDrawingAppearance { resolved = resolved.usingColorSpace(.sRGB) ?? resolved }
+            return resolved.withAlphaComponent(0.025)
         })
     }
     /// What is chosen: a neutral raised layer, as Rex marks its selected tab and row. The accent shows state.
@@ -474,12 +483,12 @@ enum FrogType {
     static let body = Font.system(size: 13)
     /// Buttons and the titles of settings and cards.
     static let bodyMedium = Font.system(size: 13, weight: .medium)
-    /// Row descriptions, secondary lines and compact controls.
-    static let small = Font.system(size: 11)
+    /// Row descriptions, secondary lines and compact controls: 12, the least a sentence a person reads is set in.
+    static let small = Font.system(size: 12)
     /// Small group labels above content, and compact buttons.
     static let label = Font.system(size: 11, weight: .medium)
-    /// Timestamps, paths, counts, badges and footnotes.
-    static let caption = Font.system(size: 10)
+    /// Timestamps, paths, counts, badges and footnotes: 11, the floor for any text in Frog.
+    static let caption = Font.system(size: 11)
     static let mono = Font.system(size: 11, design: .monospaced)
     /// Code in a list of body-size rows (a copied snippet on the Clipboard page): monospaced at the body size.
     static let monoBody = Font.system(size: 13, design: .monospaced)

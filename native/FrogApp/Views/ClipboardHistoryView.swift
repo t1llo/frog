@@ -202,8 +202,9 @@ struct ClipboardHistoryView: View {
         HStack(spacing: 10) {
             let kind = entry.kind
             PluginIconTile(symbol: kind.symbol, tint: kind.tint.color, size: .sidebar).help(L10n.text(kind.title))
-            // Code in the mono face, as on the Clipboard page.
-            Text(entry.preview).font(kind == .code ? FrogType.mono : FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
+            // Code in the mono face at the rows' size (`monoBody`), as on the Clipboard page, so the list keeps one
+            // size and only the face changes.
+            Text(entry.preview).font(kind == .code ? FrogType.monoBody : FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             RecentTimestampText(date: entry.timestamp, shownAt: state.openedAt).font(FrogType.small).foregroundStyle(FrogStyle.muted).monospacedDigit()
                 .padding(.leading, FrogStyle.space6)

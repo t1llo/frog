@@ -96,8 +96,11 @@ struct SelectionBubbleView: View {
                 listContent
             }
             // The list holds only the rules chosen for the bubble; the footer says where the rest are chosen.
+            // Named like every panel's footer: the surface and, muted after a `·`, how many rules it shows.
             FrogFooter {
-                Text(L10n.text("Rules shown in the bubble"))
+                let count = visible.count + more.count
+                Text(verbatim: "\(L10n.text("Selection bubble")) · \(count == 1 ? L10n.text("1 rule") : "\(count) \(L10n.text("rules"))")")
+                    .monospacedDigit()
             } actions: {
                 if let editRules { FrogFooterHint("Edit rules", keys: "", action: editRules) }
             }
@@ -141,6 +144,9 @@ struct SelectionBubbleView: View {
             Spacer(minLength: 12)
             if let hotkey = item.hotkey {
                 KeyCaps(hotkey: hotkey)
+            } else {
+                // A rule without keys keeps the column: the same faint dash as an empty shortcut slot elsewhere.
+                Text(verbatim: "–").font(FrogType.body).foregroundStyle(FrogStyle.placeholder).accessibilityHidden(true)
             }
         }
         .padding(.horizontal, 8)

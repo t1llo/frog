@@ -183,6 +183,12 @@ struct DesignGallery: View {
                     KeyCaps("⌃⌥Space")
                 }
                 HStack(spacing: 16) {
+                    FrogStatusLabel("Connected")
+                    FrogStatusLabel("Running", tone: .active)
+                    FrogStatusLabel("Needs access", tone: .warning)
+                    FrogStatusLabel("Off", tone: .off)
+                }
+                HStack(spacing: 16) {
                     ForEach(["Downloads", "Desktop", "Caches"], id: \.self) { item in
                         Toggle(item, isOn: Binding(get: { picked.contains(item) }, set: { on in
                             if on { picked.insert(item) } else { picked.remove(item) }
@@ -200,7 +206,7 @@ struct DesignGallery: View {
             FrogLoadingNote(text: "Looking for apps…")
             HStack(spacing: FrogStyle.space8) {
                 FrogNoticePill(symbol: "checkmark", text: "Done")
-                FrogNoticePill(symbol: "exclamationmark.circle", tone: FrogStyle.warning, text: "Ollama is not running", action: ("Show details", {}))
+                FrogNoticePill(symbol: "exclamationmark.circle", tone: FrogStyle.warning, text: "Ollama is not running", action: ("Details", {}))
             }.padding(.vertical, FrogStyle.space10)
         }
     }

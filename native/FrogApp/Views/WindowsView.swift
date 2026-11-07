@@ -44,8 +44,9 @@ struct WindowsView: View {
         let assigned = rules.values.filter { $0.hotkey != nil }.count
         // Grouped as the cheat sheet groups them; a layout without a shortcut shows the Record shortcut button.
         return FrogSection("Layouts") {
-            Text(verbatim: assigned == 1 ? L10n.text("1 shortcut set") : "\(assigned) \(L10n.text("shortcuts set"))")
-                .font(FrogType.small.monospacedDigit())
+            // How many of the layouts have keys, at the rows' text size so it reads at a glance.
+            Text(verbatim: "\(assigned) \(L10n.text("of")) \(rules.count) \(L10n.text("set"))")
+                .font(FrogType.body.monospacedDigit()).foregroundStyle(FrogStyle.muted)
         } content: {
             if let suggestion { FrogRowNote(text: suggestion) }
             ForEach(Self.layoutGroups, id: \.title) { group in
@@ -216,16 +217,18 @@ private struct LayoutShortcutCell: View {
             }
             // Room for the recorder's hover clear button, so it never covers the name in a narrow column.
             Spacer(minLength: HotkeyRecorder.clearButtonRoom)
-            // The shared recorder, as in every other shortcut row: the caps when one is set, the Record shortcut
-            // button when not, both ending on the row's trailing edge.
+            // The shared recorder, as in every other shortcut row: the caps when one is set; when not, a quiet dash
+            // that turns into the Record shortcut button while the row is pointed at or the recorder has focus, so
+            // a page of mostly empty slots is no wall of buttons.
             HotkeyRecorder(hotkey: Binding(get: { rule.hotkey }, set: { value in
                 var updated = rule; updated.hotkey = value; updated.enabled = value != nil
                 do { try model.saveRule(updated) } catch { model.report(error) }
-            }))
+            }), unset: .placeholder)
             .frogRowAccessory()
         }
         // Every row the same height, whether or not its caps show.
         .frame(maxWidth: .infinity, minHeight: FrogStyle.rowHeight, maxHeight: FrogStyle.rowHeight)
         .contentShape(Rectangle())
+        .frogRevealsRecorder()
     }
 }

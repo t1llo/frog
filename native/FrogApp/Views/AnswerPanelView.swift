@@ -104,8 +104,8 @@ struct AnswerPanelView: View {
     }
 
     private static let followUpID = "follow-up"
-    /// The mark at the end of an answer that is still coming.
-    private static let caret = "\u{258D}"
+    /// The mark at the end of an answer that is still coming: a thin bar, a text cursor's weight, not a block.
+    private static let caret = "\u{258F}"
 
     /// Space sets each follow-up apart from the answer before it.
     private func question(_ text: String) -> some View {
@@ -259,8 +259,9 @@ private struct PulseDot: View {
     var body: some View {
         // The repeating animation reaches the opacity only: scoped to the whole view it also carried the dot's first
         // position along, so it slid in from the panel's corner when the footer appeared.
-        Circle().fill(FrogStyle.muted).frame(width: 6, height: 6)
-            .animation(reduceMotion ? nil : FrogMotion.pulse) { $0.opacity(on || reduceMotion ? 0.9 : 0.35) }
+        // The accent, the colour of something under way, so the dot reads as alive beside the muted status.
+        Circle().fill(FrogStyle.accent).frame(width: 7, height: 7)
+            .animation(reduceMotion ? nil : FrogMotion.pulse) { $0.opacity(on || reduceMotion ? 1 : 0.4) }
             .onAppear { on = true }
             .accessibilityHidden(true)
     }
