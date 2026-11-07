@@ -56,7 +56,7 @@ final class ConfigMigrationTests: XCTestCase {
         XCTAssertEqual(try document.pluginSwitches(), [
             "writing": false, "explain": false, "dictation": true, "command-bar": true, "shortcuts": true, "windows": false,
             "window-switcher": true, "clipboard": false, "notes": true, "scripts": false, "llm-usage": false,
-            "system-monitor": false, "stay-awake": true, "hidden-bar": true, "app-cleaner": false, "phone": false, "plugins": false,
+            "system-monitor": false, "stay-awake": true, "hidden-bar": true, "screenshots": false, "app-cleaner": false, "phone": false, "plugins": false,
         ])
         XCTAssertEqual(document.value(at: ["theme"]), "nord")
         XCTAssertEqual(document.value(at: ["appearance"]), "system")
@@ -106,7 +106,7 @@ final class ConfigMigrationTests: XCTestCase {
     func testPluginIDs() {
         XCTAssertEqual(FeatureID.allCases.map(ConfigMigration.pluginID(for:)), [
             "writing", "explain", "dictation", "command-bar", "shortcuts", "windows", "window-switcher", "clipboard", "notes",
-            "scripts", "llm-usage", "system-monitor", "stay-awake", "hidden-bar", "app-cleaner", "phone", "plugins",
+            "scripts", "llm-usage", "system-monitor", "stay-awake", "hidden-bar", "screenshots", "app-cleaner", "phone", "plugins",
         ])
     }
 }
