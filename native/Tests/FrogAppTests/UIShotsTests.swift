@@ -754,12 +754,13 @@ private final class SampleFrog {
         history = ClipboardHistoryStore(pasteboard: pasteboard, gate: ClipboardHistoryCaptureGate())
         history.configure(enabled: true, automaticallyPoll: false)
         // Copied over the last few days, oldest first, so the times down the list differ as they would.
-        let copies: [(String, TimeInterval)] = [
-            ("brew install --cask frog", 4 * 86_400), ("Thanks, see you at 3!", 27 * 3_600),
-            ("https://frog.beffa.xyz/docs/command-bar/", 3 * 3_600), ("Meeting moved to Thursday", 47 * 60),
-            ("func greet(_ name: String) -> String {\n    \"Hello, \\(name)\"\n}", 12 * 60), ("git push origin main", 20)
+        // Each in the app it would come from, as the rows and the preview name it.
+        let copies: [(String, TimeInterval, String)] = [
+            ("brew install --cask frog", 4 * 86_400, "Terminal"), ("Thanks, see you at 3!", 27 * 3_600, "Messages"),
+            ("https://frog.beffa.xyz/docs/command-bar/", 3 * 3_600, "Safari"), ("Meeting moved to Thursday", 47 * 60, "Mail"),
+            ("func greet(_ name: String) -> String {\n    \"Hello, \\(name)\"\n}", 12 * 60, "Xcode"), ("git push origin main", 20, "Terminal")
         ]
-        for (text, ago) in copies { history.recordCopiedText(text, at: now.addingTimeInterval(-ago)) }
+        for (text, ago, app) in copies { history.recordCopiedText(text, at: now.addingTimeInterval(-ago), source: app) }
 
         let fixtures = root.appendingPathComponent("fixtures", isDirectory: true)
         try Self.writeCodexLog(in: fixtures)

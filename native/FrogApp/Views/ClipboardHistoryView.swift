@@ -120,7 +120,7 @@ struct ClipboardHistoryView: View {
         @Bindable var state = state
         let entries = state.visible
         VStack(spacing: 0) {
-            // Borderless, as the command bar's: the magnifier in the rows' icon column, the query where their text starts.
+            // Borderless, the family's one search line, as on the command bar and the window switcher.
             FloatingPanelSearchLine(placement: placement) {
                 // The field's own placeholder is nearly as dark as typed text; this one is lighter.
                 TextField("", text: $state.query).textFieldStyle(.plain).font(FrogType.query)
@@ -201,15 +201,20 @@ struct ClipboardHistoryView: View {
         }
     }
 
-    /// The kind's tile and the first line; when it was copied is in the preview beside the list.
+    /// The kind's tile, the first line, and under it the app it came from and when, as on the Clipboard page.
     private func row(_ entry: ClipboardHistoryEntry, selected: Bool) -> some View {
         HStack(spacing: 10) {
             let kind = entry.kind
             PluginIconTile(symbol: kind.symbol, tint: kind.tint.color, size: .sidebar).help(L10n.text(kind.title))
-            // One type voice down the list, as on the Clipboard page: the tile says what kind of item it is, so code
-            // is not set in mono.
-            Text(entry.preview).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 1) {
+                // One type voice down the list, as on the Clipboard page: the tile says what kind of item it is, so
+                // code is not set in mono.
+                Text(entry.preview).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
+                HStack(spacing: 0) {
+                    if let source = entry.source { Text(verbatim: source + " · ").lineLimit(1).layoutPriority(-1) }
+                    RecentTimestampText(date: entry.timestamp, shownAt: state.openedAt).fixedSize()
+                }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+            }.frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 10).frame(height: ClipboardHistoryLayout.rowHeight)
         // The pointer moves the selection, so the selection is the only highlight: a second, hover highlight
@@ -224,49 +229,73 @@ struct ClipboardHistoryView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityLabel(entry.preview)
+        .accessibilityValue(entry.source.map { "\(L10n.text("From")) \($0)" } ?? "")
         .accessibilityAction { paste(entry, false) }
         .accessibilityAction(named: "Copy") { copy(entry) }
     }
 }
 
 /// The selected item in full, so a long text, a link or code can be checked before it is pasted: the text on a card
-/// beside the list, scrolling when it is long, and under it what it is and when it was copied.
+/// beside the list, as tall as it needs or scrolling when it is long, and under it what it is, where and when it
+/// was copied.
 struct ClipboardPreview: View {
     let entry: ClipboardHistoryEntry
     var shownAt: Date = .distantPast
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: FrogStyle.space10) {
-                    if entry.kind == .color, let color = Self.color(entry.text) {
-                        RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous).fill(color)
-                            .frame(height: 56)
-                    }
-                    Text(verbatim: entry.text).font(FrogType.row).foregroundStyle(FrogStyle.ink)
-                        .lineSpacing(FrogStyle.space2).textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }.padding(FrogStyle.cardPadding)
-            }
-            .scrollIndicators(.never)
-            .bottomScrollFade(height: ClipboardHistoryLayout.rowHeight)
-            .frame(maxHeight: .infinity, alignment: .top)
-            VStack(spacing: FrogStyle.space4) {
-                info("Type", L10n.text(entry.kind.title))
-                info("Characters", entry.text.count.formatted())
-                info(Self.lines(entry.text) > 1 ? "Lines" : "Words",
-                     (Self.lines(entry.text) > 1 ? Self.lines(entry.text) : Self.words(entry.text)).formatted())
-                HStack {
-                    Text(L10n.text("Copied")).foregroundStyle(FrogStyle.muted)
-                    Spacer(minLength: FrogStyle.space8)
-                    RecentTimestampText(date: entry.timestamp, shownAt: shownAt).foregroundStyle(FrogStyle.ink)
-                }
-            }
-            .font(FrogType.small).padding(.horizontal, FrogStyle.cardPadding).padding(.vertical, FrogStyle.space10)
-            .accessibilityElement(children: .combine)
+        // A short clip's card ends under its details, so it is not mostly empty; a long one fills the height and
+        // scrolls its text.
+        ViewThatFits(in: .vertical) {
+            card(scrolling: false)
+            card(scrolling: true)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private func card(scrolling: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if scrolling {
+                ScrollView { content }
+                    .scrollIndicators(.never)
+                    .bottomScrollFade(height: ClipboardHistoryLayout.rowHeight)
+                    .frame(maxHeight: .infinity, alignment: .top)
+            } else {
+                content.fixedSize(horizontal: false, vertical: true)
+            }
+            details
+        }
+        .frame(maxWidth: .infinity, maxHeight: scrolling ? .infinity : nil, alignment: .top)
         .frogTableSurface()
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: FrogStyle.space10) {
+            if entry.kind == .color, let color = Self.color(entry.text) {
+                RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous).fill(color)
+                    .frame(height: 56)
+            }
+            Text(verbatim: entry.text).font(FrogType.row).foregroundStyle(FrogStyle.ink)
+                .lineSpacing(FrogStyle.space2).textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }.padding(FrogStyle.cardPadding)
+    }
+
+    private var details: some View {
+        VStack(spacing: FrogStyle.space4) {
+            info("Type", L10n.text(entry.kind.title))
+            if let source = entry.source { info("From", source) }
+            info("Characters", entry.text.count.formatted())
+            info(Self.lines(entry.text) > 1 ? "Lines" : "Words",
+                 (Self.lines(entry.text) > 1 ? Self.lines(entry.text) : Self.words(entry.text)).formatted())
+            HStack {
+                Text(L10n.text("Copied")).foregroundStyle(FrogStyle.muted)
+                Spacer(minLength: FrogStyle.space8)
+                RecentTimestampText(date: entry.timestamp, shownAt: shownAt).foregroundStyle(FrogStyle.ink)
+            }
+        }
+        .font(FrogType.small).padding(.horizontal, FrogStyle.cardPadding).padding(.bottom, FrogStyle.space10)
+        .padding(.top, FrogStyle.space4)
+        .accessibilityElement(children: .combine)
     }
 
     private func info(_ title: String, _ value: String) -> some View {
