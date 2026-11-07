@@ -92,7 +92,9 @@ final class UsageStatusReadoutTests: XCTestCase {
         let accounts = [account("A", session: 30, week: 12), account("B", session: 81, week: 64)]
         let lines = UsageStatusReadout.description(accounts: accounts, now: reset).components(separatedBy: "\n")
         let clock = reset.addingTimeInterval(3600).formatted(Date.FormatStyle().hour().minute())
-        XCTAssertTrue(lines.contains("B · Session 81% used · resets \(clock) · Claude app, 2h ago"), lines.joined(separator: "\n"))
+        // The reading's time in the one relative form (`RecentTimestamp`): two hours ago reads as its clock time.
+        let read = RecentTimestamp.text(reset.addingTimeInterval(-7200), now: reset)
+        XCTAssertTrue(lines.contains("B · Session 81% used · resets \(clock) · Claude app, \(read)"), lines.joined(separator: "\n"))
         XCTAssertFalse(lines.contains { $0.contains("@") }, "No e-mail address")
 
         let combined = ["five_hour", "seven_day"].map { id in

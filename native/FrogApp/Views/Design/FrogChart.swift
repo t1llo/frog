@@ -109,15 +109,17 @@ struct FrogChartPlaceholder<Label: View>: View {
     @ViewBuilder let label: Label
     var body: some View {
         ZStack {
-            Baseline().stroke(style: FrogChart.gridLine).foregroundStyle(FrogStyle.hairline).frame(height: 1).offset(y: height / 4)
+            FrogChartBaseline().stroke(style: FrogChart.gridLine).foregroundStyle(FrogStyle.hairline).frame(height: 1).offset(y: height / 4)
             label.foregroundStyle(FrogStyle.muted)
         }.frame(maxWidth: .infinity).frame(height: height).accessibilityElement(children: .combine)
     }
+}
 
-    private struct Baseline: Shape {
-        func path(in rect: CGRect) -> Path {
-            Path { $0.move(to: CGPoint(x: rect.minX, y: rect.midY)); $0.addLine(to: CGPoint(x: rect.maxX, y: rect.midY)) }
-        }
+/// A chart's dashed zero line, stroked with `FrogChart.gridLine` in `hairline`: the placeholder's baseline and the
+/// compact bar chart's axis.
+struct FrogChartBaseline: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path { $0.move(to: CGPoint(x: rect.minX, y: rect.midY)); $0.addLine(to: CGPoint(x: rect.maxX, y: rect.midY)) }
     }
 }
 

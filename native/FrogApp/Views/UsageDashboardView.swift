@@ -788,7 +788,8 @@ struct UsageCompactBars: View {
                 let width = max(2, geometry.size.width * ratio / (CGFloat(count) * ratio + CGFloat(count - 1) * (1 - ratio)))
                 let gap = count > 1 ? (geometry.size.width - width * CGFloat(count)) / CGFloat(count - 1) : 0
                 ZStack(alignment: .bottomLeading) {
-                    Rectangle().fill(FrogStyle.hairline).frame(height: 1)
+                    // The zero line, dashed like the page chart's grid lines.
+                    FrogChartBaseline().stroke(style: FrogChart.gridLine).foregroundStyle(FrogStyle.hairline).frame(height: 1)
                     ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
                         if step.amount > 0, peak > 0 {
                             let share = max(step.amount / peak, UsageBucketChart.minimumShare * 2)
