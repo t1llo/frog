@@ -232,7 +232,7 @@ private struct LayoutShortcutCell: View {
             .overlay(alignment: .trailing) {
                 if !active {
                     Text(L10n.text("Record")).font(FrogType.label).foregroundStyle(FrogStyle.placeholder)
-                        .padding(.trailing, FrogButtonStyle.horizontalPadding(compact: true))
+                        .padding(.trailing, FrogButtonStyle.horizontalPadding())
                         .allowsHitTesting(false).accessibilityHidden(true)
                 }
             }

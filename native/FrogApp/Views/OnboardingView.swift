@@ -292,8 +292,8 @@ private struct OnboardingDone: View {
                 .foregroundStyle(done ? FrogStyle.good : FrogStyle.muted).frame(width: 28, height: 28)
                 .accessibilityHidden(true)
         }, control: {
-            if required { Button("Allow") { jump(step) }.buttonStyle(.frog(.primary, compact: true)) }
-            else if !done { Button("Set up") { jump(step) }.buttonStyle(.frog(.secondary, compact: true)) }
+            if required { Button("Allow") { jump(step) }.buttonStyle(.frog(.primary)) }
+            else if !done { Button("Set up") { jump(step) }.buttonStyle(.frog(.secondary)) }
         })
     }
 }
@@ -388,7 +388,7 @@ private struct OnboardingModels: View {
         FrogSection("Recommended models", footer: LocalModels.supported ? "More models, and any from Hugging Face, are in Models." : "Local models need Apple silicon. Add a provider in the next step instead.", accessory: {
             if LocalModels.supported, missing.count > 1 {
                 Button("Download both", systemImage: "arrow.down.circle") { for item in missing { local.download(item) } }
-                    .buttonStyle(.frog(.secondary, compact: true))
+                    .buttonStyle(.frog(.secondary))
             }
         }) {
             ForEach(pair) { item in
@@ -400,9 +400,9 @@ private struct OnboardingModels: View {
                             Label("Ready", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
                         } else if let progress = local.progress[item.id] {
                             ModelDownloadProgress(fraction: progress.fraction, preparing: local.preparing.contains(item.id), width: 90)
-                            Button("Cancel") { local.cancelDownload(item.id) }.buttonStyle(.frog(compact: true))
+                            Button("Cancel") { local.cancelDownload(item.id) }.buttonStyle(.frog())
                         } else {
-                            Button("Download") { local.download(item) }.buttonStyle(.frog(.secondary, compact: true))
+                            Button("Download") { local.download(item) }.buttonStyle(.frog(.secondary))
                                 .disabled(!LocalModels.supported)
                         }
                     }
@@ -453,7 +453,7 @@ private struct OnboardingProviders: View {
         VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing - 6) {
             // Coding tools all sign in the same way, so it is said once under the list rather than on every row.
             FrogSection("Found on this Mac", footer: found?.contains { $0.kind.localTool != nil } == true ? "Coding tools use their own sign-in, so no API key is needed." : nil, accessory: {
-                Button("Add with an API key…") { editing = ProviderConfiguration() }.buttonStyle(.frog(compact: true))
+                Button("Add with an API key…") { editing = ProviderConfiguration() }.buttonStyle(.frog())
             }) {
                 if let found {
                     if found.isEmpty { FrogRow("Nothing found", caption: "Claude Code, Codex, OpenCode, Ollama or LM Studio show here once installed.") }
@@ -464,7 +464,7 @@ private struct OnboardingProviders: View {
                             if configured(item.kind) {
                                 Label("Added", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
                             } else {
-                                Button("Use") { add(item) }.buttonStyle(.frog(.secondary, compact: true))
+                                Button("Use") { add(item) }.buttonStyle(.frog(.secondary))
                             }
                         })
                     }
@@ -511,7 +511,7 @@ private struct OnboardingAgents: View {
                 if access && installable.isEmpty && !toolMissing {
                     Label("On", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
                 } else {
-                    Button(access ? "Install" : "Turn on", action: turnOn).buttonStyle(.frog(.secondary, compact: true))
+                    Button(access ? "Install" : "Turn on", action: turnOn).buttonStyle(.frog(.secondary))
                 }
             })
             if let issue = installation.issue { FrogRowNote(text: issue, tone: FrogStyle.warning) }

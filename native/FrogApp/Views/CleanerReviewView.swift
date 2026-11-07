@@ -161,7 +161,7 @@ struct CleanerReviewFooter: View {
         HStack(spacing: 12) {
             Text(review.selectionSummary()).font(FrogType.body.monospacedDigit()).foregroundStyle(FrogStyle.muted)
             Button(allTicked ? "Deselect all" : "Select all") { cleaner.setAll(selected: !allTicked) }
-                .buttonStyle(.frog(compact: true))
+                .buttonStyle(.frog())
             Spacer()
             Button("Move to Trash…") { Task { await cleaner.prepareRemoval() } }
                 .buttonStyle(.frog(.destructive))

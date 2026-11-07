@@ -196,12 +196,11 @@ private struct RecordButton: View {
     let rule: Rule
     @ObservedObject var dictation: DictationController
     let feature: DictationFeature
-    var compact = true
 
     var body: some View {
         let mine = dictation.ruleID == rule.id && dictation.active
         Button(mine ? "Stop" : "Record", systemImage: mine ? "stop.fill" : "mic") { mine ? feature.stop() : feature.start(rule) }
-            .buttonStyle(.frog(compact: compact))
+            .buttonStyle(.frog())
             .disabled(mine ? dictation.phase != .recording : !rule.enabled || dictation.active || model.isProcessing)
             .accessibilityLabel(mine ? "Stop recording" : "Record with \(rule.name)")
     }

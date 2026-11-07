@@ -23,7 +23,7 @@ struct LocalToolProvidersView: View {
                         Text("Looking…")
                     }.accessibilityElement(children: .combine)
                 }
-                else { Button("Refresh") { Task { await refresh() } }.buttonStyle(.frog(compact: true)) }
+                else { Button("Refresh") { Task { await refresh() } }.buttonStyle(.frog()) }
             }) {
                 ForEach(statuses) { status in
                     // The tool's own tile and, at the row's end, its state: Connected once it is signed in, Install
@@ -45,7 +45,7 @@ struct LocalToolProvidersView: View {
                         } else if status.installed {
                             state("Installed", dot: nil)
                         } else if !status.installed {
-                            Button("Install") { NSWorkspace.shared.open(status.kind.website) }.buttonStyle(.frog(compact: true))
+                            Button("Install") { NSWorkspace.shared.open(status.kind.website) }.buttonStyle(.frog())
                                 .help("Opens \(status.kind.title)'s website")
                         }
                     }
@@ -76,7 +76,7 @@ struct LocalToolProvidersView: View {
                 }
                 FrogRow("Add \(selected.title) as a provider", caption: selectReason) {
                     Button("Add") { onSelect(selected, model.trimmingCharacters(in: .whitespacesAndNewlines)) }
-                        .buttonStyle(.frog(compact: true)).frogDisabled(canSelect ? nil : selectReason)
+                        .buttonStyle(.frog()).frogDisabled(canSelect ? nil : selectReason)
                         .accessibilityLabel("Add \(selected.title) as a provider")
                 }
             }

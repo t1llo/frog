@@ -179,7 +179,7 @@ struct FrogNoticePill: View {
             }
             if let action {
                 // The pill's one button, a grey pill like every secondary action, ending 6 in from the capsule's end.
-                Button(L10n.text(action.title), action: action.run).buttonStyle(.frog(compact: true)).fixedSize()
+                Button(L10n.text(action.title), action: action.run).buttonStyle(.frog()).fixedSize()
                     .padding(.leading, FrogStyle.space4).padding(.trailing, -(FrogStyle.space16 - FrogStyle.space6))
             }
         }

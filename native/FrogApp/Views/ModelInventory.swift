@@ -74,7 +74,7 @@ struct ModelInventory: View {
                             IconAction(title: "Model information", symbol: "info.circle") { information = item }
                             if let progress = model.localModels.progress[item.id] {
                                 ModelDownloadProgress(fraction: progress.fraction, preparing: model.localModels.preparing.contains(item.id), width: 70)
-                                Button("Cancel") { model.localModels.cancelDownload(item.id) }.buttonStyle(.frog(compact: true))
+                                Button("Cancel") { model.localModels.cancelDownload(item.id) }.buttonStyle(.frog())
                             } else if installed {
                                 IconMenu(title: "Model actions") {
                                     Button("Check files") { model.localModels.checkFiles(item.id) }
@@ -83,7 +83,7 @@ struct ModelInventory: View {
                                         .disabled(model.localModels.busy || model.dictating)
                                 }
                             } else {
-                                Button(L10n.text(unfinished ? "Resume" : "Download")) { model.localModels.download(item) }.buttonStyle(.frog(compact: true)).disabled(!LocalModels.supported)
+                                Button(L10n.text(unfinished ? "Resume" : "Download")) { model.localModels.download(item) }.buttonStyle(.frog()).disabled(!LocalModels.supported)
                                 if unfinished {
                                     IconAction(title: "Discard the partly downloaded files", symbol: "trash", destructive: true) { model.localModels.discardDownload(item.id) }
                                 } else if item.id.hasPrefix("hf-") {
@@ -120,7 +120,7 @@ struct ModelInventory: View {
                 Label(check.summary, systemImage: "exclamationmark.triangle").font(FrogType.caption).foregroundStyle(FrogStyle.warning).textSelection(.enabled)
                 Spacer()
                 Button("Repair") { Task { do { try await model.localModels.repair(item.id) } catch { model.report(error) } } }
-                    .buttonStyle(.frog(compact: true)).disabled(model.localModels.busy || model.dictating)
+                    .buttonStyle(.frog()).disabled(model.localModels.busy || model.dictating)
                     .help("Download the missing or damaged files again into the same folder")
             }
         }

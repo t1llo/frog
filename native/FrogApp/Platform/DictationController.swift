@@ -717,7 +717,7 @@ struct DictationPopup: View {
                 }
                 if failed {
                     Button { controller.retryTranscription() } label: { Label("Retry", systemImage: "arrow.clockwise") }
-                        .buttonStyle(.frog(compact: true)).help("Transcribe the recording again").accessibilityLabel("Retry transcription")
+                        .buttonStyle(.frog()).help("Transcribe the recording again").accessibilityLabel("Retry transcription")
                 }
                 // While recording, the footer's Stop and Cancel cover it; elsewhere the × is the only way out.
                 if controller.phase != .recording {
@@ -757,7 +757,7 @@ struct DictationPopup: View {
                     if !controller.liveText.isEmpty {
                         Button(copiedPartial ? "Copied" : "Copy partial text") {
                             controller.copyPartialTranscript(); copiedPartial = true
-                        }.buttonStyle(.frog(compact: true))
+                        }.buttonStyle(.frog())
                             .fixedSize().help("Copy the text recognised before the failure")
                     }
                 }.frame(height: 20)

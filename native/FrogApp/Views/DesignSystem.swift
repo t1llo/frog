@@ -701,28 +701,26 @@ struct FrogButtonStyle: ButtonStyle {
         /// Removes or deletes something: the critical colour on the grey pill.
         case destructive
     }
+    /// Every button is one size wherever it stands (a row, the toolbar, a sheet, a popup).
     var kind: Kind = .secondary
-    /// Kept for older call sites. Every button is one size wherever it stands (a row, the toolbar, a sheet, a
-    /// popup), so `compact` no longer changes it.
-    var compact = false
 
-    init(_ kind: Kind = .secondary, compact: Bool = false) { self.kind = kind; self.compact = compact }
+    init(_ kind: Kind = .secondary) { self.kind = kind }
     /// The space either side of a button's label: one value, as there is one button size.
-    static func horizontalPadding(compact: Bool = false) -> CGFloat { 12 }
+    static func horizontalPadding() -> CGFloat { 12 }
     /// How tall a button is: `compactHeight` (24) everywhere, so a page header's Open, a row's Keyboard Settings, a
     /// sheet's Save and a popup's Retry are one size. Choices and text (dropdowns, fields, search, segments) are
     /// `controlHeight` (28).
-    static func height(compact: Bool = false) -> CGFloat { FrogStyle.compactHeight }
+    static func height() -> CGFloat { FrogStyle.compactHeight }
     init(primary: Bool) { kind = primary ? .primary : .secondary }
 
     func makeBody(configuration: ButtonStyleConfiguration) -> some View {
-        FrogButtonBody(configuration: configuration, kind: kind, compact: compact)
+        FrogButtonBody(configuration: configuration, kind: kind)
     }
 }
 
 extension ButtonStyle where Self == FrogButtonStyle {
-    static func frog(_ kind: FrogButtonStyle.Kind = .secondary, compact: Bool = false) -> FrogButtonStyle {
-        FrogButtonStyle(kind, compact: compact)
+    static func frog(_ kind: FrogButtonStyle.Kind = .secondary) -> FrogButtonStyle {
+        FrogButtonStyle(kind)
     }
 }
 
@@ -740,7 +738,6 @@ extension View {
 private struct FrogButtonBody: View {
     let configuration: ButtonStyleConfiguration
     let kind: FrogButtonStyle.Kind
-    let compact: Bool
     @Environment(\.isEnabled) private var enabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.frogKeyboardSurface) private var keyboardSurface

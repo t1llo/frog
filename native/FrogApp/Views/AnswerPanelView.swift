@@ -130,7 +130,7 @@ struct AnswerPanelView: View {
                 case nil: EmptyView()
                 }
             }
-            .buttonStyle(.frog(compact: true))
+            .buttonStyle(.frog())
             .padding(.horizontal, FrogStyle.cardPadding).padding(.vertical, FrogStyle.panelInset)
             .accessibilityElement(children: .combine)
         }

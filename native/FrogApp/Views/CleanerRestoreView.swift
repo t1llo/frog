@@ -125,7 +125,7 @@ struct CleanerRestoreView: View {
                     if row.needsFinder { Button("Put Back in Finder") { openTrash() } }
                     Button("Put Back") { Task { await cleaner.putBack(record.id) } }
                         .disabled(!row.canPutBack || cleaner.puttingBack != nil)
-                }.buttonStyle(.frog(compact: true))
+                }.buttonStyle(.frog())
                 Button { cleaner.forget(record.id) } label: {
                     Image(systemName: "xmark").font(.system(size: 11, weight: .medium)).foregroundStyle(FrogStyle.muted)
                         .frame(width: FrogStyle.compactHeight, height: FrogStyle.compactHeight).frogHoverRow()

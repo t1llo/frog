@@ -170,7 +170,7 @@ struct ScriptsPage: View {
                 Button("Stop", systemImage: "stop.fill", action: runner.stop)
             } else {
                 Button("Run", systemImage: "play.fill") { run(script) }
-                    .buttonStyle(.frog(.primary, compact: true)).disabled(runner.running != nil)
+                    .buttonStyle(.frog(.primary)).disabled(runner.running != nil)
                     .help(runner.running != nil ? "Another script is running" : "")
             }
             if runner.resultID == script.id {

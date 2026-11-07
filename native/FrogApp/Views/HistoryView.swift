@@ -88,7 +88,7 @@ struct HistoryView: View {
                     if !preferences.historyEnabled {
                         HStack(spacing: 8) {
                             FrogRowNote(text: "History is off. New results are not kept.")
-                            Button("Turn on") { setHistoryEnabled() }.buttonStyle(.frog(compact: true))
+                            Button("Turn on") { setHistoryEnabled() }.buttonStyle(.frog())
                         }
                     }
                     switch empty {

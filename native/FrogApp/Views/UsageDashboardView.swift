@@ -45,8 +45,8 @@ struct UsageAccountsNotice: View {
             Text(usage.accountsNoticeText).font(FrogType.body).lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
-                Button(usage.accountsNoticeAction) { usage.showAllAccounts() }.buttonStyle(.frog(.primary, compact: compact))
-                Button("Not now") { usage.dismissAccountsNotice() }.buttonStyle(.frog(compact: compact))
+                Button(usage.accountsNoticeAction) { usage.showAllAccounts() }.buttonStyle(.frog(.primary))
+                Button("Not now") { usage.dismissAccountsNotice() }.buttonStyle(.frog())
             }
         }.padding(compact ? 8 : 14).frame(maxWidth: .infinity, alignment: .leading)
             .background(FrogStyle.card, in: RoundedRectangle(cornerRadius: compact ? FrogStyle.controlRadius : FrogStyle.cardRadius))
@@ -600,11 +600,11 @@ private struct UsageAccountSettingsRow: View {
                     .font(FrogType.caption).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             }
             if account.needsLiveSetup {
-                Button("Set up live readings…", action: setUpLiveReadings).buttonStyle(.frog(compact: true))
+                Button("Set up live readings…", action: setUpLiveReadings).buttonStyle(.frog())
                     .help("Signs Claude Code in as \(account.label), so Frog can check its limits with Anthropic")
             } else if account.needsSignIn {
                 Button(account.checkingSignIn ? "Checking the login…" : "Sign in to Claude Code…") { ClaudeSignIn.start(usage, account: account.id) }
-                    .buttonStyle(.frog(compact: true)).disabled(account.checkingSignIn)
+                    .buttonStyle(.frog()).disabled(account.checkingSignIn)
                     .help("Opens Terminal to sign in to Claude Code as \(account.label), in this account’s own Claude Code folder")
             }
         }.help(usage.accountLogin(for: account.id) ?? "")

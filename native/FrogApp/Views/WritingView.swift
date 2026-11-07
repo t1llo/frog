@@ -108,7 +108,7 @@ struct WritingBubbleSection: View {
                     FrogRowNote(text: status, tone: FrogStyle.warning)
                     Button("Open System Settings") {
                         SelectionService.requestAccess(); SelectionService.openAccessibilitySettings()
-                    }.buttonStyle(.frog(compact: true))
+                    }.buttonStyle(.frog())
                 }
             }
             if bubble.on {
@@ -476,7 +476,7 @@ private struct WritingRuleRow: View {
                 HStack(spacing: 8) {
                     // Hover actions lead, so the caps and the switch keep their place whether or not they show.
                     HStack(spacing: 4) {
-                        Button("Try") { tryIt() }.buttonStyle(.frog(compact: true))
+                        Button("Try") { tryIt() }.buttonStyle(.frog())
                             .disabled(!canTry).accessibilityLabel("Try \(rule.name)")
                         IconAction(title: "Edit \(rule.name)", symbol: "pencil") { edit() }
                     }.opacity(hovering ? 1 : 0).animation(hovering ? nil : FrogMotion.hoverOut, value: hovering)

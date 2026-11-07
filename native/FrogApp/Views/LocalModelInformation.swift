@@ -83,7 +83,7 @@ struct AddLocalModelView: View {
                     Button { source = "https://huggingface.co/mlx-community/Qwen3-0.6B-4bit" } label: {
                         Label("Use example", systemImage: "arrow.turn.left.up")
                     }
-                    .buttonStyle(.frog(compact: true)).disabled(loading)
+                    .buttonStyle(.frog()).disabled(loading)
                     .help("Put this link in the field")
                 }
             }
@@ -95,7 +95,7 @@ struct AddLocalModelView: View {
                             FrogRow(item.name, caption: item.runtimeName) {
                                 Button(model.configuration.modelCatalog.contains(where: { $0.id == item.id }) ? "Show model" : "Add model") {
                                     do { try model.addLocalModel(item); onAdded(item); dismiss() } catch { issue = error.localizedDescription }
-                                }.buttonStyle(.frog(compact: true))
+                                }.buttonStyle(.frog())
                             }
                         }
                     }

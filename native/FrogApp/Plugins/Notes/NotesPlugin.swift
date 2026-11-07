@@ -139,7 +139,7 @@ struct NotesPage: View {
     var body: some View {
         DocumentsPage(documents: documents, kind: .note, title: "Notes", subtitle: "Markdown notes, and text the command bar pastes", symbol: "note.text",
                       emptyMessage: "Write one here, or have an agent add one with frog run notes.add.") { note in
-            CompactSegments(values: [false, true], selected: preview, compact: true, title: { $0 ? "Preview" : "Edit" }) { preview = $0 }
+            CompactSegments(values: [false, true], selected: preview, title: { $0 ? "Preview" : "Edit" }) { preview = $0 }
             Spacer(minLength: FrogStyle.space8)
             CopyAction(title: "Copy note") {
                 do { try paste.copy(note) } catch { report(error) }

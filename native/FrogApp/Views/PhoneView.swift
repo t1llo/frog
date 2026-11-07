@@ -72,7 +72,7 @@ private struct PhonePairingSection: View {
                     Image(systemName: "checkmark.circle.fill").font(.system(size: 18)).foregroundStyle(FrogStyle.good)
                         .accessibilityHidden(true)
                 }) {
-                    Button("Done", action: close).buttonStyle(.frog(.primary, compact: true))
+                    Button("Done", action: close).buttonStyle(.frog(.primary))
                 }
             } else {
                 HStack(alignment: .center, spacing: 20) {
@@ -81,7 +81,7 @@ private struct PhonePairingSection: View {
                         Text("Scan with Frog Companion").font(FrogType.section).foregroundStyle(FrogStyle.ink)
                         Text("The code works for 10 minutes.").font(FrogType.body).foregroundStyle(FrogStyle.muted)
                         FrogLoadingNote(text: "Waiting for your phone…")
-                        Button("Cancel", action: close).buttonStyle(.frog(compact: true)).padding(.top, 6)
+                        Button("Cancel", action: close).buttonStyle(.frog()).padding(.top, 6)
                     }
                     Spacer(minLength: 0)
                 }.padding(.vertical, 12)
@@ -149,10 +149,10 @@ private struct PhoneSendSection: View {
             // Sending by hand needs a phone to send to.
             if !phone.phones.isEmpty {
                 FrogRow("Clipboard", caption: "Also files copied in Finder") {
-                    Button("Send") { notice = phone.sendClipboard() }.buttonStyle(.frog(compact: true))
+                    Button("Send") { notice = phone.sendClipboard() }.buttonStyle(.frog())
                 }
                 FrogRow("Files", caption: "Up to 200 MB each") {
-                    Button("Choose…", action: chooseFiles).buttonStyle(.frog(compact: true))
+                    Button("Choose…", action: chooseFiles).buttonStyle(.frog())
                 }
             }
             if let notice { FrogRowNote(text: notice) }
@@ -175,7 +175,7 @@ private struct PhoneRecentsSection: View {
 
     var body: some View {
         FrogSection("Recent", accessory: {
-            Button("Clear") { withAnimation(FrogMotion.exit) { phone.clearRecents() } }.buttonStyle(.frog(compact: true))
+            Button("Clear") { withAnimation(FrogMotion.exit) { phone.clearRecents() } }.buttonStyle(.frog())
         }) {
             ForEach(phone.recents) { item in PhoneRecentRow(item: item) }
         }

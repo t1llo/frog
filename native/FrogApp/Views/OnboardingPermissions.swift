@@ -97,7 +97,7 @@ struct OnboardingPermissions: View {
             Label("Granted", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
                 .transition(.opacity)
         } else {
-            Button("Grant") { request(permission) }.buttonStyle(.frog(.secondary, compact: true))
+            Button("Grant") { request(permission) }.buttonStyle(.frog(.secondary))
                 .focused($focused, equals: permission)
                 .accessibilityLabel(Text(L10n.text("Grant \(permission.title)")))
         }

@@ -48,7 +48,7 @@ struct ProvidersView: View {
                     if !LocalModels.supported {
                         ProblemNotice(title: "Local models need Apple silicon",
                                       message: "This Mac cannot run them. Add a provider instead.") {
-                            Button("Add provider") { filter = "Providers"; search = ""; editingStep = 0; editing = ProviderConfiguration() }.buttonStyle(.frog(compact: true))
+                            Button("Add provider") { filter = "Providers"; search = ""; editingStep = 0; editing = ProviderConfiguration() }.buttonStyle(.frog())
                         }
                     }
                     // Speech and text models in one list, under their own headings, rather than a second switch.
@@ -98,7 +98,7 @@ struct ProvidersView: View {
                     Button("Add") {
                         editingStep = 1
                         editing = ProviderConfiguration(name: kind.shortTitle, kind: kind)
-                    }.buttonStyle(.frog(compact: true)).accessibilityLabel("Add \(kind.shortTitle)")
+                    }.buttonStyle(.frog()).accessibilityLabel("Add \(kind.shortTitle)")
                 }
             }
         }
@@ -302,7 +302,7 @@ struct ProviderEditor: View {
                         FrogSection {
                             FrogRow("Setup guide", caption: "Install \(provider.kind.shortTitle) and download a model.") {
                                 Link(destination: provider.kind.setupURL) { ProviderLinkLabel(title: "Open") }
-                                    .buttonStyle(.frog(compact: true))
+                                    .buttonStyle(.frog())
                             }
                         }
                     }
