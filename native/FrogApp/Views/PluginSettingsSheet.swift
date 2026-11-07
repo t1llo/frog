@@ -13,12 +13,11 @@ struct PluginSettingsSheet: View {
         let item = plugins.item(id)
         let manifest = item?.manifest
         VStack(alignment: .leading, spacing: FrogStyle.space16) {
+            // The plugin's tile and name; the sheet itself says these are its settings, so no subtitle repeats it.
             HStack(spacing: FrogStyle.space12) {
                 PluginIconTile(symbol: PluginSymbol.name(item?.symbol ?? PluginManifest.defaultSymbol), tint: PluginTint.purple.color, size: .header)
-                VStack(alignment: .leading, spacing: FrogStyle.space2) {
-                    Text(item?.name ?? id).font(FrogType.title).tracking(-0.4).accessibilityAddTraits(.isHeader)
-                    Text("Settings").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                }
+                Text(item?.name ?? id).font(FrogType.title).tracking(-0.4).accessibilityAddTraits(.isHeader)
+                    .accessibilityLabel(Text(L10n.text("\(item?.name ?? id) settings")))
             }
             FrogSheetScroll(maxHeight: 440) {
                 VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing - 6) {
@@ -187,12 +186,10 @@ private struct PluginNumberSetting: View {
             .onChange(of: focused) { _, now in if !now { save() } }
     }
 
-    /// As wide as the longest number the bounds allow, at least two digits and at most six, so 25 does not sit in a
-    /// field made for a sentence.
-    private var fieldWidth: CGFloat {
-        let digits = [minimum, maximum].compactMap { $0 }.map { String($0).count }.max() ?? 4
-        return CGFloat(min(max(digits, 2), 6)) * 8 + FrogStyle.space6 * 2 + 4
-    }
+    /// One width for every number setting, room for five digits, so the minus, the field and the plus of each row
+    /// line up down the card whatever the plugin's bounds.
+    static let fieldWidth: CGFloat = 56
+    private var fieldWidth: CGFloat { Self.fieldWidth }
 
     /// "1–120", or the one bound the plugin sets.
     private var range: String? {

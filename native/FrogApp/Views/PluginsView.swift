@@ -118,7 +118,7 @@ struct PluginsView: View {
         Group {
             if plugins.registryKeys.isEmpty {
                 FrogEmptyState(symbol: CommunityPlugin.info.symbol, title: "No plugins listed yet",
-                               message: "Shared plugins appear here once the directory lists them.",
+                               message: "Plugins people share will be listed here.",
                                tint: CommunityPlugin.info.tint) {
                     Button("Build your own") { tab = .build }.buttonStyle(.frog(.primary))
                 }.frogTableSurface()
@@ -130,7 +130,7 @@ struct PluginsView: View {
                 }.frogTableSurface()
             } else if plugins.registry.isEmpty {
                 FrogEmptyState(symbol: CommunityPlugin.info.symbol, title: "Nothing listed yet",
-                               message: "Plugins people share appear here once frog.beffa.xyz/plugins lists them.",
+                               message: "Plugins people share will be listed here.",
                                tint: CommunityPlugin.info.tint) {
                     HStack(spacing: FrogStyle.space8) {
                         Button("Check again") { Task { await plugins.loadRegistry() } }
@@ -185,13 +185,12 @@ struct PluginsView: View {
     private static let prompt = "Build me a Frog plugin that … Run `frog plugin guide` first and follow it."
 
     @ViewBuilder private var build: some View {
-        // The tab's one card, so no heading: building one, sharing it, and installing one someone shared. A link
-        // alone would be a one-row card beside it.
-        FrogSection(footer: "Your agent writes the files, installs the plugin for your review and checks a picture of its page.") {
+        // Two cards, each one kind of task: making a plugin with an agent, then passing one on or taking one in.
+        FrogSection("Make one with your agent", footer: "Your agent writes the files, installs the plugin for your review and checks a picture of its page.") {
             FrogRow("Ask your agent", caption: "Paste this prompt and finish the sentence.")
             // The prompt itself, set like code where it names a command, and without the backticks; its copy
             // action sits in the block it copies.
-            HStack(alignment: .top, spacing: FrogStyle.space8) {
+            HStack(alignment: .center, spacing: FrogStyle.space8) {
                 Text(InlineCode.attributed(Self.prompt)).font(FrogType.body).foregroundStyle(FrogStyle.ink).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, FrogStyle.space4)
@@ -200,10 +199,12 @@ struct PluginsView: View {
             .padding(.leading, FrogStyle.space10).padding(.trailing, FrogStyle.space4).padding(.vertical, FrogStyle.space4)
             .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
             .padding(.bottom, FrogStyle.space6)
-            FrogRow("Let it use Frog", caption: "Settings → Agents installs the frog command and skill.") {
-                Button("Open Settings", systemImage: "gearshape") { model.toolkit.select(.settings) }.buttonStyle(.frog())
+            FrogRow("Let it use Frog", caption: "Turn on agents in Settings to install the frog command.") {
+                Button("Open Settings") { model.toolkit.select(.settings) }.buttonStyle(.frog())
             }
-            FrogRow("Share it", caption: .attributed(InlineCode.attributed(L10n.text("Run `frog plugin publish` to pack it and print its entry for the directory.")))) {
+        }
+        FrogSection("Share and install") {
+            FrogRow("Share yours", caption: .attributed(InlineCode.attributed(L10n.text("Run `frog plugin publish` to pack it for the directory.")))) {
                 CopyAction(title: "Copy command", labeled: true) { ViewActions.copy("frog plugin publish") }
             }
             // The caption says what Review needs, so the button never waits without a reason in sight.
@@ -212,9 +213,9 @@ struct PluginsView: View {
                 // centred on it, as a search box and its add button are.
                 HStack(spacing: FrogStyle.space8) {
                     FrogTextField(placeholder: "https://…", text: $link).textFieldStyle(.plain).font(FrogType.body)
-                        .padding(.horizontal, 8).frame(width: 240).frogControlSurface()
+                        .padding(.horizontal, 8).frame(width: 220).frogControlSurface()
                         .onSubmit(openTypedLink)
-                    Button("Review", systemImage: "checkmark.shield", action: openTypedLink)
+                    Button("Review", action: openTypedLink)
                         .frogDisabled(plugins.downloading != nil ? "Downloading…" : typedLink == nil ? "Paste a link to a .frogplugin file" : nil)
                 }
             }
@@ -282,9 +283,10 @@ private struct InstalledPluginRow: View {
                     }
                     if running { FrogBadge(text: "Running") }
                 }
+                // Up to two lines, so a plugin's one-sentence description reads to its end instead of breaking off.
                 Text(L10n.text(item.problem ?? item.manifest?.description.taglineInCaption ?? ""))
                     .font(FrogType.small).foregroundStyle(item.problem == nil ? FrogStyle.muted : FrogStyle.warning)
-                    .lineLimit(item.problem == nil ? 1 : 2).truncationMode(.tail)
+                    .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
