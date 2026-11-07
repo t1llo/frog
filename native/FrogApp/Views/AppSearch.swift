@@ -32,7 +32,6 @@ enum AppSearchCatalog {
             all.append(AppSearchEntry(page: page, section: section, row: nil, keywords: keywords))
             for (row, words) in rows { all.append(AppSearchEntry(page: page, section: section, row: row, keywords: words)) }
         }
-        func rows(_ titles: String...) -> [(String, [String])] { titles.map { ($0, []) } }
 
         // Settings
         add(.settings, "General", rows: [("Start at login", ["launch", "startup", "login items", "autostart"]),
@@ -65,7 +64,8 @@ enum AppSearchCatalog {
 
         // Models
         add(.models, "Memory and storage", keywords: ["local models", "ram", "disk"],
-            rows: rows("Unload idle models", "Model folder", "Disk used"))
+            rows: [("Unload speech model", ["idle", "unload"]), ("Unload text models", ["idle", "unload"]),
+                   ("Model folder", []), ("Disk used", [])])
 
         // Writing
         add(.plugin("writing"), "Rules", keywords: ["rewrite", "grammar", "translate", "prompts"])
@@ -232,7 +232,7 @@ private struct FrogSearchTarget: ViewModifier {
                 withAnimation(FrogMotion.reveal) { lit = true }
                 try? await Task.sleep(for: .milliseconds(reduceMotion ? 1_400 : 1_100))
                 guard !Task.isCancelled else { return }
-                withAnimation(.easeOut(duration: 0.6)) { lit = false }
+                withAnimation(FrogMotion.exit) { lit = false }
             }
     }
 }
