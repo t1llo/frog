@@ -4,11 +4,11 @@ import AppKit
 enum MenuBarMeterStyle: String, CaseIterable, Identifiable, Codable, Sendable {
     /// A percentage per reading.
     case numbers
-    /// Five steps per reading, stacked; each step is 20%.
+    /// Five steps per reading, stacked; each step is 20%, lit or empty, never half lit.
     case segments
     /// A smooth bar per reading, stacked.
     case bars
-    /// Upright bars side by side.
+    /// Upright bars side by side, each beside its label.
     case columns
 
     var id: Self { self }
@@ -107,7 +107,10 @@ enum MenuBarMeter {
         func track(_ strength: Double) -> NSColor { base.withAlphaComponent((dark && palette != .clean ? 0.22 : 0.17) * strength) }
 
         /// The filled part of a meter `fraction` full, at `position` along it (0 to 1).
+        /// A reading that recedes (stale, or not refreshed) is drawn in the menu bar's own grey rather than a faded
+        /// colour, which would mix with the bar into salmon, beige or brown.
         func fill(fraction: Double, position: Double, strength: Double) -> NSColor {
+            if strength < 1 { return base.withAlphaComponent(0.88 * strength) }
             switch palette {
             case .clean: return base.withAlphaComponent(0.88 * strength)
             case .level: return MenuBarMeter.level(fraction, dark: dark).withAlphaComponent(strength)
@@ -125,7 +128,8 @@ enum MenuBarMeter {
         NSColor(srgbRed: red, green: green, blue: blue, alpha: 1)
     }
     private static func green(_ dark: Bool) -> NSColor { dark ? rgb(0.20, 0.84, 0.36) : rgb(0.13, 0.64, 0.29) }
-    private static func yellow(_ dark: Bool) -> NSColor { dark ? rgb(1.00, 0.84, 0.04) : rgb(0.85, 0.63, 0.00) }
+    private static func lime(_ dark: Bool) -> NSColor { dark ? rgb(0.62, 0.88, 0.18) : rgb(0.42, 0.70, 0.08) }
+    private static func yellow(_ dark: Bool) -> NSColor { dark ? rgb(1.00, 0.84, 0.04) : rgb(0.93, 0.68, 0.00) }
     private static func orange(_ dark: Bool) -> NSColor { dark ? rgb(1.00, 0.60, 0.04) : rgb(0.94, 0.46, 0.00) }
     private static func red(_ dark: Bool) -> NSColor { dark ? rgb(1.00, 0.29, 0.25) : rgb(0.89, 0.19, 0.16) }
 
@@ -134,15 +138,15 @@ enum MenuBarMeter {
         fraction < 0.7 ? green(dark) : fraction < 0.9 ? orange(dark) : red(dark)
     }
 
-    /// Green at the start of a meter, through yellow and orange, to red at its end.
+    /// The spectrum's five clean colours, one per step: green, lime, yellow, orange, red.
+    static func spectrumStops(dark: Bool) -> [NSColor] { [green(dark), lime(dark), yellow(dark), orange(dark), red(dark)] }
+
+    /// The spectrum's colour at `position` along a meter: the nearest of its clean stops, never a blend of two, which
+    /// turns green and yellow into olive. Only a bar's gradient runs between them.
     static func spectrum(_ position: Double, dark: Bool) -> NSColor {
-        let stops: [(Double, NSColor)] = [(0, green(dark)), (0.5, yellow(dark)), (0.75, orange(dark)), (1, red(dark))]
-        let position = min(1, max(0, position))
-        for (lower, upper) in zip(stops, stops.dropFirst()) where position <= upper.0 {
-            let amount = (position - lower.0) / (upper.0 - lower.0)
-            return lower.1.blended(withFraction: amount, of: upper.1) ?? lower.1
-        }
-        return red(dark)
+        let stops = spectrumStops(dark: dark)
+        let index = Int((min(1, max(0, position)) * Double(stops.count - 1)).rounded())
+        return stops[index]
     }
 
     // MARK: Layouts
@@ -156,16 +160,21 @@ enum MenuBarMeter {
         (face.dimmed ? 0.55 : 1) * (row.dimmed ? 0.5 : 1)
     }
 
+    /// The smallest type a meter draws: the size the menu bar's own small captions use. Every label, in every
+    /// style, is at least this; where a style has no room for it, it lays its readings out side by side instead.
+    static let captionSize: CGFloat = 9
+    private static let captionFont = NSFont.systemFont(ofSize: captionSize, weight: .bold)
+
     /// Label and value per row, each row on its own line; the value column fits "100%", so the
-    /// item keeps its width as readings change.
+    /// item keeps its width as readings change. Three readings stand side by side, each label over its value.
     private static func numbersLayout(_ rows: [MenuBarMeterRow]) -> Layout {
+        guard rows.count <= 2 else { return sideBySideLayout(rows, style: .numbers) }
         let single = rows.count <= 1
-        let crowded = rows.count >= 3
-        let labelFont = NSFont.systemFont(ofSize: single ? 9 : crowded ? 5.5 : 7.5, weight: .bold)
-        let valueFont = NSFont.monospacedDigitSystemFont(ofSize: single ? 12 : crowded ? 6.5 : 9.5, weight: .semibold)
+        let labelFont = captionFont
+        let valueFont = NSFont.monospacedDigitSystemFont(ofSize: single ? 12 : 10, weight: .semibold)
         let labelWidth = ceil(rows.map { width($0.label, labelFont) }.max() ?? 0)
         let valueWidth = ceil(max(width("100%", valueFont), rows.map { width($0.value, valueFont) }.max() ?? 0))
-        let pitch: CGFloat = single ? 22 : rows.count == 2 ? 10 : 7
+        let pitch: CGFloat = single ? 22 : 10.5
         let top = (height - pitch * CGFloat(max(1, rows.count))) / 2
         return Layout(width: labelWidth + 3 + valueWidth) { rows, face, ink in
             for (index, row) in rows.enumerated() {
@@ -177,12 +186,14 @@ enum MenuBarMeter {
         }
     }
 
-    /// One meter per row, stacked, its label to the left.
+    /// One meter per row, stacked, its label to the left. Three readings stand side by side instead, each label
+    /// over its meter, since three stacked rows leave no room for a readable label.
     private static func stackedLayout(_ rows: [MenuBarMeterRow], style: MenuBarMeterStyle) -> Layout {
+        guard rows.count <= 2 else { return sideBySideLayout(rows, style: style) }
         let count = max(1, rows.count)
-        let thickness: CGFloat = count == 1 ? 7 : count == 2 ? 5.5 : 4
-        let gap: CGFloat = count == 1 ? 0 : count == 2 ? 4 : 2.5
-        let labelFont = NSFont.systemFont(ofSize: count >= 3 ? 6.5 : 8, weight: .bold)
+        let thickness: CGFloat = count == 1 ? 7 : 5.5
+        let gap: CGFloat = count == 1 ? 0 : 4
+        let labelFont = captionFont
         let labelWidth = ceil(rows.map { width($0.label, labelFont) }.max() ?? 0)
         let trackWidth: CGFloat = 36
         let start = labelWidth > 0 ? labelWidth + 3 : 0
@@ -199,48 +210,79 @@ enum MenuBarMeter {
         }
     }
 
-    /// Upright bars side by side, each with its label beneath.
+    /// Readings side by side, each its label on top and its value, steps or bar under it, centred in its slot.
+    private static func sideBySideLayout(_ rows: [MenuBarMeterRow], style: MenuBarMeterStyle) -> Layout {
+        let labelFont = captionFont
+        let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
+        let meterWidth: CGFloat = 26, thickness: CGFloat = 5, spacing: CGFloat = 7
+        let content = style == .numbers ? ceil(width("100%", valueFont)) : meterWidth
+        let slots = rows.map { max(content, ceil(width($0.label, labelFont))) }
+        let total = slots.reduce(0, +) + spacing * CGFloat(max(0, slots.count - 1))
+        // The label's capitals and the reading under them, as one block centred on the bar.
+        let labelMiddle: CGFloat = 6, readingMiddle: CGFloat = 15.5
+        return Layout(width: total) { rows, face, ink in
+            var x: CGFloat = 0
+            for (index, row) in rows.enumerated() {
+                let strength = strength(row, face)
+                let slot = slots[index], centre = x + slot / 2
+                draw(row.label, font: labelFont, color: ink.text(0.75 * strength), right: centre + width(row.label, labelFont) / 2, middle: labelMiddle)
+                switch style {
+                case .numbers:
+                    draw(row.value, font: valueFont, color: ink.value(row.fraction, strength: strength),
+                         right: centre + width(row.value, valueFont) / 2, middle: readingMiddle)
+                default:
+                    let track = NSRect(x: centre - meterWidth / 2, y: readingMiddle - thickness / 2, width: meterWidth, height: thickness)
+                    if style == .segments { drawSteps(row.fraction, in: track, ink: ink, strength: strength, vertical: false) }
+                    else { drawBar(row.fraction, in: track, ink: ink, strength: strength, vertical: false) }
+                }
+                x += slot + spacing
+            }
+        }
+    }
+
+    /// Upright bars side by side, each with its label to its left at the caption size: a caption under a bar would
+    /// leave the bar too short and the label too small to read.
     private static func columnsLayout(_ rows: [MenuBarMeterRow]) -> Layout {
-        let labelFont = NSFont.systemFont(ofSize: 6.5, weight: .bold)
-        let barWidth: CGFloat = 6, spacing: CGFloat = 4
-        let slots = rows.map { max(barWidth + 2, ceil(width($0.label, labelFont))) }
+        let labelFont = captionFont
+        let barWidth: CGFloat = 6, gap: CGFloat = 3, spacing: CGFloat = 7
+        let labels = rows.map { ceil(width($0.label, labelFont)) }
+        let slots = labels.map { ($0 > 0 ? $0 + gap : 0) + barWidth }
         let total = slots.reduce(0, +) + spacing * CGFloat(max(0, slots.count - 1))
         return Layout(width: total) { rows, face, ink in
             var x: CGFloat = 0
             for (index, row) in rows.enumerated() {
                 let strength = strength(row, face)
-                let slot = slots[index]
-                let track = NSRect(x: x + (slot - barWidth) / 2, y: 1.5, width: barWidth, height: 13)
+                let track = NSRect(x: x + slots[index] - barWidth, y: 3, width: barWidth, height: 16)
+                draw(row.label, font: labelFont, color: ink.text(0.75 * strength), right: x + labels[index], middle: height / 2)
                 drawBar(row.fraction, in: track, ink: ink, strength: strength, vertical: true)
-                let labelWidth = width(row.label, labelFont)
-                // Baseline at 21, so the caps sit just under the bar.
-                (row.label as NSString).draw(at: NSPoint(x: x + (slot - labelWidth) / 2, y: 21 - labelFont.ascender),
-                                             withAttributes: [.font: labelFont, .foregroundColor: ink.text(0.75 * strength)])
-                x += slot + spacing
+                x += slots[index] + spacing
             }
         }
     }
 
     // MARK: Drawing
 
-    /// Five steps; each lights fully once its 20% is reached, and the step in progress glows faintly.
+    /// Five steps, each either lit in its clean colour or empty: the reading is rounded to the nearest step, and any
+    /// reading above zero lights the first. A step is never half lit or see-through, which would mix its colour with
+    /// the track into olive, brown or beige; the numbers style is there for the exact value.
+    static func litSteps(_ fraction: Double?) -> Int {
+        guard let fraction, fraction > 0 else { return 0 }
+        return min(steps, max(1, Int((fraction * Double(steps)).rounded())))
+    }
+
     private static func drawSteps(_ fraction: Double?, in track: NSRect, ink: Ink, strength: Double, vertical: Bool) {
         let gap: CGFloat = 1.5
         let length = ((vertical ? track.height : track.width) - gap * CGFloat(steps - 1)) / CGFloat(steps)
         let radius = min(2, (vertical ? track.width : track.height) / 2.5)
-        let filled = (fraction ?? 0) * Double(steps)
+        let lit = litSteps(fraction)
         for step in 0..<steps {
             let offset = CGFloat(step) * (length + gap)
             let rect = vertical
                 ? NSRect(x: track.minX, y: track.maxY - offset - length, width: track.width, height: length)
                 : NSRect(x: track.minX + offset, y: track.minY, width: length, height: track.height)
-            let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
-            let lit = min(1, max(0, filled - Double(step)))
-            let color = ink.fill(fraction: fraction ?? 0, position: Double(step) / Double(steps - 1), strength: strength)
-            if lit >= 0.999 { color.setFill() }
-            else if lit > 0.001 { ink.track(strength).setFill(); path.fill(); color.withAlphaComponent(color.alphaComponent * 0.4).setFill() }
-            else { ink.track(strength).setFill() }
-            path.fill()
+            (step < lit ? ink.fill(fraction: fraction ?? 0, position: Double(step) / Double(steps - 1), strength: strength)
+                        : ink.track(strength)).setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
         }
     }
 
@@ -255,9 +297,7 @@ enum MenuBarMeter {
             ? NSRect(x: track.minX, y: track.maxY - max(minimum, track.height * fraction), width: track.width, height: max(minimum, track.height * fraction))
             : NSRect(x: track.minX, y: track.minY, width: max(minimum, track.width * fraction), height: track.height)
         let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
-        if ink.palette == .spectrum, let gradient = NSGradient(colors: stride(from: 0.0, through: 1.0, by: 0.25).map {
-            ink.fill(fraction: fraction, position: $0, strength: strength)
-        }) {
+        if ink.palette == .spectrum, strength >= 1, let gradient = NSGradient(colors: MenuBarMeter.spectrumStops(dark: ink.dark)) {
             // The gradient spans the whole track, so a fuller bar reaches redder colours. Upright
             // bars start green at the bottom; in these flipped coordinates that is -90°.
             NSGraphicsContext.saveGraphicsState()
