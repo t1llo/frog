@@ -111,6 +111,7 @@ More examples in [`plugins/`](plugins/): [Hacker News](plugins/hacker-news) and 
 | **LLM usage** | Claude and Codex plan limits, token charts and estimated cost. |
 | **System monitor** | CPU, GPU and memory over the last ten minutes, free storage, battery and temperature. |
 | **Menu bar & Stay awake** | Hide icons you rarely need; keep the Mac awake for a while. |
+| **Screenshots** | Every screenshot you take goes straight to the clipboard, ready to paste into an agent. |
 | **App cleaner** | Uninstall apps with the files they leave behind, after a review. |
 | **Phone** | Your Android phone's clipboard and the Mac's stay in sync both ways, over Wi-Fi or Bluetooth, with the [Frog Companion](companion/android) app. |
 

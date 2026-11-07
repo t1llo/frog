@@ -59,7 +59,16 @@ public struct WorkflowPreferences: Codable, Equatable, Sendable {
     public var recordingMode: RecordingMode = .toggle
     public var output: TranscriptOutput = .copy
     public var microphoneID: String?
+    /// Seconds a local model stays in memory after its last use: 0 unloads at once, `keepLoaded` never on a timer.
     public var idleUnloadSeconds = 120
+    /// The same for the speech model of dictation. Nil follows `idleUnloadSeconds`.
+    public var speechIdleUnloadSeconds: Int?
+    public var effectiveSpeechIdleUnloadSeconds: Int { speechIdleUnloadSeconds ?? idleUnloadSeconds }
+    /// Keeps a model loaded until it is unloaded by hand, macOS runs short of memory or Frog quits.
+    public static let keepLoaded = -1
+    /// The delays Frog offers, from unloading at once to keeping the model loaded.
+    public static let idleUnloadChoices = [0, 120, 300, 900, 1800, 3600, 7200, 14400, 28800, keepLoaded]
+    public static let idleUnloadRange = keepLoaded...28800
     public var showDictationPopup = true
     public var shortcutPanelHotkey: Hotkey?
     public var textSource: TextSource?

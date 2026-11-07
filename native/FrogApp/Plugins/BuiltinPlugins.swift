@@ -21,6 +21,7 @@ enum BuiltinPlugins {
             PluginDescriptor(LLMUsagePlugin.self) { LLMUsagePlugin(context: $0) },
             PluginDescriptor(StayAwakePlugin.self) { StayAwakePlugin(context: $0) },
             PluginDescriptor(HiddenBarPlugin.self) { HiddenBarPlugin(context: $0) },
+            PluginDescriptor(ScreenshotsPlugin.self) { ScreenshotsPlugin(context: $0) },
             PluginDescriptor(AppCleanerPlugin.self) { AppCleanerPlugin(context: $0) },
             PluginDescriptor(PhonePlugin.self) { PhonePlugin(context: $0) },
             PluginDescriptor(CommunityPlugin.self) { CommunityPlugin(context: $0) }
@@ -33,7 +34,7 @@ enum BuiltinPlugins {
         "writing": .writing, "explain": .explain, "dictation": .dictation, "command-bar": .commandBar,
         "shortcuts": .applicationShortcuts, "clipboard": .clipboard, "notes": .scratchpad, "scripts": .scripts,
         "windows": .windows, "window-switcher": .windowSwitcher, "system-monitor": .systemMonitor,
-        "llm-usage": .usage, "stay-awake": .stayAwake, "hidden-bar": .menuBar, "app-cleaner": .cleaner,
+        "llm-usage": .usage, "stay-awake": .stayAwake, "hidden-bar": .menuBar, "screenshots": .screenshots, "app-cleaner": .cleaner,
         "phone": .phone, "community": .plugins
     ]
 

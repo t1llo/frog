@@ -7,16 +7,21 @@ struct LocalModelSettingsView: View {
     @EnvironmentObject private var model: AppModel
     /// A model folder chosen while models are downloaded in the current one, until it is confirmed.
     @State private var pendingModelFolder: URL?
-    /// Seconds a local model stays loaded after its last use, besides unloading at once.
-    static let idleUnloadChoices = [120, 300, 900, 1800, 3600]
+    /// Seconds a local model stays loaded after its last use, from unloading at once to keeping it loaded.
+    static let idleUnloadChoices = WorkflowPreferences.idleUnloadChoices
     private var prefs: WorkflowPreferences { model.configuration.preferences.workflowSettings }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             // One card: until a model is installed the folder is storage's only row, which would stand alone.
             FrogSection("Memory and storage") {
-                FrogRow("Unload idle models") {
-                    FrogDropdown(selected: prefs.idleUnloadSeconds, options: [0] + LocalModelSettingsView.idleUnloadChoices,
+                // Dictation reloads its speech model after every unload, so it gets its own delay.
+                FrogRow("Unload speech model", caption: "After the last dictation") {
+                    FrogDropdown(selected: prefs.effectiveSpeechIdleUnloadSeconds, options: LocalModelSettingsView.idleUnloadChoices,
+                                 title: { LocalModelSettings.idleTitle(seconds: $0) }) { seconds in update { $0.speechIdleUnloadSeconds = seconds } }
+                }
+                FrogRow("Unload text models", caption: "After the last use") {
+                    FrogDropdown(selected: prefs.idleUnloadSeconds, options: LocalModelSettingsView.idleUnloadChoices,
                                  title: { LocalModelSettings.idleTitle(seconds: $0) }) { seconds in update { $0.idleUnloadSeconds = seconds } }
                 }
                 // A value row while nothing is loaded, like Disk used; Unload now appears once there is something to unload.
@@ -80,7 +85,9 @@ struct LocalModelSettingsView: View {
 enum LocalModelSettings {
     /// The idle time as it is saved. The configuration file takes any number of seconds, not only the menu's choices.
     static func idleTitle(seconds: Int) -> String {
+        if seconds == WorkflowPreferences.keepLoaded { return "Keep loaded" }
         guard seconds > 0 else { return "Immediately" }
+        if seconds >= 3600, seconds % 3600 == 0 { return seconds == 3600 ? "1 hour" : "\(seconds / 3600) hours" }
         let minutes = seconds / 60, rest = seconds % 60
         if minutes == 0 { return "\(rest) sec" }
         return rest == 0 ? "\(minutes) min" : "\(minutes) min \(rest) sec"

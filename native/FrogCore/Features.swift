@@ -17,6 +17,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
     case systemMonitor
     case stayAwake
     case menuBar
+    case screenshots
     case cleaner
     case phone
     case plugins
@@ -38,6 +39,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .systemMonitor: "System monitor"
         case .stayAwake: "Stay awake"
         case .menuBar: "Menu bar"
+        case .screenshots: "Screenshots"
         case .cleaner: "App cleaner"
         case .phone: "Phone"
         case .plugins: "Plugins"
@@ -59,6 +61,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .systemMonitor: "gauge.medium"
         case .stayAwake: "cup.and.saucer"
         case .menuBar: "menubar.rectangle"
+        case .screenshots: "camera.viewfinder"
         case .cleaner: "trash.circle"
         case .phone: "iphone"
         case .plugins: "puzzlepiece.extension"
@@ -81,6 +84,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .systemMonitor: "CPU, GPU, memory, storage and battery."
         case .stayAwake: "Keep the Mac awake, also with the lid closed."
         case .menuBar: "Hide menu bar icons behind a divider."
+        case .screenshots: "Copy every screenshot to the clipboard."
         case .cleaner: "Uninstall apps with the files they leave behind."
         case .phone: "Share the clipboard and files with your Android phone."
         case .plugins: "Features you build with your AI agent, or install from others."

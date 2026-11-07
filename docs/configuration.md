@@ -47,7 +47,8 @@ Keys are case-sensitive. Booleans are `true`/`false`; numbers use a decimal poin
 | `history-enabled`, `history-hide-text` | Boolean; default `false` |
 | `history-limit` | 1–200; default 200 |
 | `history-retention-days` | 1–30; default 30 |
-| `model-idle-seconds` | 0–3600; default 120; 0 unloads after inference |
+| `model-idle-seconds` | -1–28800; default 120; 0 unloads after inference, -1 keeps models loaded |
+| `speech-model-idle-seconds` | -1–28800; the same for the dictation speech model; follows `model-idle-seconds` when unset |
 | `audio-model` | Legacy default: an audio ID in the built-in/custom model catalog; default `whisper-large-v3-turbo-626mb` |
 | `cleanup-model` | Legacy default: a local text model ID; default `qwen-0.6b` |
 | `text-model` | Legacy default: an optional local text model ID |
@@ -177,6 +178,12 @@ The Hidden bar plugin (formerly Menu-bar organization) keeps its settings in `[h
 `[hidden-bar]` decides; Frog keeps the `menubar.*` keys in step with it. Editing those keys and choosing **Reload** or **Import** writes them into `[hidden-bar]` again.
 
 Actions: `hidden-bar.toggle`, `hidden-bar.show`, `hidden-bar.hide` and `hidden-bar.arrange`. macOS status-item positions stay on each Mac.
+
+### Screenshots
+
+The Screenshots plugin is off by default and has no settings: while it is on, every screenshot taken with macOS's own tool (⇧⌘3, ⇧⌘4, ⇧⌘5) goes to the clipboard as an image, the moment it is taken. macOS first writes the screenshot to a temporary folder of `screencaptureui` while its thumbnail floats, and to the save folder (Screenshot's **Options > Save to**, the Desktop unless changed) once the thumbnail goes away; Frog copies whichever comes first and only once. Images in the save folder without macOS's screen-capture mark are left alone. Screen recordings are not copied.
+
+Actions: `screenshots.copy-latest` copies the newest screenshot in the save folder again; `screenshots.status` says where Frog looks and what it copied last.
 
 ### Portable usage display
 
