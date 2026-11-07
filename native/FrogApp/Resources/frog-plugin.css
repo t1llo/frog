@@ -93,7 +93,8 @@ a:hover { text-decoration: underline; }
 }
 
 /* Buttons are capsules filled like Frog's: secondary on the control layer, the one main action in
-   the accent, quiet ones with no fill until hovered. A press shrinks them slightly. */
+   the accent, quiet ones with no fill until hovered. A press shrinks them slightly. One size everywhere, as
+   Frog's own buttons: 24px tall with 13px medium text, on a page and in a popup alike. */
 button {
   font: 500 13px/16px var(--frog-font);
   color: var(--frog-ink);
@@ -101,7 +102,7 @@ button {
   border: 0;
   border-radius: 999px;
   padding: 0 12px;
-  min-height: var(--frog-control-height);
+  min-height: var(--frog-compact-height);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -246,6 +247,5 @@ input.frog-switch:focus { box-shadow: none; }
 :root[data-frog-surface="popup"] body { font-size: 13px; padding: 14px; margin: 0 0 8px; border-radius: var(--frog-radius-card); position: relative; isolation: isolate; }
 :root[data-frog-surface="popup"] body::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--frog-card); border-radius: inherit; pointer-events: none; }
 :root[data-frog-surface="popup"] .frog-page { padding: 0; gap: 12px; max-width: none; }
-:root[data-frog-surface="popup"] button { min-height: var(--frog-compact-height); padding: 0 10px; font-size: 12px; }
 :root[data-frog-surface="popup"] .frog-list { background: transparent; padding: 0; margin: 0 -8px; }
 :root[data-frog-surface="popup"] .frog-list > li, :root[data-frog-surface="popup"] .frog-item { padding: 6px 8px; }
