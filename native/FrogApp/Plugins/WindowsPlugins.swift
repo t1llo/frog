@@ -185,7 +185,7 @@ extension WindowsSettings {
 
     var actions: [PluginAction] {
         var actions = WindowAction.allCases.map { action in
-            PluginAction(id: "windows.\(WritingPlugin.slug(action.title))", title: action.title, symbol: "rectangle.split.2x1",
+            PluginAction(id: "windows.\(action.actionSlug)", title: action.title, symbol: "rectangle.split.2x1",
                          keywords: "window layout move resize", surfaces: [.shortcut, .agent]) { [model] _ in
                 model.runWindowAction(action); return .done()
             }
@@ -460,5 +460,27 @@ extension WindowSwitcherSettings {
         guard preferences.windowSwitcherEnabled else { return [] }
         let key = preferences.toolkitSettings.effectiveWindowSwitcherHotkey
         return [key, Hotkey(keyCode: key.keyCode, modifiers: key.modifiers | 512)]
+    }
+}
+
+private extension WindowAction {
+    /// The slug in the layout's action ID (`windows.maximize-on-display`), kept from the names layouts had when the
+    /// IDs were first given out, so saved shortcuts and agents' calls keep working after the shorter display names.
+    var actionSlug: String {
+        switch self {
+        case .topLeft: "top-left-quarter"
+        case .topRight: "top-right-quarter"
+        case .bottomLeft: "bottom-left-quarter"
+        case .bottomRight: "bottom-right-quarter"
+        case .maximize: "maximize-on-display"
+        case .restore: "restore-previous-size"
+        case .nextDisplay: "move-to-next-display"
+        case .previousDisplay: "move-to-previous-display"
+        case .toggleFullScreen: "toggle-full-screen"
+        case .centeredSmall: "centered-50"
+        case .centeredMedium: "centered-70"
+        case .centeredLarge: "centered-90"
+        default: WritingPlugin.slug(title)
+        }
     }
 }

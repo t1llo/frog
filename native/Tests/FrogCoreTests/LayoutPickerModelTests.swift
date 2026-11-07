@@ -84,13 +84,14 @@ final class LayoutPickerModelTests: XCTestCase {
         XCTAssertEqual(model.selection, .leftTwoThirds, "A layout the picker does not offer cannot be selected")
     }
 
-    func testTilesAreNamedShortlyUnderTheirSectionAndKeepTheirFullTitles() {
+    func testTilesHaveTheOneNameEverySurfaceUses() {
         let model = LayoutPickerModel(hotkeys: [:])
         XCTAssertEqual(model.sections[0].tiles.map(\.name), ["Left half", "Right half", "Top half", "Bottom half"])
-        XCTAssertEqual(model.sections[3].tiles.map(\.name), ["Maximize", "50%", "70%", "90%"])
+        XCTAssertEqual(model.sections[1].tiles.map(\.name), ["Top left", "Top right", "Bottom left", "Bottom right"])
+        XCTAssertEqual(model.sections[3].tiles.map(\.name), ["Maximize", "Centered 50%", "Centered 70%", "Centered 90%"])
         XCTAssertEqual(model.sections[4].tiles.map(\.name), ["Center", "Restore", "Next display", "Previous display"])
-        XCTAssertEqual(model.sections[3].tiles[1].title, WindowAction.centeredSmall.title)
-        XCTAssertEqual(model.sections[2].tiles.map(\.name), ["Left third", "Center third", "Right third", "Left ⅔", "Right ⅔"])
+        XCTAssertEqual(model.sections[2].tiles.map(\.name), ["Left third", "Center third", "Right third", "Left two-thirds", "Right two-thirds"])
+        for tile in model.sections.flatMap(\.tiles) { XCTAssertEqual(tile.name, tile.action.title) }
         let names = model.sections.flatMap { $0.tiles.map(\.name) }
         XCTAssertEqual(Set(names).count, names.count, "No two tiles share a name")
     }

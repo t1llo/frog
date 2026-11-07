@@ -6,37 +6,10 @@ public struct LayoutPickerModel: Equatable, Sendable {
     public struct Tile: Equatable, Sendable, Identifiable {
         public var action: WindowAction
         public var hotkey: Hotkey?
-        /// The full name, for VoiceOver and help. The filter matches it, `name` and the tile's groups.
+        /// The layout's one name (`WindowAction.title`), as every other surface names it. The filter matches it
+        /// and the tile's groups.
         public var title: String { action.title }
-        /// The name under its section's heading, one short line and never another tile's: "Left half", "Left
-        /// third", "50%".
-        public var name: String {
-            switch action {
-            case .leftHalf: "Left half"
-            case .rightHalf: "Right half"
-            case .topHalf: "Top half"
-            case .bottomHalf: "Bottom half"
-            case .leftThird: "Left third"
-            case .rightThird: "Right third"
-            case .centerThird: "Center third"
-            case .topLeft: "Top left"
-            case .topRight: "Top right"
-            case .bottomLeft: "Bottom left"
-            case .bottomRight: "Bottom right"
-            case .center: "Center"
-            case .leftTwoThirds: "Left ⅔"
-            case .rightTwoThirds: "Right ⅔"
-            case .maximize: "Maximize"
-            case .centeredSmall: "50%"
-            case .centeredMedium: "70%"
-            case .centeredLarge: "90%"
-            case .nextDisplay: "Next display"
-            case .previousDisplay: "Previous display"
-            case .restore: "Restore"
-            case .minimize: "Minimize"
-            case .toggleFullScreen: "Full screen"
-            }
-        }
+        public var name: String { action.title }
         public var id: String { action.rawValue }
         public init(action: WindowAction, hotkey: Hotkey?) { self.action = action; self.hotkey = hotkey }
     }
@@ -127,7 +100,7 @@ public struct LayoutPickerModel: Equatable, Sendable {
                 .map { Tile(action: $0, hotkey: hotkeys[$0]) }
                 .filter { tile in
                     // The cheat sheet's own group too, which More folds in: "undo" still finds Restore.
-                    text.isEmpty || [tile.title, tile.name, title, WindowCheatSheet.group(for: tile.action)]
+                    text.isEmpty || [tile.title, title, WindowCheatSheet.group(for: tile.action)]
                         .contains { $0.localizedCaseInsensitiveContains(text) }
                 }
             return tiles.isEmpty ? nil : Section(title: title, tiles: tiles)

@@ -116,6 +116,6 @@ public enum ShortcutReference {
     }
 
     private static func title(_ rule: Rule) -> String {
-        rule.action?.systemAction?.title ?? rule.name
+        rule.action?.systemAction?.title ?? rule.action?.windowAction?.title ?? rule.name
     }
 }
