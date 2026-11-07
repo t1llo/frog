@@ -47,8 +47,9 @@ struct HotkeyRecorder: View {
                 }.buttonStyle(RecorderButtonStyle(caps: caps != nil))
                     .focused($focused)
                     // An empty slot in a long list rests as a faint dash on the trailing edge, where caps would end;
-                    // the pill keeps its room, so nothing moves when it shows.
-                    .opacity(quiet ? 0 : 1)
+                    // the pill keeps its room, so nothing moves when it shows. Nearly clear rather than clear, so
+                    // the button stays clickable, focusable and in VoiceOver ("Shortcut: Record shortcut") while it rests.
+                    .opacity(quiet ? 0.001 : 1)
                     .overlay(alignment: .trailing) {
                         if quiet {
                             Text(verbatim: "–").font(FrogType.body).foregroundStyle(FrogStyle.placeholder)
