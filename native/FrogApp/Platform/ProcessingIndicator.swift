@@ -64,7 +64,7 @@ final class ProcessingIndicator {
         case .done: return ("checkmark.circle.fill", FrogStyle.good, name ?? L10n.text("Done"), name == nil ? nil : summary ?? L10n.text("Done"))
         case .cancelled: return ("xmark.circle.fill", FrogStyle.muted, name.map { String(format: L10n.text("%@ cancelled"), $0) } ?? L10n.text("Cancelled"), nil)
         case .failed(let message):
-            return (failureSymbol, FrogStyle.warning, failureText(failureSummary(message), rule: rule), "Show details")
+            return (failureSymbol, FrogStyle.warning, failureText(failureSummary(message), rule: rule), "Details")
         }
     }
 
@@ -180,8 +180,9 @@ struct FrogNoticePill: View {
             if let action {
                 // The pill's one button, the small grey pill at the message's own text size, ending 8 in from the
                 // capsule's end so its curve follows the capsule's.
+                // A clear gap after the message, so the button never reads as part of the sentence.
                 Button(L10n.text(action.title), action: action.run).buttonStyle(.frog(small: true)).fixedSize()
-                    .padding(.leading, FrogStyle.space2).padding(.trailing, -(FrogStyle.space16 - FrogStyle.space8))
+                    .padding(.leading, FrogStyle.space6).padding(.trailing, -(FrogStyle.space16 - FrogStyle.space8))
             }
         }
         .padding(.horizontal, FrogStyle.space16)
