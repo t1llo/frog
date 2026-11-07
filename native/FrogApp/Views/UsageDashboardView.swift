@@ -11,10 +11,13 @@ struct UsageDashboardView: View {
         let provider = usage.preferences.provider
         FrogPage {
             FrogPageHeader(title: "LLM usage", subtitle: "Plan limits and token use of your coding tools") {
-                FrogDropdown(selected: provider, options: usage.providers, width: 120, title: { $0 }) { usage.selectProvider($0) }
-                    .accessibilityLabel("Provider")
-                UsageRefreshAction(usage: usage)
+                Button("Refresh", systemImage: "arrow.clockwise") { usage.refresh() }
+                    .help("Read the plan limits and logs again")
             }
+            // Which service the page shows, as tabs leading the first row under the toolbar: both names in sight,
+            // so the choice explains itself.
+            CompactSegments(values: usage.providers, selected: provider, title: { $0 }) { usage.selectProvider($0) }
+                .accessibilityLabel("Provider")
             if provider == "Claude", usage.accountsNoticeVisible { UsageAccountsNotice(usage: usage) }
             if UsageStatusPopover.shownAccounts(usage).isEmpty { UsageLimitsSection(usage: usage) }
             else { FrogSection("Limits") { UsageAccountsLimits(usage: usage).padding(.vertical, 10) } }
@@ -256,12 +259,16 @@ private struct UsageActivitySection: View {
         let settings = usage.preferences
         let chart = usage.chart(provider: settings.provider, range: settings.range, metric: settings.metric)
         FrogSection("Activity") {
-            // Each as wide as its value, so the two sit the header's usual gap apart.
-            UsageMetricDropdown(usage: usage).fixedSize()
-            UsageRangeDropdown(usage: usage, compact: true).fixedSize()
-        } content: {
             VStack(alignment: .leading, spacing: 12) {
-                UsageActivityTotal(usage: usage, chart: chart, page: true)
+                // The figure leads; the period is a segmented choice level with it, each value named. The metric is
+                // chosen from the totals under the chart, so the card has no unlabelled dropdowns.
+                HStack(alignment: .top) {
+                    UsageActivityTotal(usage: usage, chart: chart, page: true)
+                    Spacer(minLength: FrogStyle.space12)
+                    CompactSegments(values: usage.ranges, selected: settings.range, title: { Self.rangeTitle($0) }) { range in
+                        var next = usage.preferences; next.range = range; usage.updatePreferences(next)
+                    }.accessibilityLabel("Activity period")
+                }
                 UsageActivityChart(usage: usage, chart: chart, compact: false)
             }.padding(.vertical, 10)
             if usage.loaded, chart.hasActivity { UsageTokenTotals(usage: usage, chart: chart).padding(.bottom, 10) }
@@ -284,6 +291,13 @@ private struct UsageActivitySection: View {
                 }
             }
         }
+    }
+}
+
+extension UsageActivitySection {
+    /// "24 hours", "7 days", "30 days": short enough for segments, plain enough to need no key.
+    static func rangeTitle(_ range: String) -> String {
+        switch range { case "24h": "24 hours"; case "30d": "30 days"; default: "7 days" }
     }
 }
 
@@ -394,13 +408,17 @@ private struct UsageTokenTotals: View {
             HStack(spacing: FrogStyle.space4) {
                 UsageTokenTotal(title: "Total tokens", value: usage.format(chart.totalTokens, metric: "Input"), choosable: false)
                     .help("Uncached input, cache reads, cache writes and output.")
-                ForEach(chart.totals.filter { $0.name != usage.preferences.metric }) { total in
+                // Every metric is here, the chart's own one marked as chosen, so this row is the chart's metric choice.
+                ForEach(chart.totals) { total in
+                    let chosen = total.name == usage.preferences.metric
                     Button {
                         var next = usage.preferences; next.metric = total.name; usage.updatePreferences(next)
                     } label: {
                         UsageTokenTotal(title: total.label == "API cost" ? "API estimate" : total.label,
-                                        value: usage.format(total.value, metric: total.name))
-                    }.buttonStyle(.plain).help("Show \(total.label == "API cost" ? "the API estimate" : total.label.lowercased()) in the chart")
+                                        value: usage.format(total.value, metric: total.name), chosen: chosen)
+                    }.buttonStyle(.plain)
+                        .help(chosen ? "" : "Show \(total.label == "API cost" ? "the API estimate" : total.label.lowercased()) in the chart")
+                        .accessibilityAddTraits(chosen ? .isSelected : [])
                 }
             }.padding(.horizontal, -FrogStyle.rowPadding)
         }
@@ -413,15 +431,20 @@ private struct UsageTokenTotal: View {
     let title: String
     let value: String
     var choosable = true
+    /// The chart's metric: filled like a chosen row, its name in the series colour beside the legend dot.
+    var chosen = false
     @State private var hovering = false
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.space2) {
-            Text(L10n.text(title)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-            Text(value).font(GraphStyle.figure).monospacedDigit()
+            HStack(spacing: 5) {
+                if chosen { Circle().fill(FrogStyle.series).frame(width: 6, height: 6) }
+                Text(L10n.text(title)).font(FrogType.small).foregroundStyle(chosen ? FrogStyle.ink : FrogStyle.muted).lineLimit(1)
+            }
+            Text(value).font(GraphStyle.figure).monospacedDigit().lineLimit(1)
         }.padding(.horizontal, FrogStyle.rowPadding).padding(.vertical, FrogStyle.space6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .frogRowHighlight(hovering: hovering && choosable)
+            .frogRowHighlight(hovering: hovering && choosable && !chosen, selected: chosen)
             .onHover { hovering = $0 }
     }
 }
@@ -717,7 +740,9 @@ struct UsageTrend {
     }
 }
 
-/// The running total as a line over each bucket's amount as a thin bar.
+/// A period's activity. On the page each bucket is a bar on a labelled scale, so days read as a series against one
+/// baseline; the running total, which the figure above already states, is in the chip under the pointer. A popup's
+/// small chart keeps to the running total's line.
 struct UsageTrendChart: View {
     let steps: [UsageTrend.Step]
     let compact: Bool
@@ -728,12 +753,16 @@ struct UsageTrendChart: View {
     @State private var selectedDate: Date?
 
     var body: some View {
+        if compact { line } else { UsageBucketChart(steps: steps, hourly: hourly, timeZone: timeZone, format: format) }
+    }
+
+    private var line: some View {
         let selected = selectedDate.flatMap { date in
             steps.min { abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date)) }
         }
-        VStack(spacing: 4) {
+        return VStack(spacing: 4) {
             Chart {
-                FrogChartGrid(values: compact ? [0.5] : [0, 0.5, 1])
+                FrogChartGrid(values: [0.5])
                 ForEach(steps) { step in
                     AreaMark(x: .value("Date", step.date), y: .value("Total", step.line))
                         .interpolationMethod(.monotone).foregroundStyle(FrogChart.areaFill(FrogStyle.series))
@@ -742,7 +771,7 @@ struct UsageTrendChart: View {
                 ForEach(steps) { step in
                     LineMark(x: .value("Date", step.date), y: .value("Total", step.line))
                         .interpolationMethod(.monotone).lineStyle(FrogChart.line).foregroundStyle(FrogStyle.series)
-                        .accessibilityLabel("Total by \(label(step.date, long: true))")
+                        .accessibilityLabel("Total by \(UsageBucketChart.label(step.date, hourly: hourly, long: true, timeZone: timeZone))")
                         .accessibilityValue(format(step.total))
                 }
                 if let last = steps.last {
@@ -757,61 +786,22 @@ struct UsageTrendChart: View {
             .chartYScale(domain: 0...1, range: .plotDimension(startPadding: 6, endPadding: FrogChart.endInset))
             .chartXAxis(.hidden).chartYAxis(.hidden).chartLegend(.hidden)
             .chartXSelection(value: $selectedDate)
-            .frogChartPlot(compact: compact)
-            .frame(height: compact ? 64 : showsBars ? 120 : 150)
+            .frogChartPlot(compact: true)
+            .frame(height: 64)
             .overlay(alignment: FrogChart.chipAlignment(pointerAt: pointer(selected))) {
                 if let selected {
                     FrogChartChip {
-                        Text("\(label(selected.date, long: true)) · \(format(selected.amount)) · \(format(selected.total)) total")
+                        Text("\(UsageBucketChart.label(selected.date, hourly: hourly, long: true, timeZone: timeZone)) · \(format(selected.amount)) · \(format(selected.total)) total")
                     }
                 }
             }
             .help("The line is the running total for the period.")
-            // Daily amounts on the page, in their own strip under the line so they never cross its fill; a popup's
-            // small chart keeps to the line. One lone bar (all the activity in the last bucket) reads as a stray mark,
-            // so bars need two buckets with activity.
-            if showsBars {
-                Chart {
-                    ForEach(steps) { step in
-                        BarMark(x: .value("Date", step.date), y: .value("Amount", step.bar), width: .fixed(4))
-                            .cornerRadius(FrogStyle.smallRadius)
-                            .foregroundStyle(FrogStyle.series.opacity(selected == nil ? 0.45 : selected?.id == step.id ? 0.9 : 0.2))
-                            .accessibilityLabel(label(step.date, long: true))
-                            .accessibilityValue(format(step.amount))
-                    }
-                    if let selected { FrogChartRule(x: .value("Date", selected.date)) }
-                }
-                .chartXScale(domain: domain(steps), range: .plotDimension(startPadding: FrogChart.endInset, endPadding: FrogChart.endInset))
-                // Scaled to the busiest bucket, so the strip's own height carries the difference between days.
-                .chartYScale(domain: 0...max(steps.map(\.bar).max() ?? 1, .leastNonzeroMagnitude))
-                .chartXAxis(.hidden).chartYAxis(.hidden).chartLegend(.hidden)
-                .chartXSelection(value: $selectedDate)
-                .frame(height: 30)
-                .help("Each bar is one \(hourly ? "hour" : "day")’s amount.")
-            }
             if let first = steps.first, let last = steps.last {
-                GraphAxis(leading: label(first.date, long: false), trailing: label(last.date, long: false))
-            }
-            // Two kinds of mark, so a key names both: the line's running total and the bars' amount per bucket, with
-            // the busiest bucket's figure, as the bars have no scale of their own.
-            if showsBars, let busiest = steps.max(by: { $0.amount < $1.amount }) {
-                HStack(spacing: FrogStyle.space16) {
-                    HStack(spacing: 5) {
-                        Capsule().fill(FrogStyle.series).frame(width: 12, height: 2)
-                        Text("Running total")
-                    }
-                    HStack(spacing: 5) {
-                        Capsule().fill(FrogStyle.series.opacity(0.45)).frame(width: 4, height: 9)
-                        Text("\(hourly ? L10n.text("Each hour") : L10n.text("Each day")) · \(L10n.text("busiest")) \(format(busiest.amount)), \(label(busiest.date, long: true))")
-                    }
-                    Spacer(minLength: 0)
-                }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1).padding(.top, FrogStyle.space4)
-                    .accessibilityElement(children: .combine)
+                GraphAxis(leading: UsageBucketChart.label(first.date, hourly: hourly, long: false, timeZone: timeZone),
+                          trailing: UsageBucketChart.label(last.date, hourly: hourly, long: false, timeZone: timeZone))
             }
         }
     }
-
-    private var showsBars: Bool { !compact && steps.lazy.filter { $0.amount > 0 }.prefix(2).count > 1 }
 
     /// Where the selected bucket lies across the chart, 0 at its left edge and 1 at its right.
     private func pointer(_ selected: UsageTrend.Step?) -> Double {
@@ -823,8 +813,89 @@ struct UsageTrendChart: View {
         let first = steps.first?.date ?? .now, last = steps.last?.date ?? first
         return last > first ? first...last : first.addingTimeInterval(-3600)...first.addingTimeInterval(3600)
     }
+}
 
-    private func label(_ date: Date, long: Bool) -> String {
+/// The page's activity chart: one rounded bar per day (or hour) in the accent, on a scale whose top is a round
+/// figure, labelled in a column left of the plot at 0, half and the top, as Stocks and Screen Time label theirs. A
+/// day with a little activity keeps a short visible stub, so no bar shrinks to a stray dot; a day with none has no bar.
+struct UsageBucketChart: View {
+    let steps: [UsageTrend.Step]
+    let hourly: Bool
+    let timeZone: TimeZone
+    let format: (Double) -> String
+    @State private var selectedKey: String?
+
+    static let plotHeight: CGFloat = 150
+    /// The share of the scale a bucket with any activity is drawn at least, so it shows as a bar.
+    static let minimumShare = 0.025
+
+    var body: some View {
+        let top = Self.niceCeiling(steps.map(\.amount).max() ?? 0)
+        let selected = selectedKey.flatMap(Int.init).flatMap { steps.indices.contains($0) ? steps[$0] : nil }
+        let stride = max(1, Int((Double(steps.count) / 7).rounded(.up)))
+        Chart {
+            ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                if step.amount > 0 {
+                    BarMark(x: .value("Bucket", String(index)), y: .value("Amount", max(step.amount, top * Self.minimumShare)),
+                            width: .ratio(steps.count > 14 ? 0.7 : 0.56))
+                        .clipShape(UnevenRoundedRectangle(topLeadingRadius: FrogStyle.smallRadius, topTrailingRadius: FrogStyle.smallRadius, style: .continuous))
+                        .foregroundStyle(FrogStyle.series.opacity(selected == nil || selected?.id == step.id ? 0.9 : 0.35))
+                        .accessibilityLabel(Self.label(step.date, hourly: hourly, long: true, timeZone: timeZone))
+                        .accessibilityValue(format(step.amount))
+                } else {
+                    // An empty bucket keeps its place on the axis without a mark.
+                    BarMark(x: .value("Bucket", String(index)), y: .value("Amount", 0)).foregroundStyle(.clear)
+                        .accessibilityLabel(Self.label(step.date, hourly: hourly, long: true, timeZone: timeZone))
+                        .accessibilityValue(format(0))
+                }
+            }
+        }
+        .chartYScale(domain: 0...max(top, .leastNonzeroMagnitude))
+        .chartYAxis {
+            AxisMarks(position: .leading, values: [0, top / 2, top]) { value in
+                AxisGridLine(stroke: FrogChart.gridLine).foregroundStyle(FrogStyle.hairline)
+                AxisValueLabel {
+                    if let amount = value.as(Double.self) {
+                        Text(amount == 0 ? "0" : format(amount)).font(FrogType.small).monospacedDigit().foregroundStyle(FrogStyle.muted)
+                    }
+                }
+            }
+        }
+        .chartXAxis {
+            // A label under every bar for a week, and every few for a month or a day, counted back from the newest.
+            AxisMarks(values: steps.indices.filter { (steps.count - 1 - $0) % stride == 0 }.map(String.init)) { value in
+                AxisValueLabel(centered: true, collisionResolution: .disabled) {
+                    if let key = value.as(String.self), let index = Int(key), steps.indices.contains(index) {
+                        Text(Self.label(steps[index].date, hourly: hourly, long: false, timeZone: timeZone))
+                            .font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize()
+                    }
+                }
+            }
+        }
+        .chartLegend(.hidden)
+        .chartXSelection(value: $selectedKey)
+        .frame(height: Self.plotHeight + 20)
+        .overlay(alignment: FrogChart.chipAlignment(pointerAt: selected.flatMap { step in
+            steps.firstIndex { $0.id == step.id }.map { Double($0) / Double(max(1, steps.count - 1)) }
+        } ?? 0)) {
+            if let selected {
+                FrogChartChip {
+                    Text("\(Self.label(selected.date, hourly: hourly, long: true, timeZone: timeZone)) · \(format(selected.amount)) · \(format(selected.total)) so far")
+                }.padding(.leading, 48)
+            }
+        }
+        .help(L10n.text(hourly ? "Each bar is one hour’s amount." : "Each bar is one day’s amount."))
+    }
+
+    /// The smallest round figure (1, 2, 2.5 or 5 times a power of ten) at or above the busiest bucket, so the scale's
+    /// top and middle read as plain numbers.
+    static func niceCeiling(_ value: Double) -> Double {
+        guard value.isFinite, value > 0 else { return 1 }
+        let power = pow(10, floor(log10(value)))
+        return ([1, 2, 2.5, 5, 10].map { $0 * power }.first { $0 >= value * 0.9999 }) ?? 10 * power
+    }
+
+    static func label(_ date: Date, hourly: Bool, long: Bool, timeZone: TimeZone) -> String {
         var style = hourly ? (long ? Date.FormatStyle(date: .abbreviated, time: .shortened) : .dateTime.hour())
             : .dateTime.month(.abbreviated).day()
         style.timeZone = timeZone
