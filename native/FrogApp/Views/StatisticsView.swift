@@ -39,21 +39,22 @@ struct StatisticsView: View {
                 VStack(alignment: .leading, spacing: FrogStyle.space12) {
                     CompactSegments(values: Period.allCases, selected: period, title: { $0.rawValue }) { period = $0 }
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: FrogStyle.space10), GridItem(.flexible())], spacing: FrogStyle.space10) {
-                        metric("Recordings", value: totals.dictations.formatted(), symbol: "mic", zero: totals.dictations == 0)
+                        metric("Recordings", value: Self.number(totals.dictations), symbol: "mic", zero: totals.dictations == 0)
                         metric("Recording time", value: duration(totals.recordingSeconds), symbol: "clock", zero: totals.recordingSeconds < 1)
-                        metric("Words dictated", value: totals.words.formatted(), symbol: "text.word.spacing", zero: totals.words == 0)
-                        metric("Words per minute", value: totals.wordsPerMinute.map { $0.formatted(.number.precision(.fractionLength(0))) } ?? "—",
+                        metric("Words dictated", value: Self.number(totals.words), symbol: "text.word.spacing", zero: totals.words == 0)
+                        metric("Words per minute", value: totals.wordsPerMinute.map { $0.formatted(.number.precision(.fractionLength(0)).locale(L10n.locale)) } ?? "—",
                                symbol: "speedometer", zero: totals.wordsPerMinute == nil)
                     }
                 }
-                FrogSection("Rules executed") {
-                    countRow("Successful rule runs", count: totals.ruleRuns)
-                    SectionCaption(text: "By kind").padding(.top, 6)
+                // The total belongs to the heading, as every counted group's does, so the card holds one group:
+                // the runs by kind.
+                FrogSection("Rule runs", count: totals.ruleRuns) {
                     ForEach(ActivityRuleKind.allCases, id: \.self) { kind in
                         countRow(ruleTitle(kind), count: totals.ruleRuns(kind))
                     }
                 }
-                FrogSection("Tool use", footer: "Only completed actions count. Daily totals are kept for a year.") {
+                FrogSection("Tool use", count: ActivityToolKind.allCases.reduce(0) { $0 + totals.toolUses($1) },
+                            footer: "Only completed runs count. Daily totals are kept for a year.") {
                     ForEach(ActivityToolKind.allCases, id: \.self) { kind in
                         countRow(toolTitle(kind), count: totals.toolUses(kind))
                     }
@@ -95,22 +96,25 @@ struct StatisticsView: View {
         totals.dictations == 0 && totals.ruleRuns == 0 && ActivityToolKind.allCases.allSatisfy { totals.toolUses($0) == 0 }
     }
 
+    /// A count in English digits ("1,276"), whatever region the Mac is set to, as the rest of the interface is English.
+    static func number(_ value: Int) -> String { value.formatted(.number.locale(L10n.locale)) }
+
+    /// One figure: its tile and name on top, the number large under them, as Activity and Screen Time set a figure.
     private func metric(_ title: String, value: String, symbol: String, zero: Bool) -> some View {
         FrogCard {
-            VStack(alignment: .leading, spacing: 8) {
-                // The symbol in a fixed width, so the four titles start at the same place.
-                HStack(spacing: FrogStyle.space6) {
-                    Image(systemName: symbol).frame(width: 16)
-                    Text(title)
-                }.font(FrogType.small).foregroundStyle(FrogStyle.muted)
+            VStack(alignment: .leading, spacing: FrogStyle.space10) {
+                HStack(spacing: FrogStyle.space8) {
+                    PluginIconTile(symbol: symbol, tint: DictationPlugin.info.tint.color, size: .sidebar)
+                    Text(L10n.text(title)).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
+                }
                 Text(value).font(FrogType.title).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
                     .foregroundStyle(zero ? FrogStyle.muted : FrogStyle.ink)
-            }
+            }.frame(maxWidth: .infinity, alignment: .leading)
         }.accessibilityElement(children: .combine)
     }
     private func countRow(_ title: String, count: Int) -> some View {
         FrogRow(title) {
-            Text(count.formatted()).font(FrogType.bodyMedium).monospacedDigit().foregroundStyle(count == 0 ? FrogStyle.muted : FrogStyle.ink)
+            Text(Self.number(count)).font(FrogType.body).monospacedDigit().foregroundStyle(count == 0 ? FrogStyle.muted : FrogStyle.ink)
         }
     }
     private func duration(_ seconds: Double) -> String {

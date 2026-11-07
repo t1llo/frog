@@ -304,6 +304,9 @@ private struct AppearanceTile<Picture: View>: View {
                 picture
                     .frame(width: 76, height: 56)
                     .clipShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
+                    // A hairline holds the picture's edge, so the light desktop does not melt into a light page.
+                    .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
                     .padding(3)
                     .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius + 3, style: .continuous)
                         .strokeBorder(selected ? FrogStyle.accent : hovering ? FrogStyle.hairline : .clear, lineWidth: 2))
@@ -343,7 +346,7 @@ private struct WindowSketch: View {
 
     /// A light desktop that is nearly white, so the Light tile reads as light rather than grey, and a dark one.
     private func desktop(dark: Bool) -> some View {
-        LinearGradient(colors: dark ? [Color(white: 0.3), Color(white: 0.12)] : [Color(white: 0.97), Color(white: 0.87)],
+        LinearGradient(colors: dark ? [Color(white: 0.3), Color(white: 0.12)] : [Color(white: 0.95), Color(white: 0.82)],
                        startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
@@ -437,7 +440,7 @@ private struct ThemeCard: View {
                 .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius + 3, style: .continuous)
                     .strokeBorder(selected ? FrogStyle.accent : hovering ? FrogStyle.hairline : .clear, lineWidth: 2))
                 Text(L10n.text(theme.title)).font(selected ? FrogType.rowMedium : FrogType.body)
-                    .foregroundStyle(selected ? FrogStyle.ink : FrogStyle.muted).lineLimit(1)
+                    .foregroundStyle(FrogStyle.ink).lineLimit(1)
             }.contentShape(Rectangle())
         }.buttonStyle(.plain).onHover { hovering = $0 }
             .accessibilityLabel(L10n.text(theme.title)).accessibilityAddTraits(selected ? .isSelected : [])

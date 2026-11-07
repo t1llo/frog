@@ -71,11 +71,15 @@ struct WritingView: View {
     }
 
     /// The rule's model, then what it does with the result when that is not the usual replacing ("Llama 3.2 · Copies
-    /// the result"), so each caption says what sets the rule apart. A rule without a model says so in its caption.
+    /// the result"), so each caption says what sets the rule apart. An enabled rule without a model leaves it out, since
+    /// the notice above says so once; one that is off says "No model" itself, as no notice speaks for it.
     private func caption(_ rule: Rule) -> String? {
-        var parts: [String] = [model.ruleHasModel(rule) ? model.ruleModelLabel(rule) : L10n.text("No model")]
+        var parts: [String] = []
+        if model.ruleHasModel(rule) { parts.append(model.ruleModelLabel(rule)) }
+        else if !rule.enabled { parts.append(L10n.text("No model")) }
         switch rule.textOutput {
-        case .replace: break
+        // Without a model to name, the usual replacing is said too, so every rule keeps a caption and the rows one height.
+        case .replace: if parts.isEmpty { parts.append(L10n.text("Replaces the selection")) }
         case .copy: parts.append(L10n.text("Copies the result"))
         case .panel: parts.append(L10n.text("Shows the answer in a panel"))
         }
@@ -248,6 +252,12 @@ struct WritingRuleEditor: View {
             HStack(spacing: 16) {
                 FrogTextField(placeholder: "Name your rule", text: $rule.name).textFieldStyle(.plain).font(FrogType.title)
                     .accessibilityLabel("Rule name")
+                // Saving a copy is a second way to save, not a sheet button: an icon beside the name, so the footer
+                // keeps Delete alone on one side and Cancel and Save on the other.
+                if existing {
+                    IconAction(title: "Save as copy", symbol: "plus.square.on.square") { saveCopy() }
+                        .frogDisabled(named ? nil : "Name the rule first")
+                }
                 // The switch alone, as on the Writing page's rows: a label beside it would only say "On" while it is on.
                 Toggle("Rule on", isOn: $rule.enabled).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                     .help(rule.enabled ? "Turn the rule off" : "Turn the rule on")
@@ -296,9 +306,7 @@ struct WritingRuleEditor: View {
             if let issue { InlineIssue(message: issue).padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space10) }
             FrogSheetButtons {
                 if existing {
-                    // Two pills like Cancel and Save beside them, words only: the colour alone says which one removes.
                     Button("Delete", role: .destructive) { deleting = true }.buttonStyle(.frog(.destructive))
-                    Button("Save as copy") { saveCopy() }.buttonStyle(.frog()).frogDisabled(named ? nil : "Name the rule first")
                 }
             } trailing: {
                 FrogCancelButton { dismiss() }
@@ -478,10 +486,8 @@ private struct WritingRuleRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             FrogRow(rule.name, caption: caption, icon: {
-                // The tile the rule wears in the selection bubble and the command bar: Writing's, or Explain's for a
-                // rule that answers in the panel.
-                PluginIconTile(symbol: SelectionBubbleItems.symbol(for: rule),
-                               tint: (rule.answersInPanel ? ExplainPlugin.info.tint : WritingPlugin.info.tint).color, size: .list)
+                // The rule's glyph on the colour of what it does, so rules side by side read apart.
+                RuleIconTile(rule: rule)
             }) {
                 HStack(spacing: 8) {
                     // Hover actions lead, so the caps and the switch keep their place whether or not they show.

@@ -24,7 +24,7 @@ struct DocumentsPage<Toolbar: View, Content: View, Footer: View>: View {
     @FocusState private var renameFocused: Bool
     /// The list and card never get shorter than this, however small the window.
     private static var minHeight: CGFloat { 380 }
-    private static var listWidth: CGFloat { 220 }
+    private static var listWidth: CGFloat { 240 }
 
     private var selected: UUID? {
         get { documents.selection[kind] }

@@ -85,9 +85,9 @@ private struct DictationRuleSection: View {
     }
 
     /// The rule's name heads its card, unless it is the page's own name, as the rule Frog starts with is: a heading
-    /// never repeats the page's title, so that rule's card is headed "Rule", beside "Recording" for every rule.
+    /// never repeats the page's title, so that rule's card is headed "Default rule", beside "Recording" for every rule.
     private var heading: String {
-        rule.name.trimmingCharacters(in: .whitespaces).localizedCaseInsensitiveCompare("Dictation") == .orderedSame ? "Rule" : rule.name
+        rule.name.trimmingCharacters(in: .whitespaces).localizedCaseInsensitiveCompare("Dictation") == .orderedSame ? "Default rule" : rule.name
     }
 
     /// The rule's settings; a rule that is off keeps them, still changeable, so they are not dimmed.

@@ -23,7 +23,8 @@ struct ShortcutsSettingsView: View {
                     VStack(spacing: FrogStyle.space16) {
                         ShortcutExamples()
                         HStack(spacing: FrogStyle.space8) {
-                            ShortcutAddButton(title: "Add app", list: appList, primary: false)
+                            // One primary, as every empty state has: apps are what most people start with.
+                            ShortcutAddButton(title: "Add app", list: appList, primary: true)
                             ShortcutAddButton(title: "Add action", list: actionList, primary: false)
                         }
                     }
@@ -136,23 +137,22 @@ struct ShortcutsSettingsView: View {
     }
 }
 
-/// What a shortcut can be, under the empty page's message: a few made-up ones, each its name and its caps on an
-/// inset block, so the page shows the result before anything is added.
+/// What a shortcut can be, under the empty page's message: a few made-up ones, each its name and its caps as plain
+/// text on the card, so the page shows the result before anything is added without the examples reading as buttons.
 private struct ShortcutExamples: View {
     private static let examples: [(title: String, keys: String)] = [
         ("Open Safari", "⌥S"), ("Open Terminal", "⌥T"), ("Lock screen", "⌃⌥L"),
     ]
     var body: some View {
-        HStack(spacing: FrogStyle.space8) {
+        HStack(spacing: FrogStyle.space16 + FrogStyle.space8) {
             ForEach(Self.examples, id: \.title) { example in
-                HStack(spacing: FrogStyle.space8) {
-                    Text(L10n.text(example.title)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                HStack(spacing: FrogStyle.space6) {
+                    Text(L10n.text(example.title)).font(FrogType.body).foregroundStyle(FrogStyle.muted)
                     KeyCaps(example.keys)
                 }
-                .padding(.horizontal, FrogStyle.space10).frame(height: FrogStyle.controlHeight)
-                .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
             }
         }
+        .allowsHitTesting(false)
         .accessibilityElement(children: .combine)
     }
 }

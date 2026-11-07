@@ -18,9 +18,8 @@ struct CommandBarSettingsView: View {
                         plugin.save { $0.shortcut = shortcut }
                     }), showsClearButton: false)
                 }
-                // Using ⌘Space instead of Spotlight is part of choosing the shortcut, so it shares the card as a
-                // sub-group; its own rows say a shortcut problem, so the note is not repeated above them.
-                SectionCaption(text: "⌘Space instead of Spotlight").padding(.top, FrogStyle.space6)
+                // Using ⌘Space instead of Spotlight is part of choosing the shortcut, so its two rows share the card;
+                // their titles say what they are about, so no sub-heading splits the card.
                 CommandBarSetupView()
             }
             FrogSection("Results") {
@@ -40,7 +39,7 @@ private struct CommandChoicesRows: View {
         switch choices.count {
         case 0: "Nothing learned yet"
         case 1: "1 choice learned"
-        default: "\(choices.count.formatted()) choices learned"
+        default: "\(choices.count.formatted(.number.locale(L10n.locale))) choices learned"
         }
     }
 
@@ -52,10 +51,11 @@ private struct CommandChoicesRows: View {
                 })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
             // What was learned stays until it is forgotten, whether learning is on or not, so the row always shows.
+            // With nothing learned the row only says so: a Forget button with nothing to forget would read as live.
             FrogRow(remembered) {
-                Button("Forget…", role: .destructive) { confirmingForget = true }
-                    .buttonStyle(.frog(.destructive)).disabled(choices.count == 0 && choices.issue == nil)
-                    .help(choices.count == 0 && choices.issue == nil ? L10n.text("Nothing to forget yet") : "")
+                if choices.count > 0 || choices.issue != nil {
+                    Button("Forget…", role: .destructive) { confirmingForget = true }.buttonStyle(.frog(.destructive))
+                }
             }
             if let issue = choices.issue { FrogRowNote(text: issue, tone: FrogStyle.warning) }
         }

@@ -57,8 +57,9 @@ struct ExplainView: View {
                 }
             } else {
                 // A notice, not a setting: the bubble is switched on the Writing page.
-                FrogRow("Selection bubble", caption: "Off. The shortcut works either way.") {
-                    Button("Turn on in Writing") { model.toolkit.select(.feature(.writing)) }
+                // The button says where it goes; the caption says why the switch is not here.
+                FrogRow("Selection bubble", caption: "Off on the Writing page. The shortcut works either way.") {
+                    Button("Open Writing") { model.toolkit.select(.feature(.writing)) }
                 }
             }
     }
