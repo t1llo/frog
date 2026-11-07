@@ -140,11 +140,19 @@ struct AppearanceSettingsView: View {
         _model = ObservedObject(wrappedValue: model)
         _draft = StateObject(wrappedValue: AppearanceDraft(model: model))
     }
-    /// As Rex lays out its appearance settings: a card of tile pickers for the colour scheme and the interface
-    /// style, a card of theme cards, and the glass settings only while the interface is glass. One draft.
+    /// As Rex lays out its appearance settings: one card with the tile pickers for the colour scheme and the
+    /// interface style, the theme cards under them and the accent settings that go with the theme, then the glass
+    /// settings only while the interface is glass. One card rather than two, so the themes are in view on a
+    /// default-size window. One draft.
     var body: some View {
-        FrogSection("Appearance") { schemeAndStyle }
-        FrogSection("Theme") { themes }
+        FrogSection("Appearance") {
+            schemeAndStyle
+            themes
+            accent
+            FrogRow("Custom palette", caption: "palette.light.* and palette.dark.* in the configuration file") {
+                Button("Open config") { model.openConfiguration() }
+            }
+        }
         if style == .glass { FrogSection("Glass") { glass } }
     }
 
@@ -177,8 +185,12 @@ struct AppearanceSettingsView: View {
                 }
             }
             Spacer(minLength: 0)
-        }.padding(.vertical, FrogStyle.space10)
+        }.padding(.top, FrogStyle.space10)
             .onDisappear { draft.commit() }
+    }
+
+    /// Whether the accent follows the theme, and the colour when it does not.
+    @ViewBuilder private var accent: some View {
         FrogRow("Tint with theme", caption: "Use the theme's own accent color.") {
             Toggle("Tint with theme", isOn: Binding(get: { appearance.useThemeAccent ?? (appearance.accentHex == "A3D8AF") }, set: { on in
                 var value = appearance; value.useThemeAccent = on
@@ -205,15 +217,17 @@ struct AppearanceSettingsView: View {
         }
     }
 
-    @ViewBuilder private var themes: some View {
-        ThemeCards(selected: appearance.effectiveTheme) { theme in
-            var value = appearance; value.theme = theme
-            value.lightPalette = nil; value.darkPalette = nil
-            draft.set(value)
-        }.padding(.vertical, FrogStyle.space10)
-        FrogRow("Custom palette", caption: "palette.light.* and palette.dark.* in the configuration file") {
-            Button("Open config") { model.openConfiguration() }
+    private var themes: some View {
+        VStack(alignment: .leading, spacing: FrogStyle.space8) {
+            Text(L10n.text("Theme")).font(FrogType.body).foregroundStyle(FrogStyle.muted)
+            ThemeCards(selected: appearance.effectiveTheme) { theme in
+                var value = appearance; value.theme = theme
+                value.lightPalette = nil; value.darkPalette = nil
+                draft.set(value)
+            }
         }
+        .accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Theme"))
+        .padding(.vertical, FrogStyle.space10)
     }
 
     private static func title(_ mode: AppearancePreferences.Mode) -> String {
@@ -327,17 +341,19 @@ private struct WindowSketch: View {
         }
     }
 
+    /// A light desktop that is nearly white, so the Light tile reads as light rather than grey, and a dark one.
     private func desktop(dark: Bool) -> some View {
-        LinearGradient(colors: dark ? [Color(white: 0.3), Color(white: 0.12)] : [Color(white: 0.9), Color(white: 0.76)],
+        LinearGradient(colors: dark ? [Color(white: 0.3), Color(white: 0.12)] : [Color(white: 0.97), Color(white: 0.87)],
                        startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
-    /// Two neutral shapes where the window sits, which a Glass window lets show through.
+    /// A soft band across the desktop, corner to corner behind the window, which a Glass window lets show through
+    /// and a Classic one hides; it runs off the tile's edges so it never reads as a mark on the window.
     private var shapes: some View {
-        ZStack {
-            Circle().fill(Color(white: 0.45)).frame(width: 30, height: 30).offset(x: -18, y: -12)
-            RoundedRectangle(cornerRadius: FrogStyle.smallRadius / 2, style: .continuous).fill(Color(white: 0.62)).frame(width: 34, height: 22).offset(x: 20, y: 12)
-        }
+        Capsule(style: .continuous)
+            .fill(LinearGradient(colors: [Color(white: 0.55), Color(white: 0.4)], startPoint: .leading, endPoint: .trailing))
+            .frame(width: 120, height: 20)
+            .rotationEffect(.degrees(-28))
     }
 
     private func window(dark: Bool) -> some View {
@@ -384,7 +400,7 @@ private struct ThemeCards: View {
             ForEach(AppearancePreferences.Theme.allCases, id: \.self) { theme in
                 ThemeCard(theme: theme, swatch: FrogStyle.swatch(theme, dark: scheme == .dark), selected: theme == selected) { choose(theme) }
             }
-        }.padding(.vertical, FrogStyle.space10)
+        }
     }
 }
 
