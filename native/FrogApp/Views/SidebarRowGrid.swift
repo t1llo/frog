@@ -86,10 +86,12 @@ extension View {
     }
 }
 
-/// The top edge is kept whole by the scroll resting on row tops just under the top fade, and a row scrolled up into
-/// that fade fades out; the bottom edge, which falls wherever the window's height puts it, by hiding a row that would
-/// show cut there. So the list starts and ends on a row boundary at rest and never shows half a row, and a row
-/// scrolled into view fades in once all of it fits.
+/// The top edge is kept whole by the scroll resting on row tops just under the top fade, and the bottom edge, which
+/// falls wherever the window's height puts it, by holding back a row that would show cut there. A row held back is
+/// not cut or blanked: it shows as content fading under the edge, at most `ghostOpacity` where it is nearest the list
+/// and clear at the edge, the way a Mac sidebar's rows slip under its search field, so the edge itself says the list
+/// goes on, without a band or a line drawn over empty space. A held-back row is hidden from VoiceOver until all of it
+/// fits; a click on it opens its page, which scrolls it whole into view.
 private struct SidebarGridRow: ViewModifier {
     let id: AnyHashable
     let grid: SidebarRowGrid
@@ -97,21 +99,41 @@ private struct SidebarGridRow: ViewModifier {
     let keepsWith: CGFloat
     @Environment(\.sidebarVisibleBottom) private var visibleBottom
     @Environment(\.sidebarVisibleTop) private var visibleTop
-    @State private var whole = true
+    @State private var place = Place.whole
+
+    /// Where the row is against the list's visible part.
+    enum Place: Equatable { case whole, beyondTop, beyondBottom }
+    /// How strongly a held-back row shows where it is nearest the list; it fades to nothing at its far edge.
+    static let ghostOpacity = 0.8
+
+    /// Opaque for a whole row; for a held-back one, eased from `ghostOpacity` on its side towards the list to clear on
+    /// its side towards the edge, so it reads as slipping under the edge rather than as a dimmed, disabled row.
+    private var fade: LinearGradient {
+        guard place != .whole else { return LinearGradient(colors: [.black], startPoint: .top, endPoint: .bottom) }
+        let near = Self.ghostOpacity
+        let stops: [Gradient.Stop] = [.init(color: .black.opacity(near), location: 0), .init(color: .black.opacity(near * 0.35), location: 0.55),
+                                      .init(color: .clear, location: 1)]
+        return LinearGradient(stops: stops, startPoint: place == .beyondTop ? .bottom : .top, endPoint: place == .beyondTop ? .top : .bottom)
+    }
 
     func body(content: Content) -> some View {
         content
-            .opacity(whole ? 1 : 0).allowsHitTesting(whole).accessibilityHidden(!whole)
-            .animation(FrogMotion.reveal, value: whole)
+            .mask { fade }
+            // A held-back row still opens its page when clicked, and the list then scrolls it whole into view.
+            .accessibilityHidden(place != .whole)
+            .animation(FrogMotion.reveal, value: place)
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(SidebarRowGrid.content)) } action: {
                 grid.rows[id] = $0
                 grid.groups[id] = group
             }
-            .onGeometryChange(for: Bool.self) { [visibleTop, visibleBottom, keepsWith] proxy in
+            .onGeometryChange(for: Place.self) { [visibleTop, visibleBottom, keepsWith] proxy in
                 let frame = proxy.frame(in: .named(SidebarRowGrid.viewport))
-                return visibleBottom <= 0 || (frame.minY >= visibleTop - 0.5 && frame.maxY + keepsWith <= visibleBottom + 0.5)
-            } action: { fits in
-                if fits != whole { whole = fits }
+                if visibleBottom <= 0 { return .whole }
+                if frame.minY < visibleTop - 0.5 { return .beyondTop }
+                if frame.maxY + keepsWith > visibleBottom + 0.5 { return .beyondBottom }
+                return .whole
+            } action: { new in
+                if new != place { place = new }
             }
             .onDisappear { grid.rows[id] = nil; grid.groups[id] = nil }
     }
