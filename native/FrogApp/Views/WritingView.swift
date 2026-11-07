@@ -501,9 +501,9 @@ private struct WritingRuleRow: View {
                         Button { edit() } label: { ProblemMark(help: "No model chosen: click to choose one") }
                             .buttonStyle(.plain)
                     }
-                    // Every rule has a shortcut slot: its caps, changed with a click, or a Record shortcut button, so
-                    // the column of caps ends on one edge and a rule without keys says it can take some.
-                    HotkeyRecorder(hotkey: Binding(get: { rule.hotkey }, set: setHotkey), showsClearButton: false)
+                    // Every rule has a shortcut slot: its caps, changed with a click, or a quiet dash that turns into
+                    // the Record shortcut button while the row is pointed at, so a list of rules is no wall of buttons.
+                    HotkeyRecorder(hotkey: Binding(get: { rule.hotkey }, set: setHotkey), showsClearButton: false, unset: .placeholder)
                     // Cleared in the rule's editor: a clear button here would land on Edit, which shows on hover.
                     Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: setEnabled))
                         .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
@@ -516,6 +516,7 @@ private struct WritingRuleRow: View {
         .frogRowHighlight(hovering: hovering)
         .padding(.horizontal, -FrogStyle.space8)
         .onHover { hovering = $0 }
+        .frogRevealsRecorder()
         .onTapGesture { edit() }
         .contextMenu {
             Button("Edit…", systemImage: "pencil") { edit() }

@@ -69,12 +69,13 @@ struct ShortcutsSettingsView: View {
             HStack(spacing: 6) {
                 HotkeyRecorder(hotkey: Binding(get: { binding.key?.hotkey }, set: { hotkey in
                     do { try plugin.setKey(hotkey.flatMap { try? Shortcut($0) }, at: index) } catch { model.report(error) }
-                }), showsClearButton: false)
+                }), showsClearButton: false, unset: .placeholder)
                 IconAction(title: "Remove \(plugin.title(of: binding))", symbol: "xmark") {
                     save(plugin.bindings.enumerated().filter { $0.offset != index }.map(\.element))
                 }.help("Remove")
             }
         }
+        .frogRevealsRecorder()
     }
 
     private func caption(of binding: ShortcutBinding) -> String? {

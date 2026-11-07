@@ -34,8 +34,9 @@ struct PluginSettingsSheet: View {
                             FrogSection("Shortcuts") {
                                 ForEach(shortcutActions, id: \.id) { action in
                                     FrogRow(action.title, caption: plugins.shortcutIssues[PluginRuntime.shortcutKey(id, action.id)]) {
-                                        HotkeyRecorder(hotkey: shortcutBinding(action.id))
+                                        HotkeyRecorder(hotkey: shortcutBinding(action.id), unset: .placeholder)
                                     }
+                                    .frogRevealsRecorder()
                                 }
                             }
                         }
@@ -188,8 +189,7 @@ private struct PluginNumberSetting: View {
 
     /// One width for every number setting, room for five digits, so the minus, the field and the plus of each row
     /// line up down the card whatever the plugin's bounds.
-    static let fieldWidth: CGFloat = 56
-    private var fieldWidth: CGFloat { Self.fieldWidth }
+    private var fieldWidth: CGFloat { FrogStyle.numberFieldWidth }
 
     /// "1–120", or the one bound the plugin sets.
     private var range: String? {
