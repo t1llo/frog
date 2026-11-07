@@ -165,9 +165,10 @@ struct MainView: View {
         if abs(end - sidebarEndSpace) > 0.5 { sidebarEndSpace = end }
     }
 
-    /// The fade at the list's bottom edge: the group gap above pinned rows, so at rest it covers only empty space,
-    /// and taller over the panel's edge once the list scrolls there, so the cut row reads as more to come.
-    private var sidebarBottomFade: CGFloat { sidebarOverflows ? 24 : FrogStyle.sidebarGroupGap }
+    /// The fade at the list's bottom edge, one group gap: above the pinned rows it covers only empty space, and once
+    /// the list scrolls a row that would reach into it is hidden (`sidebarGridRow`), so at rest it covers nothing
+    /// and rows only pass through it while the list moves.
+    private var sidebarBottomFade: CGFloat { FrogStyle.sidebarGroupGap }
 
     // MARK: Toolbar
 
@@ -318,6 +319,7 @@ struct MainView: View {
                             if abs(frame.height - sidebarHeights.content) > 0.5 { sidebarHeights.content = frame.height; layOutSidebar() }
                         }
                         .padding(.bottom, sidebarEndSpace)
+                        .environment(\.sidebarVisibleBottom, sidebarHeights.viewport - sidebarBottomFade)
                         .minimalScrollbars()
                     }
                     .coordinateSpace(name: SidebarRowGrid.viewport)
@@ -342,7 +344,6 @@ struct MainView: View {
                 }
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { sidebarHeights.region = $0; layOutSidebar() }
-            .onChange(of: sidebarOverflows) { sidebarGrid.bottomFade = sidebarBottomFade }
             .onAppear { sidebarGrid.bottomFade = sidebarBottomFade }
         }
         .background(FrogStyle.sidebar, in: RoundedRectangle(cornerRadius: FrogStyle.sidebarRadius, style: .continuous))

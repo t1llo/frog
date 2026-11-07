@@ -74,13 +74,47 @@ struct SidebarRowSnap: ScrollTargetBehavior {
 }
 
 extension View {
-    /// Reports this sidebar row's frame to `grid`, under the ID the list scrolls to.
-    /// `group` is the ID of the header the row sits under, which comes into view with it.
+    /// Reports this sidebar row's frame to `grid`, under the ID the list scrolls to, and shows the row only while it
+    /// is whole above the list's bottom fade. `group` is the ID of the header the row sits under, which comes into
+    /// view with it.
     func sidebarGridRow(_ id: AnyHashable, in grid: SidebarRowGrid, group: AnyHashable? = nil) -> some View {
-        onGeometryChange(for: CGRect.self) { $0.frame(in: .named(SidebarRowGrid.content)) } action: {
-            grid.rows[id] = $0
-            grid.groups[id] = group
-        }
+        modifier(SidebarGridRow(id: id, grid: grid, group: group))
+    }
+}
+
+/// The top edge is kept whole by the scroll resting on row tops; the bottom edge, which falls wherever the window's
+/// height puts it, by hiding a row that would show cut there. So the list ends on a row boundary at rest and never
+/// shows half a row, and a row scrolled up into view fades in once all of it fits.
+private struct SidebarGridRow: ViewModifier {
+    let id: AnyHashable
+    let grid: SidebarRowGrid
+    let group: AnyHashable?
+    @Environment(\.sidebarVisibleBottom) private var visibleBottom
+    @State private var whole = true
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(whole ? 1 : 0).allowsHitTesting(whole)
+            .animation(FrogMotion.reveal, value: whole)
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(SidebarRowGrid.content)) } action: {
+                grid.rows[id] = $0
+                grid.groups[id] = group
+            }
+            .onGeometryChange(for: Bool.self) { [visibleBottom] proxy in
+                visibleBottom <= 0 || proxy.frame(in: .named(SidebarRowGrid.viewport)).maxY <= visibleBottom + 0.5
+            } action: { fits in
+                if fits != whole { whole = fits }
+            }
             .onDisappear { grid.rows[id] = nil; grid.groups[id] = nil }
+    }
+}
+
+private struct SidebarVisibleBottomKey: EnvironmentKey { static let defaultValue: CGFloat = 0 }
+extension EnvironmentValues {
+    /// Where the sidebar list's rows stop showing whole: the scroll view's height less its bottom fade; 0 before
+    /// the list is laid out, which shows every row.
+    var sidebarVisibleBottom: CGFloat {
+        get { self[SidebarVisibleBottomKey.self] }
+        set { self[SidebarVisibleBottomKey.self] = newValue }
     }
 }
