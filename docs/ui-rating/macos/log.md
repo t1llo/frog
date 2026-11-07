@@ -15,5 +15,8 @@ Base branch `ui-rating-2`, platform branch `claude/ui-rating-macos-b98e6c`. Targ
 | Round | Commit | Overall | Criteria 1-10 | Raycast | iStat | Ice | CodexBar | Comparison vs best | Ledger (open/reopened/closed) | Decision | Best so far |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 0 | 92db0ba | 6.0 | 6.5, 6.0, 7.0, 4.0, 3.0*, 6.0, 7.0, 7.5, 7.0, 7.5 | 8.8 | 8.6 | 7.3 | 7.7 | (first judge) | 20 open / 0 / 0 | below target → improve round 1 (owner items first) | 92db0ba |
+| 1 | ec3ad74 | 7.7 | 7.8, 7.4, 7.3, 8.5, 7.2, 8.0, 7.9, 7.8, 7.5, 7.8 | 9.0 | 8.1 | 7.2 | 7.2 | new better (both runs; vs e2f1bec) | 8 open / 9 reopened / 12 closed | below target, cap allows → improve round 2 | ec3ad74 |
 
 \* Criterion 5 was scored without any shot of the pickers or menu-bar items (capture gap); the capture adds them from round 1 and the baseline is recaptured with them for the comparison.
+
+Round 1: the comparison ran against e2f1bec, the baseline recaptured with the pickers (same app code as 92db0ba). No merge from the base branch in this round.
