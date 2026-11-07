@@ -270,29 +270,38 @@ private struct InstalledPluginRow: View {
 
     private var opens: Bool { item.runs && item.hasPage }
 
+    /// The icon, name, version, Running badge and the description or problem.
+    private var summary: some View {
+        HStack(spacing: FrogStyle.space12) {
+            PluginIconTile(symbol: PluginSymbol.name(item.symbol), tint: PluginTint.purple.color)
+            VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                HStack(alignment: .firstTextBaseline, spacing: FrogStyle.space6) {
+                    Text(L10n.text(item.name)).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
+                    if let version = item.manifest?.version, !version.isEmpty {
+                        Text(version).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                    }
+                    if running { FrogBadge(text: "Running") }
+                }
+                Text(L10n.text(item.problem ?? item.manifest?.description.taglineInCaption ?? ""))
+                    .font(FrogType.small).foregroundStyle(item.problem == nil ? FrogStyle.muted : FrogStyle.warning)
+                    .lineLimit(item.problem == nil ? 1 : 2).truncationMode(.tail)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
     var body: some View {
         HStack(spacing: FrogStyle.space12) {
-            Button(action: open) {
-                HStack(spacing: FrogStyle.space12) {
-                    PluginIconTile(symbol: PluginSymbol.name(item.symbol), tint: PluginTint.purple.color)
-                    VStack(alignment: .leading, spacing: FrogStyle.space2) {
-                        HStack(alignment: .firstTextBaseline, spacing: FrogStyle.space6) {
-                            Text(L10n.text(item.name)).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
-                            if let version = item.manifest?.version, !version.isEmpty {
-                                Text(version).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                            }
-                            if running { FrogBadge(text: "Running") }
-                        }
-                        Text(L10n.text(item.problem ?? item.manifest?.description.taglineInCaption ?? ""))
-                            .font(FrogType.small).foregroundStyle(item.problem == nil ? FrogStyle.muted : FrogStyle.warning)
-                            .lineLimit(1).truncationMode(.tail)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }.contentShape(Rectangle())
+            // A row that opens is a button; one that cannot (stopped, or with a problem) is plain content, so its
+            // problem keeps the warning colour and VoiceOver reads all of it.
+            if opens {
+                Button(action: open) { summary.contentShape(Rectangle()) }
+                    .buttonStyle(.plain)
+                    .help(help)
+                    .accessibilityElement(children: .combine).accessibilityHint(L10n.text("Opens its page"))
+            } else {
+                summary.help(help).accessibilityElement(children: .combine)
             }
-            .buttonStyle(.plain).disabled(!opens)
-            .help(help)
-            .accessibilityLabel(L10n.text(item.name)).accessibilityHint(opens ? L10n.text("Opens its page") : "")
             HStack(spacing: FrogStyle.space8) {
                 if item.needsReview {
                     Button("Review", action: review).buttonStyle(.frog(.primary))
