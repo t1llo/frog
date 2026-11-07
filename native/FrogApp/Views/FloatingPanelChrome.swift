@@ -15,21 +15,21 @@ enum FloatingPanelLayout {
     static let chromeHeight: CGFloat = headerHeight + FrogStyle.space2 + FrogStyle.panelInset + footerHeight
 }
 
-/// The search line every keyboard panel opens with: the 15-point magnifier in the rows' icon column, then the query
-/// in `FrogType.query`, borderless, as Raycast's. The line is a drag handle for the panel family, and once the family
+/// The search line every keyboard panel opens with: the 15-point magnifier in a 22-point column, then the query in
+/// `FrogType.query`, borderless, as Raycast's. One geometry for every panel, so with the panels stacked the
+/// magnifier and the query start at the same x whatever icons the rows below carry. The line is a drag handle for the panel family, and once the family
 /// was dragged away from its default place it ends in the button that moves it back.
 struct FloatingPanelSearchLine<Field: View, Trailing: View>: View {
     @ObservedObject var placement: PanelFamilyPlacer
-    /// The width of the rows' icon column and the gap after it, so the query starts where the row titles do.
-    var iconColumn: CGFloat = 22
-    var spacing: CGFloat = FrogStyle.space10
+    static var iconColumn: CGFloat { 22 }
+    static var spacing: CGFloat { FrogStyle.space10 }
     @ViewBuilder var field: Field
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
-        HStack(spacing: spacing) {
+        HStack(spacing: Self.spacing) {
             Image(systemName: "magnifyingglass").font(.system(size: 15, weight: .medium)).foregroundStyle(FrogStyle.muted)
-                .frame(width: iconColumn, height: 36)
+                .frame(width: Self.iconColumn, height: 36)
                 // The magnifier is a handle of its own: the field beside it takes the clicks on the rest of the line.
                 .overlay { WindowDragRegion(onWindowDragEnd: { [weak placement] in placement?.finishDrag($0) }).help("Drag to move") }
             field
@@ -45,7 +45,7 @@ struct FloatingPanelSearchLine<Field: View, Trailing: View>: View {
 }
 
 extension FloatingPanelSearchLine where Trailing == EmptyView {
-    init(placement: PanelFamilyPlacer, iconColumn: CGFloat = 22, spacing: CGFloat = FrogStyle.space10, @ViewBuilder field: () -> Field) {
-        self.init(placement: placement, iconColumn: iconColumn, spacing: spacing, field: field, trailing: { EmptyView() })
+    init(placement: PanelFamilyPlacer, @ViewBuilder field: () -> Field) {
+        self.init(placement: placement, field: field, trailing: { EmptyView() })
     }
 }

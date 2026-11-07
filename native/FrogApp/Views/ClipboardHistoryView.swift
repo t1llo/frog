@@ -121,7 +121,7 @@ struct ClipboardHistoryView: View {
         let entries = state.visible
         VStack(spacing: 0) {
             // Borderless, as the command bar's: the magnifier in the rows' icon column, the query where their text starts.
-            FloatingPanelSearchLine(placement: placement, iconColumn: 20) {
+            FloatingPanelSearchLine(placement: placement) {
                 // The field's own placeholder is nearly as dark as typed text; this one is lighter.
                 TextField("", text: $state.query).textFieldStyle(.plain).font(FrogType.query)
                     .focused($searching).accessibilityLabel(L10n.text("Search clipboard"))

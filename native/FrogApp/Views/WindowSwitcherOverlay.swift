@@ -110,7 +110,7 @@ struct WindowSwitcherOverlay: View {
     /// The search line, as on the command bar and clipboard: the panel never takes the keyboard (the held shortcut
     /// keeps the app in front), so what is typed while it is held is drawn here as text, and Backspace takes it back.
     private var searchLine: some View {
-        FloatingPanelSearchLine(placement: placement, iconColumn: 28, spacing: FrogStyle.space12) {
+        FloatingPanelSearchLine(placement: placement) {
             Text(model.query.isEmpty ? L10n.text("Type to search windows") : model.query).font(FrogType.query)
                 .foregroundStyle(model.query.isEmpty ? FrogStyle.placeholder : FrogStyle.ink)
                 .lineLimit(1).truncationMode(.head).frame(maxWidth: .infinity, alignment: .leading)
