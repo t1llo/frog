@@ -138,11 +138,14 @@ struct ShortcutPanelRow<Leading: View>: View {
     }
 }
 
-/// A row's symbol in a shortcut panel, in the slot a window layout's picture takes, muted like the cheat sheet's.
+/// A row's symbol in a shortcut panel, in the slot a window layout's picture takes, drawn as that picture draws its
+/// mark: in the accent, bold, the height of the picture's display outline. So a list mixing layouts and commands
+/// reads as one family of marks, never thin grey outlines beside filled accent tiles.
 struct ShortcutPanelSymbol: View {
     let name: String
     var body: some View {
-        Image(systemName: name).font(.system(size: 13)).foregroundStyle(FrogStyle.muted).accessibilityHidden(true)
+        Image(systemName: name).font(.system(size: 12, weight: .semibold)).foregroundStyle(FrogStyle.accent)
+            .frame(width: WindowLayoutGlyph.size.width, height: WindowLayoutGlyph.size.height).accessibilityHidden(true)
     }
 }
 
