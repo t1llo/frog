@@ -10,6 +10,10 @@ struct HotkeyRecorder: View {
     var purpose: HotkeyManager.ShortcutPurpose = .rule
     /// What the button says while there is no shortcut; a grid of many says less.
     var emptyTitle = "Record shortcut"
+    /// How a recorder with no shortcut looks at rest. `.button` (the default) shows the Record shortcut pill;
+    /// `.placeholder` shows a quiet dash and reveals the pill only while the pointer is over the recorder or its row
+    /// (`frogRevealsRecorder()`), or the recorder has keyboard focus, for lists where many slots stay empty.
+    var unset: Unset = .button
     /// Told when a recording starts and ends, such as for a row that keeps a pointed-at control in view.
     var recordingChanged: (Bool) -> Void = { _ in }
     @State private var recording = false
@@ -18,6 +22,16 @@ struct HotkeyRecorder: View {
     /// Why the last key press was refused. Not private, so that a layout test can show one without pressing a key.
     @State var hint: String?
     @State private var id = UUID()
+    @FocusState private var focused: Bool
+    @Environment(\.frogRecorderRevealed) private var rowRevealed
+    @Environment(\.frogKeyboardSurface) private var keyboardSurface
+
+    enum Unset { case button, placeholder }
+
+    /// The quiet look: nothing recorded, not recording, and nothing points at it.
+    private var quiet: Bool {
+        unset == .placeholder && hotkey == nil && !recording && !hovering && !rowRevealed && !focused
+    }
 
     var body: some View {
         // One view: a second one would land beside the recorder in the row that holds it.
@@ -31,6 +45,17 @@ struct HotkeyRecorder: View {
                 Button { recording.toggle(); hint = nil } label: {
                     if let caps { RecordedKeys(hotkey: caps) } else { Text(text) }
                 }.buttonStyle(RecorderButtonStyle(caps: caps != nil))
+                    .focused($focused)
+                    // An empty slot in a long list rests as a faint dash on the trailing edge, where caps would end;
+                    // the pill keeps its room, so nothing moves when it shows.
+                    .opacity(quiet ? 0 : 1)
+                    .overlay(alignment: .trailing) {
+                        if quiet {
+                            Text(verbatim: "–").font(FrogType.body).foregroundStyle(FrogStyle.placeholder)
+                                .allowsHitTesting(false).accessibilityHidden(true)
+                        }
+                    }
+                    .animation(FrogMotion.hover(!quiet, keyboardSurface: keyboardSurface), value: quiet)
                     .accessibilityLabel("Shortcut: \(text)")
                     .accessibilityActions {
                         if clearable { Button(L10n.text("Clear shortcut"), action: clear) }
@@ -79,6 +104,29 @@ struct HotkeyRecorder: View {
 
     private var clearable: Bool { showsClearButton && (hotkey != nil || recording) }
     private func clear() { hotkey = nil; recording = false; hint = nil }
+}
+
+private struct FrogRecorderRevealedKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    /// True while the pointer is over a row marked `frogRevealsRecorder()`: its `HotkeyRecorder(unset: .placeholder)`
+    /// shows its Record shortcut pill instead of the quiet dash.
+    var frogRecorderRevealed: Bool {
+        get { self[FrogRecorderRevealedKey.self] }
+        set { self[FrogRecorderRevealedKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// Marks a row whose `HotkeyRecorder(unset: .placeholder)` shows its Record shortcut pill while the pointer is
+    /// anywhere over the row, not only over the dash.
+    func frogRevealsRecorder() -> some View { modifier(RecorderRevealRow()) }
+}
+
+private struct RecorderRevealRow: ViewModifier {
+    @State private var hovering = false
+    func body(content: Content) -> some View {
+        content.environment(\.frogRecorderRevealed, hovering).onHover { hovering = $0 }
+    }
 }
 
 /// Plain for the recorded caps, which draw their own hover; Frog's secondary button for text.
