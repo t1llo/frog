@@ -345,7 +345,7 @@ struct ProviderEditor: View {
                     }.disabled(testing || discovering)
                     FrogSection("Credentials") {
                         LabeledField(title: hasSavedKey ? "Replacement API key" : "API key") {
-                            SecureField(hasSavedKey ? "Leave blank to keep the saved key" : (provider.kind.isLocal ? "Optional" : "Paste your key"), text: $apiKey).disabled(clearKey)
+                            SecureField(clearKey ? "The saved key will be removed" : hasSavedKey ? "Leave blank to keep the saved key" : (provider.kind.isLocal ? "Optional" : "Paste your key"), text: $apiKey).disabled(clearKey)
                         }
                         if !provider.kind.isLocal && provider.kind != .compatible {
                             Link(destination: provider.kind.setupURL) {
