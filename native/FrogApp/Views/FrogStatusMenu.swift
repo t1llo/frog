@@ -172,29 +172,36 @@ struct StayAwakeMenuRow: View {
         VStack(alignment: .leading, spacing: FrogStyle.space2) {
             HStack(spacing: FrogStyle.space10) {
                 PluginIconTile(symbol: power.isEnabled ? "cup.and.saucer.fill" : "cup.and.saucer", tint: StayAwakePlugin.info.tint.color, size: .sidebar)
-                // Truncates rather than pushing the controls out where a translation runs long.
-                Text(L10n.text("Stay awake")).font(FrogType.row).lineLimit(1)
-                Spacer(minLength: FrogStyle.space6)
-                if power.isEnabled {
-                    Text(power.deadline.map { "Until \($0.formatted(date: .omitted, time: .shortened))" } ?? "Until turned off")
-                        .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                } else {
-                    FrogDropdown(selected: power.duration, options: StayAwakeController.DurationChoice.allCases, width: 96, compact: true,
-                                 title: { L10n.text($0 == .untilTime ? "Until \(StayAwakePage.title(of: power.untilTime))" : $0.title) },
-                                 choose: choose)
-                        .accessibilityLabel("Stay-awake duration")
+                // The name, and under it how long (while off, a choice) or until when (while on), so the switch is
+                // the row's one trailing control and the duration never reads as a stepper beside it.
+                VStack(alignment: .leading, spacing: 0) {
+                    // Truncates rather than pushing the controls out where a translation runs long.
+                    Text(L10n.text("Stay awake")).font(FrogType.row).lineLimit(1)
+                    if power.isEnabled {
+                        Text(power.deadline.map { "Until \($0.formatted(date: .omitted, time: .shortened))" } ?? "Until turned off")
+                            .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                            .frame(height: FrogStyle.compactHeight - FrogStyle.space4, alignment: .leading)
+                    } else {
+                        FrogDropdown(selected: power.duration, options: StayAwakeController.DurationChoice.allCases, width: 96, compact: true,
+                                     title: { L10n.text($0 == .untilTime ? "Until \(StayAwakePage.title(of: power.untilTime))" : $0.title) },
+                                     choose: choose)
+                            .fitToContent()
+                            .accessibilityLabel("Stay-awake duration")
+                            // The value starts on the title's edge; only the hover fill reaches past it.
+                            .padding(.leading, -7)
+                            .frame(height: FrogStyle.compactHeight - FrogStyle.space4)
+                    }
                 }
+                Spacer(minLength: FrogStyle.space6)
                 Toggle("Stay awake", isOn: Binding(get: { power.isEnabled }, set: power.setEnabled))
                     .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                     .accessibilityHint("Keep this Mac awake")
                     // While a change is under way the spinner takes the switch's place, so the row needs no extra width.
                     .opacity(power.isBusy ? 0 : 1)
                     .overlay { if power.isBusy { FrogSpinner(size: .mini) } }
-                    // Apart from the duration, so the two controls read as two, not one crowded cluster.
-                    .padding(.leading, FrogStyle.space6)
             }
-            // The switch ends where the command rows' keys do, `rowPadding` in.
-            .padding(.horizontal, FrogStyle.rowPadding).frame(height: FrogStyle.menuRowHeight)
+            // The switch ends where the command rows' keys do, `rowPadding` in; two lines, a little taller than them.
+            .padding(.horizontal, FrogStyle.rowPadding).padding(.vertical, FrogStyle.space6)
             if let message = power.error ?? power.notice {
                 Text(String(message.prefix(300))).font(FrogType.caption)
                     .foregroundStyle(power.error == nil ? FrogStyle.muted : FrogStyle.warning).lineLimit(2)
