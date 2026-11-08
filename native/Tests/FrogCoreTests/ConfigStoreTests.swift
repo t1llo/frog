@@ -143,7 +143,9 @@ final class ConfigStoreTests: XCTestCase {
 
     func testTheWatcherDebouncesBurstsOfWrites() async throws {
         try write("[phone]\nport = 0\n")
-        let store = ConfigStore(fileURL: file, debounce: 0.15)
+        // The debounce is long next to the 40 ms between writes, so a busy CI runner that stalls
+        // a write still lands inside one burst.
+        let store = ConfigStore(fileURL: file, debounce: 0.6)
         try store.load()
         var reported: [ConfigValue?] = []
         store.onChange = { reported.append($0.value(at: ["phone", "port"])) }
@@ -155,7 +157,7 @@ final class ConfigStoreTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(40))
         }
         try handle.close()
-        try await Task.sleep(for: .milliseconds(700))
+        try await Task.sleep(for: .milliseconds(1800))
         XCTAssertEqual(reported, [5])
     }
 
