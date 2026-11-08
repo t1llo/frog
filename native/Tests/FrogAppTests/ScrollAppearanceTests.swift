@@ -27,6 +27,13 @@ final class ScrollAppearanceTests: XCTestCase {
         XCTAssertEqual(window.backgroundColor, .clear)
         XCTAssertEqual(host.layer?.cornerRadius, FrogStyle.panelRadius, "The native host must clip system-added background siblings to the popup outline")
         XCTAssertEqual(host.layer?.masksToBounds, true)
+        // Reduce Transparency and Increase Contrast draw every popup opaque, so there is no blur to check.
+        // GitHub's macOS runners have Reduce Transparency on.
+        let workspace = NSWorkspace.shared
+        if workspace.accessibilityDisplayShouldReduceTransparency || workspace.accessibilityDisplayShouldIncreaseContrast {
+            XCTAssertTrue(descendants(host).compactMap { $0 as? NSVisualEffectView }.isEmpty, "An opaque popup draws no blur")
+            return
+        }
         let effect = try XCTUnwrap(descendants(host).compactMap { $0 as? NSVisualEffectView }.first)
         XCTAssertEqual(effect.blendingMode, .behindWindow)
         XCTAssertEqual(effect.material, .popover)
