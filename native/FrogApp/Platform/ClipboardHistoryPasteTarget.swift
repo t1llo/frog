@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Carbon
 import FrogCore
 
 /// Injectable AX boundary for native editor fixtures without test-runner permissions.
@@ -21,6 +22,11 @@ struct ClipboardHistoryTargetAccess {
     var activate: () -> Void = {}
     var restoreFocus: (AXUIElement) -> Void = { _ in }
     var pause: () async throws -> Void = { try await Task.sleep(for: .milliseconds(20)) }
+    /// Whether the app keeps its text fields from Accessibility, as Chrome, Helium and Electron apps do
+    /// unless a screen reader switched them on, which Frog never does.
+    var hidesFields: () -> Bool = { false }
+    /// Secure keyboard entry is on, as it is while a password field has focus.
+    var secureInput: () -> Bool = { false }
     var command: () throws -> Void
 
     static func live(application: AXUIElement, pid: pid_t,
@@ -67,6 +73,11 @@ struct ClipboardHistoryTargetAccess {
                  focus(focused)
                  limit(focused, 0.15)
              },
+             hidesFields: {
+                 guard let url = NSRunningApplication(processIdentifier: pid)?.bundleURL else { return false }
+                 return SelectionWatcher.System.live.builtOnChromium(url)
+             },
+             secureInput: { IsSecureEventInputEnabled() },
              command: { try ClipboardSelection.command("v", keyCode: 9, menu: menu, pid: pid) })
     }
 }
@@ -81,11 +92,14 @@ struct NativeClipboardHistoryPasteTarget: ClipboardHistoryPasteTarget {
     let access: ClipboardHistoryTargetAccess
     var applicationPID: pid_t? { pid }
 
-    static func capture() -> Self? {
+    /// The field when Accessibility shows it, otherwise the app in front when it hides its fields.
+    static func captureAny() -> (any ClipboardHistoryPasteTarget)? {
         guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
-        let application = AXUIElementCreateApplication(app.processIdentifier)
+        let pid = app.processIdentifier
+        let application = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(application, 0.15)
-        return capture(pid: app.processIdentifier, access: .live(application: application, pid: app.processIdentifier))
+        let access = ClipboardHistoryTargetAccess.live(application: application, pid: pid)
+        return capture(pid: pid, access: access) ?? ApplicationClipboardHistoryPasteTarget.capture(pid: pid, access: access)
     }
 
     static func capture(pid: pid_t, access: ClipboardHistoryTargetAccess) -> Self? {
@@ -167,5 +181,58 @@ struct NativeClipboardHistoryPasteTarget: ClipboardHistoryPasteTarget {
 
     private func changedTarget() -> FrogError {
         .message("The target app or field changed. The item is copied; paste it where you want it.")
+    }
+}
+
+/// The app in front, for apps that hide their fields from Accessibility: Chrome, Helium, Arc and
+/// Electron apps such as Slack or Claude. Frog cannot see which field has focus there, so it pastes
+/// with the app's own Paste command into its focused window, as other clipboard managers do. An app
+/// that shows its fields gets the field instead, and a password field is never pasted into.
+@MainActor
+struct ApplicationClipboardHistoryPasteTarget: ClipboardHistoryPasteTarget {
+    let window: AXUIElement
+    let pid: pid_t
+    let access: ClipboardHistoryTargetAccess
+    var applicationPID: pid_t? { pid }
+
+    /// About 60 ms after the app is brought forward again, for keyboard focus to leave the closed panel.
+    static let settlePauses = 3
+
+    static func capture(pid: pid_t, access: ClipboardHistoryTargetAccess) -> Self? {
+        guard access.trusted(), pid != access.ownPID, access.frontmostPID() == pid,
+              !access.secureInput(), let window = access.window() else { return nil }
+        if let focused = access.focused() {
+            // A field Accessibility does show was already judged by the precise target.
+            guard !access.secure(focused), access.hidesFields() else { return nil }
+        }
+        return Self(window: window, pid: pid, access: access)
+    }
+
+    func prepareForPaste(isCurrent: () -> Bool) async throws {
+        try check(isCurrent)
+        access.activate()
+        for _ in 0..<Self.settlePauses {
+            try await access.pause()
+            try check(isCurrent)
+        }
+    }
+
+    func paste() throws {
+        try check({ true })
+        guard !access.secureInput() else {
+            throw FrogError.message("A password field has focus. The item is copied; paste it manually.")
+        }
+        try access.command()
+    }
+
+    private func check(_ isCurrent: () -> Bool) throws {
+        try Task.checkCancellation()
+        guard isCurrent() else { throw CancellationError() }
+        guard access.trusted(), access.frontmostPID() == pid else { throw changedTarget() }
+        if let current = access.window() { guard CFEqual(window, current) else { throw changedTarget() } }
+    }
+
+    private func changedTarget() -> FrogError {
+        .message("The target app or window changed. The item is copied; paste it where you want it.")
     }
 }

@@ -8,7 +8,7 @@ final class NotesPlugin: LegacyPlugin, FrogPlugin {
                                  summary: "Markdown notes and text to paste")
 
     /// Finds the field a note pastes into; tests have none.
-    var captureTarget: @MainActor () -> (any ClipboardHistoryPasteTarget)? = { NativeClipboardHistoryPasteTarget.capture() }
+    var captureTarget: @MainActor () -> (any ClipboardHistoryPasteTarget)? = { NativeClipboardHistoryPasteTarget.captureAny() }
 
     private var documents: LocalDocuments { model.documents }
     private var paste: NotePaste {

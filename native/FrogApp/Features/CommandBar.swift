@@ -132,7 +132,7 @@ import SwiftUI
     private let waitForRelease: () async throws -> Void
 
     init(model: AppModel, pasteboard: NSPasteboard = .general, fileScopes: [Any]? = nil,
-         captureTarget: @escaping @MainActor () -> (any ClipboardHistoryPasteTarget)? = { NativeClipboardHistoryPasteTarget.capture() },
+         captureTarget: @escaping @MainActor () -> (any ClipboardHistoryPasteTarget)? = { NativeClipboardHistoryPasteTarget.captureAny() },
          waitForRelease: @escaping () async throws -> Void = { try await ClipboardSelection.waitForShortcutRelease() },
          loadIcon: @escaping @Sendable (String) -> NSImage = { MacSettingsDiscovery.image(forIconKey: $0) },
          fileSearch: (any CommandFileSearching)? = nil,

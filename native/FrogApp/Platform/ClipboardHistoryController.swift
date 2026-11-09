@@ -90,7 +90,7 @@ final class ClipboardHistoryController {
         self.placement = placement ?? PanelFamilyPlacer()
         self.pasteboard = pasteboard
         self.history = history ?? ClipboardHistoryStore(pasteboard: pasteboard)
-        self.captureTarget = captureTarget ?? { NativeClipboardHistoryPasteTarget.capture() }
+        self.captureTarget = captureTarget ?? { NativeClipboardHistoryPasteTarget.captureAny() }
         self.waitForRelease = waitForRelease ?? { try await ClipboardSelection.waitForShortcutRelease() }
         self.activationNotifications = activationNotifications ?? NSWorkspace.shared.notificationCenter
         state.update(self.history.entries)

@@ -128,6 +128,68 @@ final class ClipboardHistoryPasteTargetTests: XCTestCase {
         }
         XCTAssertEqual(pasteboard.string(forType: .string), "chosen")
     }
+
+    func testAChromiumAppThatHidesItsFieldIsPastedIntoWithItsOwnPasteCommand() async throws {
+        // Helium, Chrome and Claude show only their page while no screen reader switched them on.
+        let probe = TargetProbe()
+        probe.role = "AXWebArea"; probe.hidesFields = true
+        XCTAssertNil(NativeClipboardHistoryPasteTarget.capture(pid: probe.pid, access: probe.access))
+        let target = try XCTUnwrap(ApplicationClipboardHistoryPasteTarget.capture(pid: probe.pid, access: probe.access))
+        XCTAssertEqual(target.applicationPID, probe.pid)
+        try await target.prepareForPaste(isCurrent: { true })
+        try target.paste()
+        XCTAssertEqual(probe.activations, 1, "The app comes forward again")
+        XCTAssertEqual(probe.pauses, ApplicationClipboardHistoryPasteTarget.settlePauses)
+        XCTAssertEqual(probe.commands, 1)
+    }
+
+    func testAnAppThatShowsNoFocusedElementIsPastedInto() async throws {
+        let probe = TargetProbe()
+        probe.hasFocusedElement = false
+        XCTAssertNil(NativeClipboardHistoryPasteTarget.capture(pid: probe.pid, access: probe.access))
+        let target = try XCTUnwrap(ApplicationClipboardHistoryPasteTarget.capture(pid: probe.pid, access: probe.access))
+        try await target.prepareForPaste(isCurrent: { true })
+        try target.paste()
+        XCTAssertEqual(probe.commands, 1)
+    }
+
+    func testAReadOnlyPageInAnAppThatShowsItsFieldsStaysCopyOnly() {
+        let probe = TargetProbe()
+        probe.role = "AXWebArea"
+        XCTAssertNil(ApplicationClipboardHistoryPasteTarget.capture(pid: probe.pid, access: probe.access))
+    }
+
+    func testPasswordsAreNeverPastedIntoByTheApplicationTarget() async throws {
+        let field = TargetProbe()
+        field.hidesFields = true; field.secureField = true
+        XCTAssertNil(ApplicationClipboardHistoryPasteTarget.capture(pid: field.pid, access: field.access))
+
+        let input = TargetProbe()
+        input.hidesFields = true; input.secureInput = true
+        XCTAssertNil(ApplicationClipboardHistoryPasteTarget.capture(pid: input.pid, access: input.access))
+
+        // A password field that takes focus after the item was chosen.
+        let later = TargetProbe()
+        later.hidesFields = true
+        let target = try XCTUnwrap(ApplicationClipboardHistoryPasteTarget.capture(pid: later.pid, access: later.access))
+        later.secureInput = true
+        XCTAssertThrowsError(try target.paste())
+        XCTAssertEqual(later.commands, 0)
+    }
+
+    func testAnotherWindowInFrontStopsTheApplicationTarget() async throws {
+        let probe = TargetProbe()
+        probe.hidesFields = true
+        let target = try XCTUnwrap(ApplicationClipboardHistoryPasteTarget.capture(pid: probe.pid, access: probe.access))
+        probe.windowChanged = true
+        do {
+            try await target.prepareForPaste(isCurrent: { true })
+            XCTFail("Another window is not pasted into")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("The item is copied"), error.localizedDescription)
+        }
+        XCTAssertEqual(probe.commands, 0)
+    }
 }
 
 @MainActor private final class TargetProbe {
@@ -136,6 +198,12 @@ final class ClipboardHistoryPasteTargetTests: XCTestCase {
     let field = AXUIElementCreateApplication(900_102)
     let pid: pid_t = 900_100
     var role = kAXTextAreaRole as String
+    var hasFocusedElement = true
+    var hidesFields = false
+    var secureInput = false
+    var secureField = false
+    var windowChanged = false
+    let otherWindow = AXUIElementCreateApplication(900_103)
     var range: CFRange?
     var editable = false
     var pasteMenu = false
@@ -151,8 +219,8 @@ final class ClipboardHistoryPasteTargetTests: XCTestCase {
 
     var access: ClipboardHistoryTargetAccess {
         ClipboardHistoryTargetAccess(trusted: { true }, frontmostPID: { self.pid }, ownPID: -1,
-            window: { self.window }, focused: { self.field },
-            range: { _ in self.range }, role: { _ in self.role }, secure: { _ in false }, enabled: { _ in true },
+            window: { self.windowChanged ? self.otherWindow : self.window }, focused: { self.hasFocusedElement ? self.field : nil },
+            range: { _ in self.range }, role: { _ in self.role }, secure: { _ in self.secureField }, enabled: { _ in true },
             editable: { _ in self.editableReads += 1; return self.editable },
             nativePasteAvailable: { self.menuWalks += 1; return self.pasteMenu },
             keyboardFocused: { _ in self.keyboardFocused },
@@ -161,6 +229,8 @@ final class ClipboardHistoryPasteTargetTests: XCTestCase {
                 self.refocuses += 1; self.pausesBeforeRefocus = self.pausesBeforeRefocus ?? self.pauses
                 if self.refocusWorks { self.keyboardFocused = true }
             },
-            pause: { self.pauses += 1 }, command: { self.commands += 1 })
+            pause: { self.pauses += 1 },
+            hidesFields: { self.hidesFields }, secureInput: { self.secureInput },
+            command: { self.commands += 1 })
     }
 }
