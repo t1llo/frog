@@ -51,7 +51,7 @@ public enum ProviderKind: String, Codable, CaseIterable, Identifiable, Sendable 
     public var suggestedModels: [ProviderModel] {
         switch self {
         case .openAI: return [.init(id: "gpt-6-luna", name: "GPT-6 Luna"), .init(id: "gpt-6-sol", name: "GPT-6 Sol"), .init(id: "gpt-6-astra", name: "GPT-6 Astra")]
-        case .anthropic: return [.init(id: "claude-sonnet-5", name: "Claude Sonnet 5"), .init(id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5"), .init(id: "claude-opus-5-5", name: "Claude Opus 5.5"), .init(id: "claude-fable-5-1", name: "Claude Fable 5.1")]
+        case .anthropic: return [.init(id: "claude-sonnet-5", name: "Claude Sonnet 5"), .init(id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5"), .init(id: "claude-opus-5-5", name: "Claude Opus 5.5"), .init(id: "claude-fable-5-2", name: "Claude Fable 5.2")]
         case .gemini: return [
             .init(id: "gemini-3.8-flash", name: "Gemini 3.8 Flash"),
             .init(id: "gemini-3.7-flash", name: "Gemini 3.7 Flash"),

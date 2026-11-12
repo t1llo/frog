@@ -1,18 +1,20 @@
 // What the logged usage would cost at API list prices, so the Tokens tab can show the value of a
-// subscription. Prices are USD per million tokens: Anthropic as published on 2026-09-25, OpenAI
+// subscription. Prices are USD per million tokens: Anthropic as published on 2026-11-03 (Fable 5.2) and 2026-09-25, OpenAI
 // (Standard tier, prompts under 272K) as published on 2026-09-29. Update the tables when they change.
 import Foundation
 
 struct Price {
     let input: Double
     let output: Double
-    /// Cache reads are 0.1x input on most models, but cheaper on Claude Opus 5.5 and Fable 5.1.
+    /// Cache reads are 0.1x input on most models, but cheaper on Claude Opus 5.5 and Fable 5.1 and 5.2.
     let cacheRead: Double
 }
 
 /// Keyed by model id without any date suffix. Models not listed here are left unpriced rather
 /// than guessed, and the Tokens tab names them.
 let apiPrices: [String: Price] = [
+    "claude-fable-5-2": Price(input: 8, output: 40, cacheRead: 0.20),
+    "claude-mythos-5-2": Price(input: 8, output: 40, cacheRead: 0.20),
     "claude-fable-5-1": Price(input: 10, output: 50, cacheRead: 0.25),
     "claude-mythos-5-1": Price(input: 10, output: 50, cacheRead: 0.25),
     "claude-fable-5": Price(input: 10, output: 50, cacheRead: 1.00),
@@ -29,7 +31,7 @@ let apiPrices: [String: Price] = [
 ]
 
 /// USD for one response, or nil for a model missing from the table. Cache writes are billed at
-/// 1.25x input for the 5-minute cache and 2x for the 1-hour cache. Fast mode (Opus only) is 2x.
+/// 1.25x input for the 5-minute cache and 2x for the 1-hour cache. Fast mode (Opus 5.5 and Fable 5.2) is 2x.
 func apiCost(model: String, input: Int, output: Int, cacheWrite5m: Int, cacheWrite1h: Int,
              cacheRead: Int, fast: Bool) -> Double? {
     var id = model
