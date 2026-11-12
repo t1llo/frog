@@ -66,9 +66,11 @@ Implemented in `native/FrogApp/Platform/MenuBarOrganizer.swift`:
   editing defer auto-hide. Arbitrary third-party open dropdowns cannot reliably be
   detected.
 - Stable autosave names `Frog.MenuBarOrganizer.toggle`, `.divider`,
-  `.permanentDivider`. Keep autosave identity through helper removal, preserve macOS's
-  stored positions, never touch private preferred-position defaults. Actual
-  relaunch/disable/re-enable placement retention still needs live verification.
+  `.permanentDivider`. Keep autosave identity through helper removal and preserve macOS's
+  stored positions. `removeStatusItem` deletes the item's
+  `NSStatusItem Preferred Position <autosave name>` default (checked on macOS 26), and Frog
+  removes its helpers on every quit, so removal reads Frog's own helper's position first and
+  writes it back afterwards. Other apps' positions are never touched.
 - No default shortcut. No Accessibility or Screen Recording permission. Teardown
   unregisters the shortcut, invalidates the timer and removes all owned items.
 - If `com.dwarvesv.minimalbar` is running, do not install (or tear down already

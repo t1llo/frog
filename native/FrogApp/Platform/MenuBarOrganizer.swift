@@ -517,6 +517,9 @@ struct OrganizerMenuState: Equatable {
 
     func setMenuAction(_ action: @escaping (OrganizerMenuAction) -> Void) { menuAction = action }
 
+    /// Where macOS keeps a status item's place in the bar, by its autosave name.
+    static func positionKey(_ role: OrganizerItem) -> String { "NSStatusItem Preferred Position \(role.autosaveName)" }
+
     func updateMenu(_ state: OrganizerMenuState) {
         guard menuState != state else { return }
         menuState = state
@@ -577,7 +580,12 @@ struct OrganizerMenuState: Equatable {
         // Keep the identity through removal. Detaching autosaveName first can leave
         // the old remote status-item slot orphaned in macOS Control Center.
         // Installation explicitly restores isVisible without changing saved order.
+        // Removing a status item deletes its saved place, and Frog removes its helpers on every quit:
+        // put the place back, or the next start puts them at the far left and hides nothing.
+        let key = Self.positionKey(role)
+        let position = UserDefaults.standard.object(forKey: key)
         NSStatusBar.system.removeStatusItem(item)
+        if let position { UserDefaults.standard.set(position, forKey: key) }
         if role == .toggle { expanded = nil }
         if items.isEmpty { menuState = nil; contextMenu = NSMenu() }
     }
