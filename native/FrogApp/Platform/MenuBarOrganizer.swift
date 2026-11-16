@@ -75,6 +75,8 @@ struct OrganizerEnvironment {
     func install(_ item: OrganizerItem)
     func remove(_ item: OrganizerItem)
     func setLength(_ length: CGFloat, for item: OrganizerItem)
+    /// Puts `item` back in the bar right beside `neighbor`, on its right or on its left.
+    func move(_ item: OrganizerItem, beside neighbor: OrganizerItem, onTheRight: Bool)
     func setExpanded(_ expanded: Bool)
     func frame(of item: OrganizerItem) -> CGRect?
     func updateMenu(_ state: OrganizerMenuState)
@@ -138,6 +140,8 @@ struct OrganizerMenuState: Equatable {
     // Something may have changed the bar since the last tick that could judge it:
     // a start, new settings, another display, a drag.
     private var validationDue = false
+    // Frog puts its own helpers back in order once each time they are found reversed.
+    private var orderRepaired = false
 
     init(statusItems: (any OrganizerStatusItems)? = nil,
          applications: (any OrganizerApplications)? = nil,
@@ -185,9 +189,11 @@ struct OrganizerMenuState: Equatable {
                 if now() >= layoutSettlesAt {
                     isExpanded = true
                     issue = problem
+                    repairOrder()
                     applyLengths(env, allowPermanentCollapse: false)
                 }
             } else {
+                orderRepaired = false
                 applyLengths(env, allowPermanentCollapse: !starting && geometryAvailable)
             }
         }
@@ -301,10 +307,12 @@ struct OrganizerMenuState: Equatable {
             isExpanded = true
             issue = problem
             pendingCollapse = false
+            repairOrder()
             applyLengths(env, allowPermanentCollapse: false)
             resetDeadline()
             return
         }
+        orderRepaired = false
         if issue != nil { issue = nil }
         // Hide at start before anything else is resized: the order was judged just now, and
         // the second divider at its new width would still be at its old place for collapse().
@@ -328,7 +336,7 @@ struct OrganizerMenuState: Equatable {
         guard checkAvailability(env) else { return }
         guard !env.mouseDown, geometryAvailable else { return }
         if let problem = arrangementIssue(env) {
-            if now() >= layoutSettlesAt { issue = problem; updateMenu() }
+            if now() >= layoutSettlesAt { issue = problem; repairOrder(); updateMenu() }
             return
         }
         issue = nil
@@ -367,6 +375,26 @@ struct OrganizerMenuState: Equatable {
             }
         }
         return nil
+    }
+
+    /// A divider right of the arrow (after a Command-drag, or a bar that restored its places wrongly) hides nothing
+    /// and keeps every icon shown. Frog owns both helpers, so it moves its arrow back to the divider's right, which
+    /// keeps the icons the divider hides; the double divider goes back to the single one's left. Once per episode:
+    /// if the bar does not take it, the reason stays up and the owner arranges by hand.
+    private func repairOrder() {
+        guard !orderRepaired, let arrow = items.frame(of: .toggle), let divider = items.frame(of: .divider),
+              arrow.width > 0, divider.width > 0, abs(divider.midY - arrow.midY) < 4 else { return }
+        if divider.maxX > arrow.minX + 1 {
+            items.move(.toggle, beside: .divider, onTheRight: true)
+            appliedLengths[.toggle] = nil
+        } else if settings.permanentlyHiddenSection, let permanent = items.frame(of: .permanentDivider), permanent.width > 0,
+                  permanent.maxX > divider.minX + 1 {
+            items.move(.permanentDivider, beside: .divider, onTheRight: false)
+            appliedLengths[.permanentDivider] = nil
+        } else { return }
+        orderRepaired = true
+        // The moved helper's window reaches its new place a moment later.
+        layoutSettlesAt = now() + 1
     }
 
     private func checkAvailability(_ env: OrganizerEnvironment) -> Bool {
@@ -480,6 +508,7 @@ struct OrganizerMenuState: Equatable {
         menuTracking = false
         layoutSettlesAt = 0
         validationDue = false
+        orderRepaired = false
     }
 
     isolated deinit {
@@ -518,7 +547,7 @@ struct OrganizerMenuState: Equatable {
     func setMenuAction(_ action: @escaping (OrganizerMenuAction) -> Void) { menuAction = action }
 
     /// Where macOS keeps a status item's place in the bar, by its autosave name.
-    static func positionKey(_ role: OrganizerItem) -> String { "NSStatusItem Preferred Position \(role.autosaveName)" }
+    static func positionKey(_ role: OrganizerItem) -> String { StatusItemRemoval.positionKey(role.autosaveName) }
 
     func updateMenu(_ state: OrganizerMenuState) {
         guard menuState != state else { return }
@@ -580,16 +609,29 @@ struct OrganizerMenuState: Equatable {
         // Keep the identity through removal. Detaching autosaveName first can leave
         // the old remote status-item slot orphaned in macOS Control Center.
         // Installation explicitly restores isVisible without changing saved order.
-        // Removing a status item deletes its saved place, and Frog removes its helpers on every quit:
-        // put the place back, or the next start puts them at the far left and hides nothing.
-        let key = Self.positionKey(role)
-        let position = UserDefaults.standard.object(forKey: key)
-        NSStatusBar.system.removeStatusItem(item)
-        if let position { UserDefaults.standard.set(position, forKey: key) }
+        // Removal keeps the saved place, and at quit leaves the item to go with the process.
+        StatusItemRemoval.remove(item)
         if role == .toggle { expanded = nil }
         if items.isEmpty { menuState = nil; contextMenu = NSMenu() }
     }
     func setLength(_ length: CGFloat, for role: OrganizerItem) { items[role]?.length = length }
+
+    /// A saved place is the distance from the screen's right edge to the item's right edge, and the bar orders its
+    /// items by it. Reinstalling with a place just right (or left) of the neighbor's puts the item beside it.
+    func move(_ role: OrganizerItem, beside neighbor: OrganizerItem, onTheRight: Bool) {
+        guard let item = items[role], let mine = item.button?.window?.frame, let other = frame(of: neighbor),
+              let screen = NSScreen.screens.first(where: { $0.frame.minX <= other.maxX - 1 && other.maxX - 1 <= $0.frame.maxX })
+        else { return }
+        let neighborPlace = (UserDefaults.standard.object(forKey: Self.positionKey(neighbor)) as? NSNumber)?.doubleValue
+            ?? Double(screen.frame.maxX - other.maxX)
+        let place = onTheRight ? neighborPlace - Double(mine.width) : neighborPlace + Double(other.width)
+        let length = item.length
+        remove(role)
+        UserDefaults.standard.set(max(0, place), forKey: Self.positionKey(role))
+        install(role)
+        items[role]?.length = length
+        if let state = menuState { menuState = nil; updateMenu(state) }
+    }
     func frame(of role: OrganizerItem) -> CGRect? { items[role]?.button?.window?.frame }
     func setExpanded(_ expanded: Bool) {
         guard self.expanded != expanded, let button = items[.toggle]?.button else { return }

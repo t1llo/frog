@@ -47,7 +47,7 @@ import SwiftUI
         appearance?.invalidate(); appearance = nil
         monitor.setLiveReadout(false)
         presenter.close()
-        if let item { NSStatusBar.system.removeStatusItem(item) }
+        if let item { StatusItemRemoval.remove(item) }
         item = nil
     }
 

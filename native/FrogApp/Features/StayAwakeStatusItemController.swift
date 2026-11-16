@@ -47,7 +47,7 @@ import FrogCore
         observation?.cancel(); observation = nil
         updateTask?.cancel(); updateTask = nil
         timer?.invalidate(); timer = nil
-        if let item { NSStatusBar.system.removeStatusItem(item) }
+        if let item { StatusItemRemoval.remove(item) }
         item = nil
     }
 

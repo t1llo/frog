@@ -67,10 +67,18 @@ Implemented in `native/FrogApp/Platform/MenuBarOrganizer.swift`:
   detected.
 - Stable autosave names `Frog.MenuBarOrganizer.toggle`, `.divider`,
   `.permanentDivider`. Keep autosave identity through helper removal and preserve macOS's
-  stored positions. `removeStatusItem` deletes the item's
-  `NSStatusItem Preferred Position <autosave name>` default (checked on macOS 26), and Frog
-  removes its helpers on every quit, so removal reads Frog's own helper's position first and
-  writes it back afterwards. Other apps' positions are never touched.
+  stored positions. On macOS 26 both `removeStatusItem` and `-[NSStatusItem dealloc]` (which
+  uninstalls the item and calls `_clearAutosavedState`) delete the item's
+  `NSStatusItem Preferred Position <autosave name>` default. Writing the position back after
+  removal lost the race with the later dealloc, so every quit wiped the arrow's and divider's
+  places and the next start put them at the far left, hiding nothing. `StatusItemRemoval`
+  (used by every Frog status item) now keeps each removed item alive, leaves items in the bar
+  once Frog is quitting (they go with the process and keep their places), and otherwise writes
+  the saved position and visibility back. Other apps' positions are never touched.
+- A divider found right of the arrow is repaired once per episode: Frog reinstalls its arrow with
+  a saved position just right of the divider (positions count from the screen's right edge to the
+  item's right edge, and the bar orders items by them), which keeps the divider's hidden set. If the
+  bar does not take the move, the reason stays shown and the owner Command-drags as before.
 - No default shortcut. No Accessibility or Screen Recording permission. Teardown
   unregisters the shortcut, invalidates the timer and removes all owned items.
 - If `com.dwarvesv.minimalbar` is running, do not install (or tear down already

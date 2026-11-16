@@ -1005,6 +1005,7 @@ private struct SampleSystemSampler: SystemMonitorSampling {
     func install(_ item: OrganizerItem) {}
     func remove(_ item: OrganizerItem) {}
     func setLength(_ length: CGFloat, for item: OrganizerItem) {}
+    func move(_ item: OrganizerItem, beside neighbor: OrganizerItem, onTheRight: Bool) {}
     func setExpanded(_ expanded: Bool) {}
     func frame(of item: OrganizerItem) -> CGRect? { nil }
     func updateMenu(_ state: OrganizerMenuState) {}

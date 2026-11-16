@@ -61,7 +61,7 @@ import FrogUsage
         appearance?.invalidate(); appearance = nil
         updateTask?.cancel(); updateTask = nil
         closePopup()
-        if let item { NSStatusBar.system.removeStatusItem(item) }
+        if let item { StatusItemRemoval.remove(item) }
         item = nil
     }
 

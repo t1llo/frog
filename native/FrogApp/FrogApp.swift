@@ -138,6 +138,7 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
         // Plugins close what they hold, such as phone sessions, once quitting is certain; the bound keeps one from blocking it.
         guard power.needsQuitCleanup || model.hasPendingDocumentWrites || model.scripts.needsQuitCleanup else {
             termination = Task {
+                StatusItemRemoval.appIsQuitting = true
                 await model.pluginHost.stopAll(timeout: .seconds(2))
                 sender.reply(toApplicationShouldTerminate: true)
             }
@@ -154,7 +155,7 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
                 return
             }
             let restored = await power.prepareToQuit()
-            if restored { await model.pluginHost.stopAll(timeout: .seconds(2)) }
+            if restored { StatusItemRemoval.appIsQuitting = true; await model.pluginHost.stopAll(timeout: .seconds(2)) }
             sender.reply(toApplicationShouldTerminate: restored)
             if !restored {
                 termination = nil
@@ -174,6 +175,7 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
     func applicationShouldSaveSecureApplicationState(_ app: NSApplication) -> Bool { false }
     func applicationShouldRestoreSecureApplicationState(_ app: NSApplication) -> Bool { false }
     func applicationWillTerminate(_ notification: Notification) {
+        StatusItemRemoval.appIsQuitting = true
         model.shutdown()
         if let observer { NotificationCenter.default.removeObserver(observer) }
     }

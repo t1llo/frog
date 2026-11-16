@@ -631,6 +631,36 @@ import FrogCore
         fixture.organizer.stop()
     }
 
+    func testReversedDividerIsPutBackLeftOfTheArrowByFrogItself() {
+        let fixture = OrganizerFixture()
+        fixture.organizer.configure(enabled: true, settings: MenuBarPreferences())
+        fixture.items.movesTakeEffect = true
+        fixture.items.reversed = true
+        fixture.time = 2; fixture.organizer.tick()
+        XCTAssertEqual(fixture.items.moves, [.toggle], "Frog moves its own arrow to the divider's right")
+        XCTAssertTrue(fixture.organizer.isExpanded)
+        fixture.time = 3; fixture.organizer.tick()
+        XCTAssertNil(fixture.organizer.issue, "Nothing is left to ask of the owner")
+        fixture.organizer.toggle()
+        XCTAssertFalse(fixture.organizer.isExpanded, "The arrow hides again")
+        fixture.organizer.stop()
+    }
+
+    func testAMoveTheBarDoesNotTakeIsTriedOnceAndTheReasonStays() {
+        let fixture = OrganizerFixture()
+        fixture.organizer.configure(enabled: true, settings: MenuBarPreferences())
+        fixture.items.reversed = true
+        for time in stride(from: 2.0, through: 6, by: 0.5) { fixture.time = time; fixture.organizer.tick() }
+        XCTAssertEqual(fixture.items.moves, [.toggle], "One try per reversed order, not one per tick")
+        XCTAssertNotNil(fixture.organizer.issue)
+        fixture.items.reversed = false
+        fixture.time = 7; fixture.organizer.tick()
+        fixture.items.reversed = true
+        fixture.time = 9; fixture.organizer.tick()
+        XCTAssertEqual(fixture.items.moves, [.toggle, .toggle], "A later reversal is tried again")
+        fixture.organizer.stop()
+    }
+
     func testArrangementProblemShowsTheAlwaysHiddenSectionOnlyWhileItLasts() {
         let fixture = OrganizerFixture()
         var settings = MenuBarPreferences(); settings.permanentlyHiddenSection = true; settings.autoHideSeconds = 5
@@ -892,7 +922,9 @@ import FrogCore
         fixture.items.reversed = true; organizer.tick()
         XCTAssertNotNil(organizer.issue)
         XCTAssertEqual(organizer.scheduledTickInterval, 0.5, "A problem is rechecked until it is gone")
-        fixture.items.reversed = false; organizer.tick()
+        XCTAssertEqual(fixture.items.moves, [.toggle], "Frog tried to put its arrow back itself")
+        // The moved arrow gets its second to settle before the rest pace.
+        fixture.items.reversed = false; fixture.time = 8; organizer.tick()
         XCTAssertNil(organizer.issue)
         XCTAssertEqual(organizer.scheduledTickInterval, 2)
 
@@ -1033,6 +1065,13 @@ import FrogCore
         lengths[item] = length
     }
     func setExpanded(_ expanded: Bool) {}
+    var moves: [OrganizerItem] = []
+    /// Whether the bar takes a move; when it does, the order is right again.
+    var movesTakeEffect = false
+    func move(_ item: OrganizerItem, beside neighbor: OrganizerItem, onTheRight: Bool) {
+        moves.append(item)
+        if movesTakeEffect { reversed = false }
+    }
     func frame(of item: OrganizerItem) -> CGRect? {
         guard framesAvailable, active.contains(item) else { return nil }
         let width = lengths[item] ?? 18
